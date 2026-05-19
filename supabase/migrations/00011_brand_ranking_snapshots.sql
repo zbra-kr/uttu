@@ -7,11 +7,9 @@
 --     title.rank                → 브랜드 순위 ("1"~"200")
 --     title.title.text          → 브랜드 한글명
 --     title.imageUrl            → 로고 이미지 URL
---     title.fluctuation.type    → UP / DOWN / NONE
---     title.fluctuation.amount  → 변동폭 (UP/DOWN일 때만)
 --     title.onClick.url         → https://www.musinsa.com/brand/{slug}
 --     title.onClick.eventLog.ga4.payload.brand_id → slug
--- 조합: 상품 랭킹과 동일 — 9 × 3 × 7 = 189조합 × 200브랜드 ≈ 37,800행/일
+-- 조합: 상품 랭킹과 동일 — 13 × 3 × 7 = 273조합 × 200브랜드 ≈ 54,600행/일
 -- 적용: SQL Editor 수동 실행 (자동 적용 금지)
 
 CREATE TABLE brand_ranking_snapshots (
@@ -26,8 +24,6 @@ CREATE TABLE brand_ranking_snapshots (
   age_filter          TEXT        NOT NULL DEFAULT 'AGE_BAND_ALL',
                                                           -- AGE_BAND_ALL/MINOR/20/25/30/35/40
   rank_position       INTEGER     NOT NULL,               -- 브랜드 순위 (1~200)
-  fluctuation_type    TEXT,                               -- UP / DOWN / NONE
-  fluctuation_amount  INTEGER,                            -- 변동폭 (NONE이면 NULL)
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
 
   CONSTRAINT brand_ranking_snapshots_uq
@@ -51,12 +47,10 @@ CREATE INDEX brand_ranking_brand_date_idx
 CREATE INDEX brand_ranking_slug_date_idx
   ON brand_ranking_snapshots(musinsa_brand_slug, snapshot_date DESC);
 
-COMMENT ON TABLE  brand_ranking_snapshots                  IS '무신사 브랜드 랭킹 스냅샷 — 189조합×200브랜드/일, LATERAL 조회 필수';
+COMMENT ON TABLE  brand_ranking_snapshots                  IS '무신사 브랜드 랭킹 스냅샷 — 273조합×200브랜드/일, LATERAL 조회 필수';
 COMMENT ON COLUMN brand_ranking_snapshots.musinsa_brand_slug IS 'brands.slug — brands 미등록 브랜드도 저장 가능';
 COMMENT ON COLUMN brand_ranking_snapshots.brand_name       IS '수집 시점 한글명 (brands.name과 다를 수 있음)';
 COMMENT ON COLUMN brand_ranking_snapshots.rank_position    IS '브랜드 순위 (1~200)';
-COMMENT ON COLUMN brand_ranking_snapshots.fluctuation_type IS 'UP=상승 / DOWN=하락 / NONE=동일';
-COMMENT ON COLUMN brand_ranking_snapshots.fluctuation_amount IS '순위 변동폭 — fluctuation_type이 NONE이면 NULL';
 
 -- Rollback:
 -- DROP TABLE IF EXISTS brand_ranking_snapshots;

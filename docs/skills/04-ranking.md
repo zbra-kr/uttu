@@ -160,16 +160,29 @@ async def fetch_ranking(
                     .get("payload", {})
             )
 
+            amp_payload = (
+                item.get("image", {})
+                    .get("onClickLike", {})
+                    .get("eventLog", {})
+                    .get("amplitude", {})
+                    .get("payload", {})
+            )
+
             result.append({
                 "musinsa_no":    str(product_id),
                 "rank_position": int(rank),
+                "category_code": category_code,
+                "gender_filter": gender_filter,
+                "age_filter":    age_band,
+                "product_name":  amp_payload.get("product_name"),
+                "brand_slug":    amp_payload.get("brand_id"),
+                "brand_name":    info.get("brandName"),
                 "list_price":    _to_int(ga4_payload.get("original_price")),
                 "final_price":   _to_int(info.get("finalPrice")),
                 "discount_rate": _to_decimal(info.get("discountRatio")),
-                "category_code": category_code,
-                "gender_filter": gender_filter,
-                "age_filter":    age_band,   # AGE_BAND_XX 형식으로 DB에 그대로 저장
-                "brand_name":    info.get("brandName"),
+                "is_sold_out":   info.get("isSoldOut", False),
+                "review_count":  _to_int(amp_payload.get("reviewCount")),
+                "review_score":  _to_int(amp_payload.get("reviewScore")),
             })
 
         return result
@@ -265,13 +278,21 @@ def upsert_ranking_snapshots(client, rows: list[dict], snapshot_date: str) -> in
         mapped.append({
             "product_id":    pid,
             "snapshot_date": snapshot_date,
+            "store_code":    row.get("store_code", "musinsa"),
             "category_code": row["category_code"],
             "gender_filter": row["gender_filter"],
-            "age_filter":    row["age_filter"],   # AGE_BAND_XX 형식
+            "age_filter":    row["age_filter"],
             "rank_position": row["rank_position"],
+            "musinsa_no":    row["musinsa_no"],
+            "product_name":  row.get("product_name"),
+            "brand_slug":    row.get("brand_slug"),
+            "brand_name":    row.get("brand_name"),
             "list_price":    row.get("list_price"),
             "final_price":   row.get("final_price"),
             "discount_rate": row.get("discount_rate"),
+            "is_sold_out":   row.get("is_sold_out", False),
+            "review_count":  row.get("review_count"),
+            "review_score":  row.get("review_score"),
         })
 
     total = 0
@@ -370,8 +391,6 @@ def upsert_brand_ranking_snapshots(client, modules: list[dict], snapshot_date: s
             continue
         ga4 = title.get('onClick', {}).get('eventLog', {}).get('ga4', {}).get('payload', {})
         brand_slug = ga4.get('brand_id', '')
-        fluct = title.get('fluctuation', {})
-        fluct_amount = fluct.get('amount')
         rows.append({
             'musinsa_brand_slug': brand_slug,
             'brand_name':        title.get('title', {}).get('text', ''),
@@ -381,8 +400,6 @@ def upsert_brand_ranking_snapshots(client, modules: list[dict], snapshot_date: s
             'gender_filter':     gender_filter,
             'age_filter':        age_filter,
             'rank_position':     int(rank),
-            'fluctuation_type':  fluct.get('type'),
-            'fluctuation_amount': int(fluct_amount) if fluct_amount else None,
         })
 
     for i in range(0, len(rows), 500):
