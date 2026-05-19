@@ -17,16 +17,25 @@
 
 ```
 ✅ 수집 가능:
-  - rating (별점 1~5)
+  - rating (별점 1~5) — 전체 별점 수집 (저점·고점 필터 없음)
   - review_text (본문 내용)
   - review_date (날짜)
   - helpful_count (도움됐어요 수)
   - musinsa_review_id (고유 ID — 중복 방지 키)
+  - has_image (이미지 첨부 여부)
+  - image_urls (Musinsa CDN URL 배열 — 하자/불량 증거 사진)
 
 ❌ 수집 금지:
   - 닉네임 (개인정보)
   - 사용자 ID (개인정보)
   - 프로필 이미지 (개인정보)
+```
+
+## API 수집 방법
+
+```
+⚠️ goods-detail.musinsa.com/api2/goods/{id}/reviews — 세션 쿠키 없이 400 반환
+→ Playwright 필수 (옵션 수집과 동일 패턴, XHR intercept)
 ```
 
 ---
@@ -64,12 +73,15 @@ async def scrape_reviews_for_product(
             if since_date and review_date and review_date < since_date:
                 return results  # 정렬 가정: 최신순
 
+            image_urls = item.get("image_urls", []) or []
             results.append({
                 "musinsa_review_id": str(item["review_id"]),
                 "rating":            item["rating"],
                 "review_text":       item.get("content", ""),
                 "review_date":       review_date,
                 "helpful_count":     item.get("helpful_count", 0),
+                "has_image":         len(image_urls) > 0,
+                "image_urls":        image_urls,
                 # 닉네임·사용자ID 절대 포함 금지
             })
 
@@ -160,25 +172,26 @@ async def run_review_collection():
 ```python
 async def analyze_reviews(client, product_id: str, model: str = "gemma4:e4b"):
     """
-    저점(1~2점)/고점(4~5점) 리뷰 LLM 배치 분석.
-    결과 → review_analysis 테이블 upsert.
+    상품별 전체 리뷰 LLM 분석.
+    - 저점(1~2점) → 문제점 추출
+    - 고점(4~5점) → 강점 추출
+    - 전체 → 한줄 요약
+    결과 → review_analysis 테이블 upsert (매일 갱신)
     """
-    # 저점 리뷰 조회
     low = client.table("reviews") \
         .select("review_text, rating") \
         .eq("product_id", product_id) \
         .lte("rating", 2) \
         .order("review_date", desc=True) \
-        .limit(100) \
+        .limit(200) \
         .execute()
 
-    # 고점 리뷰 조회
     high = client.table("reviews") \
         .select("review_text, rating") \
         .eq("product_id", product_id) \
         .gte("rating", 4) \
         .order("review_date", desc=True) \
-        .limit(100) \
+        .limit(200) \
         .execute()
 
     low_texts  = [r["review_text"] for r in (low.data  or []) if r["review_text"]]
@@ -187,15 +200,15 @@ async def analyze_reviews(client, product_id: str, model: str = "gemma4:e4b"):
     if not low_texts and not high_texts:
         return
 
-    # LLM 분석
     issues    = await _llm_extract_issues(low_texts, model)
     strengths = await _llm_extract_strengths(high_texts, model)
+    summary   = await _llm_summarize(low_texts + high_texts, model)
 
-    # 결과 저장
     from datetime import date
     client.table("review_analysis").upsert({
         "product_id":             product_id,
         "analysis_date":          date.today().isoformat(),
+        "summary_text":           summary,
         "low_rating_issues":      issues,
         "high_rating_strengths":  strengths,
         "total_reviewed":         len(low_texts) + len(high_texts),
@@ -210,9 +223,9 @@ async def analyze_reviews(client, product_id: str, model: str = "gemma4:e4b"):
 ## Cron 등록 (정호철 직접 등록)
 
 ```bash
-# 리뷰 수집 — 매일 02시 (증분)
+# 리뷰 수집 — 매일 02시 (증분, 기존 musinsa_review_id 중복 자동 스킵)
 0 2 * * * /Users/macmini/projects/uttu/scripts/run_review.sh
 
-# LLM 분석 — 매주 월요일 03시
-0 3 * * 1 /Users/macmini/projects/uttu/scripts/run_review_analysis.sh
+# LLM 분석 — 매일 04시 (리뷰 수집 완료 후)
+0 4 * * * /Users/macmini/projects/uttu/scripts/run_review_analysis.sh
 ```

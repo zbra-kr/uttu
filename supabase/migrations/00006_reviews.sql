@@ -1,6 +1,8 @@
 -- 00006_reviews.sql
 -- 자사 브랜드 상품 리뷰 (개인정보 보호 준수)
 -- 수집 대상: CO(커버낫)/LE(리)/WA(와키윌리) 상품만
+-- 수집 주기: 매일 (증분 — musinsa_review_id UNIQUE로 중복 자동 스킵)
+-- API: goods-detail.musinsa.com — Playwright 세션 쿠키 필요
 -- 금지: 닉네임, 사용자 ID — 절대 수집·저장 금지
 -- 적용: SQL Editor 수동 실행 (자동 적용 금지)
 
@@ -12,6 +14,8 @@ CREATE TABLE reviews (
   review_text         TEXT        NOT NULL DEFAULT '',  -- 본문 (빈 리뷰 허용)
   review_date         DATE        NOT NULL,
   helpful_count       INTEGER     NOT NULL DEFAULT 0,
+  has_image           BOOLEAN     NOT NULL DEFAULT false,  -- 이미지 첨부 여부
+  image_urls          TEXT[]      NOT NULL DEFAULT '{}',   -- Musinsa CDN 이미지 URL 배열
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -26,8 +30,14 @@ CREATE INDEX reviews_high_rating_idx
   ON reviews(product_id, rating)
   WHERE rating >= 4;
 
-COMMENT ON TABLE  reviews                    IS '자사 브랜드 상품 리뷰 — 닉네임·사용자ID 저장 절대 금지';
+CREATE INDEX reviews_has_image_idx
+  ON reviews(product_id, has_image)
+  WHERE has_image = true;
+
+COMMENT ON TABLE  reviews                    IS '자사 브랜드 상품 리뷰 — 닉네임·사용자ID 저장 절대 금지, 매일 증분 수집';
 COMMENT ON COLUMN reviews.musinsa_review_id  IS '중복 방지 UNIQUE 키 — upsert ignore_duplicates=true 활용';
+COMMENT ON COLUMN reviews.has_image          IS '이미지 첨부 리뷰 여부 — 하자/불량 증거 사진 포함 가능';
+COMMENT ON COLUMN reviews.image_urls         IS 'Musinsa CDN 이미지 URL 배열 — 최대 수장';
 
 -- Rollback:
 -- DROP TABLE IF EXISTS reviews;
