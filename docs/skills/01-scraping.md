@@ -84,6 +84,76 @@ GET https://api.musinsa.com/api2/hm/web/v3/pans/sale/modules
 ※ 약 214건/회 반환
 ```
 
+### 브랜드 상세
+
+```
+httpx 직접 호출 (Playwright 불필요)
+URL: https://www.musinsa.com/brand/{slug}
+평균 소요: ~1초/브랜드
+
+파싱 대상: HTML 내 __NEXT_DATA__.props.pageProps.meta
+
+수집 필드:
+  brandName, brandNameEng
+  brandNation, brandNationName
+  since (설립 연도)
+  introduction (소개글)
+  logoImageUrl, whiteLogoImageUrl
+  serviceType (FLAGSHIP / BRAND_SHOP)
+  flagshipType (TYPE_A / TYPE_B / TYPE_C)
+  isUsed (중고거래 가능 여부)
+
+수집 불가 (클라이언트 렌더링):
+  팔로워 수, 상품 수, 누적 판매량
+```
+
+```python
+import re, json, httpx
+from loguru import logger
+
+BRAND_PAGE_URL = "https://www.musinsa.com/brand/{slug}"
+_NEXT_DATA_RE = re.compile(
+    r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+    re.DOTALL,
+)
+
+async def fetch_brand_detail(slug: str) -> dict | None:
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            BRAND_PAGE_URL.format(slug=slug),
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Accept": "text/html",
+            },
+        )
+        resp.raise_for_status()
+
+    m = _NEXT_DATA_RE.search(resp.text)
+    if not m:
+        logger.warning("brand_next_data_not_found", slug=slug)
+        return None
+
+    page_props = json.loads(m.group(1)).get("props", {}).get("pageProps", {})
+    if page_props.get("isBrandNotFound"):
+        logger.warning("brand_not_found", slug=slug)
+        return None
+
+    meta = page_props.get("meta", {})
+    return {
+        "name":          meta.get("brandName", ""),
+        "name_eng":      meta.get("brandNameEng"),
+        "logo_url":      meta.get("logoImageUrl"),
+        "white_logo_url": meta.get("whiteLogoImageUrl"),
+        "nation_code":   meta.get("brandNation"),
+        "nation_name":   meta.get("brandNationName"),
+        "since_year":    meta.get("since"),
+        "introduction":  meta.get("introduction"),
+        "service_type":  meta.get("serviceType"),
+        "flagship_type": meta.get("flagshipType"),
+        "is_used":       meta.get("isUsed", False),
+    }
+```
+
 ### 상품 상세
 
 ```
