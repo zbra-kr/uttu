@@ -286,13 +286,16 @@ def upsert_ranking_snapshots(client, rows: list[dict], snapshot_date: str) -> in
 ## Cron 등록 (정호철 직접 등록)
 
 ```bash
-# 랭킹 수집 — 매일 01시
+# 상품 랭킹 수집 — 매일 01시
 0 1 * * * /Users/macmini/projects/uttu/scripts/run_ranking.sh
+
+# 브랜드 랭킹 수집 — 매일 01시 30분
+30 1 * * * /Users/macmini/projects/uttu/scripts/run_brand_ranking.sh
 ```
 
 ---
 
-## 응답 구조 요약
+## 응답 구조 요약 — 상품 랭킹
 
 ```
 GET client.musinsa.com/api/home/web/v5/pans/ranking/sections/199
@@ -313,4 +316,74 @@ Response:
           .original_price        # 정상가
           .gender_filter         # A/M/F (확인용)
           .applied_filter_group_1 # 성별:XX|연령별:XX|주기별:XX (확인용)
+```
+
+---
+
+## 브랜드 랭킹 API (2026-05-19 확인)
+
+### 엔드포인트
+
+```
+GET https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/1054
+파라미터: storeCode=musinsa, categoryCode, contentsId="", period=DAILY, gf, ageBand
+조합: 상품 랭킹과 동일 — 189조합 (9×3×7)
+```
+
+### 응답 구조
+
+```
+data.modules[]                         # 200개 RANKING_BRAND 모듈 (브랜드 1개 = 1 모듈)
+  .type == "RANKING_BRAND"
+  .title
+    .rank                              # 브랜드 순위 ("1"~"200", string)
+    .title.text                        # 브랜드 한글명
+    .imageUrl                          # 브랜드 로고 URL
+    .fluctuation.type                  # UP / DOWN / NONE
+    .fluctuation.amount                # 순위 변동폭 (NONE이면 없음)
+    .labels[]                          # 레이블 (단독, 한정 등)
+    .onClick.url                       # https://www.musinsa.com/brand/{slug}
+    .onClick.apiUrl                    # 브랜드 상품 목록 API
+    .onClick.eventLog.ga4.payload
+      .brand_id                        # slug (영문 brand_id) → brands.slug
+  .items[]                             # 해당 브랜드 상품 (1위 브랜드만 반환, 나머지 빈 배열)
+```
+
+### DB 적재 패턴
+
+```python
+def upsert_brand_ranking_snapshots(client, modules: list[dict], snapshot_date: str,
+                                    category_code: str, gender_filter: str,
+                                    age_filter: str) -> int:
+    rows = []
+    for module in modules:
+        if module.get('type') != 'RANKING_BRAND':
+            continue
+        title = module.get('title', {})
+        rank = title.get('rank')
+        if not rank:
+            continue
+        ga4 = title.get('onClick', {}).get('eventLog', {}).get('ga4', {}).get('payload', {})
+        brand_slug = ga4.get('brand_id', '')
+        fluct = title.get('fluctuation', {})
+        fluct_amount = fluct.get('amount')
+        rows.append({
+            'musinsa_brand_slug': brand_slug,
+            'brand_name':        title.get('title', {}).get('text', ''),
+            'brand_image_url':   title.get('imageUrl'),
+            'snapshot_date':     snapshot_date,
+            'category_code':     category_code,
+            'gender_filter':     gender_filter,
+            'age_filter':        age_filter,
+            'rank_position':     int(rank),
+            'fluctuation_type':  fluct.get('type'),
+            'fluctuation_amount': int(fluct_amount) if fluct_amount else None,
+        })
+
+    for i in range(0, len(rows), 500):
+        client.table('brand_ranking_snapshots').upsert(
+            rows[i:i+500],
+            on_conflict='musinsa_brand_slug,snapshot_date,category_code,gender_filter,age_filter'
+        ).execute()
+    return len(rows)
 ```

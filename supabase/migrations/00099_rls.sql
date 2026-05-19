@@ -59,15 +59,27 @@ ALTER TABLE dart_financials ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon read dart_financials"
   ON dart_financials FOR SELECT TO anon USING (true);
 
+-- ─── brand_ranking_snapshots ─────────────────────────────────────────────────
+ALTER TABLE brand_ranking_snapshots ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon read brand_ranking_snapshots"
+  ON brand_ranking_snapshots FOR SELECT TO anon USING (true);
+
+-- ─── promotion_items ─────────────────────────────────────────────────────────
+ALTER TABLE promotion_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon read promotion_items"
+  ON promotion_items FOR SELECT TO anon USING (true);
+
 -- Rollback (테이블 삭제 없이 RLS만 비활성화):
--- ALTER TABLE companies         DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE brands            DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE products          DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE ranking_snapshots DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE promotions        DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE reviews           DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE review_analysis   DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE own_sales_daily   DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE own_inventory     DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE dart_disclosures  DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE dart_financials   DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE companies                 DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE brands                    DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE products                  DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE ranking_snapshots         DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE promotions                DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE promotion_items           DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE reviews                   DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE review_analysis           DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE own_sales_daily           DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE own_inventory             DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE dart_disclosures          DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE dart_financials           DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE brand_ranking_snapshots   DISABLE ROW LEVEL SECURITY;
