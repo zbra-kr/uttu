@@ -44,23 +44,33 @@ class BaseScraper:
 
 ## 무신사 API — 확인된 URL 목록
 
-### 랭킹 API
+### 랭킹 API (2026-05-19 API 변경 확인)
 
 ```
-GET https://api.musinsa.com/api2/dp/v1/plp/ranking
+⚠️ 구 API (api.musinsa.com/api2/dp/v1/plp/ranking) 완전 폐기 — HTTP 400
+
+신 API:
+GET https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/{sectionId}
 
 파라미터:
-  sectionId=199           전체 랭킹 (고정)
-  period=DAILY            일별 집계 (now=실시간 사용 금지)
+  sectionId=199           전체 스타일 통합 랭킹 (고정)
+  storeCode=musinsa       필수
   categoryCode={code}     카테고리 코드
-  gf={gender}             성별 (A=전체, M=남성, F=여성)
-  age={age}               나이대 (A=전체, 10, 20, 25, 30, 35, 40)
-  includeSoldOut=true     품절 포함 (항상 true)
-  page=1
-  limit=100
+  contentsId=             빈 문자열 필수
+  period=DAILY            일별 집계 → "최근 1일" 필터 적용됨
+  gf={gender}             성별 (A=전체, M=남성, F=여성) — 동작 확인
+  ❌ age 파라미터 제거됨 — 2026-05-19 기준 어떤 값도 효과 없음
+
+응답에서 상품 파싱:
+  data.modules[type=="MULTICOLUMN"].items[]
+    .id          → 무신사 상품번호
+    .image.rank  → 순위
+    .info.finalPrice          → 최종가
+    .info.discountRatio       → 할인율
+    .image.onClickLike.eventLog.ga4.payload.original_price → 정상가
 
 ※ Playwright 불필요 — httpx 직접 호출
-※ period=now(실시간) 사용 금지 — 노이즈만 많고 실무 활용 불가
+※ 결과 수: ~102 고정 (limit 파라미터 없음)
 ```
 
 ### 프로모션 API
@@ -134,14 +144,13 @@ GENDER_FILTERS = ["A", "M", "F"]
 AGE_FILTERS    = ["A", "10", "20", "25", "30", "35", "40"]
 
 COMBINATIONS = [
-    (cat, gf, age)
+    (cat, gf, "A")      # age는 항상 "A" (API에서 age 필터 제거됨)
     for cat in CATEGORY_CODES
     for gf  in GENDER_FILTERS
-    for age in AGE_FILTERS
 ]
-# 9 × 3 × 7 = 189 조합
-# 189 × 100건 = 18,900건/일
-# 예상 소요: 189 × 4초 ≈ 13분
+# 9 × 3 = 27 조합 (이전: 9 × 3 × 7 = 189)
+# 27 × ~102건 = 2,754건/일
+# 예상 소요: 27 × 4초 ≈ 2분 (이전 13분)
 ```
 
 ---
