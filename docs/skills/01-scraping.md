@@ -87,17 +87,158 @@ GET https://api.musinsa.com/api2/hm/web/v3/pans/sale/modules
 ### 상품 상세
 
 ```
-Playwright + 응답 인터셉트 방식
-URL: https://www.musinsa.com/products/{musinsa_no}
-평균 소요: 18초/상품
+2단계 수집:
 
-capture 패턴:
-  - goods-detail.musinsa.com/api2/goods/{no}/detail
-  - goods-detail.musinsa.com/api2/goods/{no}/options
+1단계 — httpx (기본 정보, ~1초/상품, Playwright 불필요)
+  URL: https://www.musinsa.com/products/{musinsa_no}
+  HTML 내 window.__MSS__.product.state JSON 파싱
 
-색상 파싱:
-  options API → data.basic[displayType=="COLOR_CHIP"].optionValues[].name
-  색상 없는 상품(가방 등) → 빈 리스트 [] (에러 아님)
+  수집 필드:
+    goodsNm, goodsNmEng, styleNo, thumbnailImageUrl
+    category (depth1~depth3, baseCategoryFullPath)
+    sex[], sexCode → gender (2→M, 4→F, 6→U)
+    seasonYear, season
+    goodsMaterial.materials[] → fit/texture/elasticity/transparency/thickness/seasons
+    isMusinsaMonopoly, isOnlineMonopoly, isFirst, isClearance, isOutlet,
+    isLimitedQuantity, isDrop, isAdult, isParallelImport, isFreeReturn
+    labels[].code
+    goodsReview.totalCount, goodsReview.satisfactionScore
+    rankingRecord.rankingRecordsTop[]
+
+2단계 — Playwright (색상·사이즈, ~18초/상품, 자사 상품 위주 실행)
+  intercept: goods-detail.musinsa.com/api2/goods/{no}/options
+  colors: data.basic[displayType=="COLOR_CHIP"].optionValues[].name
+  sizes:  data.basic[displayType=="SIZE"].optionValues[].name
+  ※ 색상/사이즈 없는 상품(가방 등) → 빈 배열 [] (에러 아님)
+```
+
+#### httpx 파싱 패턴
+
+```python
+import re, json, httpx
+from loguru import logger
+
+PRODUCT_PAGE_URL = "https://www.musinsa.com/products/{musinsa_no}"
+_STATE_RE = re.compile(
+    r'window\.__MSS__\.product\.state\s*=\s*(\{.*?\});\s*\n', re.DOTALL
+)
+
+async def fetch_product_detail(musinsa_no: str) -> dict | None:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Accept": "text/html",
+        "Referer": "https://www.musinsa.com/",
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            PRODUCT_PAGE_URL.format(musinsa_no=musinsa_no), headers=headers
+        )
+        resp.raise_for_status()
+
+    m = _STATE_RE.search(resp.text)
+    if not m:
+        logger.warning("product_state_not_found", musinsa_no=musinsa_no)
+        return None
+
+    state = json.loads(m.group(1))
+    return _parse_state(state)
+
+
+def _parse_state(s: dict) -> dict:
+    cat = s.get("category", {})
+    price = s.get("goodsPrice", {})
+    review = s.get("goodsReview", {})
+
+    sex_code = s.get("sexCode", 0)
+    gender = {2: "M", 4: "F", 6: "U"}.get(sex_code, "U")
+
+    materials = {
+        m["name"]: next((i["name"] for i in m["items"] if i["isSelected"]), None)
+        for m in s.get("goodsMaterial", {}).get("materials", [])
+    }
+    season_material = materials.pop("계절", None)
+    # 계절은 복수 선택 → 선택된 것만 배열로
+    seasons_list = [
+        i["name"]
+        for m in s.get("goodsMaterial", {}).get("materials", [])
+        if m["name"] == "계절"
+        for i in m["items"] if i["isSelected"]
+    ]
+
+    return {
+        "name":          s.get("goodsNm", ""),
+        "name_eng":      s.get("goodsNmEng"),
+        "style_no":      s.get("styleNo"),
+        "thumbnail_url": s.get("thumbnailImageUrl"),
+
+        "category_code":    cat.get("categoryDepth1Code", "000"),
+        "category_d2_code": cat.get("categoryDepth2Code") or None,
+        "category_d2_name": cat.get("categoryDepth2Name") or None,
+        "category_d3_code": cat.get("categoryDepth3Code") or None,
+        "category_d3_name": cat.get("categoryDepth3Name") or None,
+        "category_path":    s.get("baseCategoryFullPath"),
+
+        "gender":       gender,
+        "season_year":  s.get("seasonYear") or None,
+        "season_code":  str(s.get("season")) if s.get("season") else None,
+
+        "fit":          materials.get("핏"),
+        "texture":      materials.get("촉감"),
+        "elasticity":   materials.get("신축성"),
+        "transparency": materials.get("비침"),
+        "thickness":    materials.get("두께"),
+        "item_seasons": seasons_list,
+
+        "is_musinsa_monopoly": s.get("isMusinsaMonopoly", False),
+        "is_online_monopoly":  s.get("isOnlineMonopoly", False),
+        "is_first":            s.get("isFirst", False),
+        "is_clearance":        s.get("isClearance", False),
+        "is_outlet":           s.get("isOutlet", False),
+        "is_limited_quantity": s.get("isLimitedQuantity", False),
+        "is_drop":             s.get("isDrop", False),
+        "is_adult":            s.get("isAdult", False),
+        "is_parallel_import":  s.get("isParallelImport", False),
+        "is_free_return":      s.get("isFreeReturn", False),
+
+        "labels":        [lb["code"] for lb in s.get("labels", [])],
+        "review_count":  review.get("totalCount", 0),
+        "satisfaction_score": review.get("satisfactionScore") or None,
+
+        "ranking_best_records": s.get("rankingRecord", {}).get("rankingRecordsTop", []),
+    }
+```
+
+#### Playwright 옵션 파싱 패턴 (색상·사이즈)
+
+```python
+async def fetch_product_options(musinsa_no: str, page) -> dict:
+    """
+    Playwright page 객체 전달. BaseScraper._with_retry 래핑 권장.
+    colors, sizes 반환.
+    """
+    captured = {}
+
+    async def handle_response(response):
+        url = response.url
+        if f"/api2/goods/{musinsa_no}/options" in url:
+            try:
+                captured["options"] = await response.json()
+            except Exception:
+                pass
+
+    page.on("response", handle_response)
+    await page.goto(f"https://www.musinsa.com/products/{musinsa_no}")
+    await page.wait_for_load_state("networkidle", timeout=30000)
+
+    colors, sizes = [], []
+    opts_data = captured.get("options", {}).get("data", {})
+    for group in opts_data.get("basic", []):
+        if group.get("displayType") == "COLOR_CHIP":
+            colors = [v["name"] for v in group.get("optionValues", [])]
+        elif group.get("displayType") == "SIZE":
+            sizes = [v["name"] for v in group.get("optionValues", [])]
+
+    return {"colors": colors, "sizes": sizes}
 ```
 
 ### 리뷰
