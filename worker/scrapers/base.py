@@ -28,7 +28,9 @@ class BaseScraper:
     _semaphore = asyncio.Semaphore(1)
 
     # 무신사 봇 차단 감지 신호
-    _BLOCK_SIGNALS = ["captcha", "robot", "비정상적", "접근이 제한"]
+    # "robot"/"cloudflare" 단독 제외 — 정상 페이지에도 포함됨 (meta robots, CDN 참조)
+    # 실제 차단: captcha 직접 노출, 비정상 접근 메시지, cf challenge 페이지
+    _BLOCK_SIGNALS = ["captcha", "비정상적", "접근이 제한", "just a moment", "enable javascript and cookies"]
 
     # 공통 User-Agent (브라우저 UA 필수)
     DEFAULT_HEADERS = {
