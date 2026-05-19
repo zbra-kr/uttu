@@ -5,7 +5,8 @@
 --   신 API (client.musinsa.com/api/home/web/v5/pans/ranking/sections/199)
 --   age 파라미터명 변경: age=10/20/... → ageBand=AGE_BAND_20/...
 --   age_filter 컬럼에 ageBand 값 그대로 저장 (AGE_BAND_ALL 등)
---   조합 수: 189 (9×3×7) — gf×ageBand 모두 서버에서 실제 다른 결과 반환 확인
+--   조합 수: 273 (13×3×7) — gf×ageBand 모두 서버에서 실제 다른 결과 반환 확인
+--   카테고리 코드: TAB_OUTLINED 실측 (000/001/002/003/004/017/026/100/101/102/103/104/106)
 --   store_code: 향후 beauty/kids/player 확장 대비 — 현재는 'musinsa' 고정
 -- 조회: LATERAL JOIN 패턴 필수 (docs/skills/02-supabase.md 참고)
 -- 적용: SQL Editor 수동 실행 (자동 적용 금지)
@@ -44,7 +45,7 @@ CREATE INDEX ranking_top50_idx
 CREATE INDEX ranking_product_date_idx
   ON ranking_snapshots(product_id, snapshot_date DESC);
 
-COMMENT ON TABLE  ranking_snapshots              IS '무신사 상품 랭킹 스냅샷 — 189조합/일(9×3×7), LATERAL 조회 필수';
+COMMENT ON TABLE  ranking_snapshots              IS '무신사 상품 랭킹 스냅샷 — 273조합/일(13×3×7), LATERAL 조회 필수';
 COMMENT ON COLUMN ranking_snapshots.snapshot_date IS 'period=DAILY 기준 KST 날짜 (실시간 now 금지)';
 COMMENT ON COLUMN ranking_snapshots.store_code    IS '무신사 스토어 코드 — 향후 beauty/kids/player 확장 시 구분 키';
 COMMENT ON COLUMN ranking_snapshots.gender_filter IS 'A=전체, M=남성, F=여성';

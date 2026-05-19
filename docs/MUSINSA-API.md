@@ -39,7 +39,7 @@ sectionId = 199   (전체 스타일 통합 랭킹, 고정)
   ageBand      AGE_BAND_ALL / AGE_BAND_MINOR / AGE_BAND_20 / AGE_BAND_25 /
                AGE_BAND_30 / AGE_BAND_35 / AGE_BAND_40
 
-조합: 9 × 3 × 7 = 189개  /  ~102건/조합  /  예상 13분
+조합: 13 × 3 × 7 = 273개  /  ~102건/조합  /  예상 18분
 ```
 
 ### 2-2. 뷰티·키즈·플레이어 — sectionId 없는 방식
@@ -71,17 +71,23 @@ data.modules[type=="MULTICOLUMN"].items[]
 
 ### 카테고리 코드
 
+> 2026-05-19 ranking API TAB_OUTLINED 모듈 실측. 구 코드(004=신발, 005=가방 등) 전부 오류.
+
 | 코드 | 카테고리 |
 |---|---|
 | 000 | 전체 |
 | 001 | 상의 |
 | 002 | 아우터 |
 | 003 | 바지 |
-| 004 | 신발 |
-| 005 | 가방 |
-| 006 | 액세서리 |
-| 010 | 뷰티 |
-| 020 | 원피스/스커트 |
+| 004 | 가방 |
+| 017 | 스포츠/레저 |
+| 026 | 속옷/홈웨어 |
+| 100 | 원피스/스커트 |
+| 101 | 소품 |
+| 102 | 디지털/라이프 |
+| 103 | 신발 |
+| 104 | 뷰티 |
+| 106 | 키즈 |
 
 ---
 
@@ -105,7 +111,7 @@ GET https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/1054
   .title.onClick.apiUrl      → 브랜드 상품 목록 API (아래 참고)
   .title.onClick.eventLog.ga4.payload.brand_id → brand_slug
 
-조합: 상품 랭킹과 동일 — 9 × 3 × 7 = 189조합 (모두 다른 결과 반환)
+조합: 상품 랭킹과 동일 — 13 × 3 × 7 = 273조합 (모두 다른 결과 반환)
 ```
 
 실측 Top 10 (2026-05-19, category=000, gf=A, AGE_BAND_ALL, DAILY):
@@ -266,8 +272,8 @@ dart_financials  → companies
 
 | 테이블 | 행/일 | 누적 1년 |
 |---|---|---|
-| ranking_snapshots | ~19,278 (189×102) | ~7M |
-| brand_ranking_snapshots | ~37,800 (189×200) | ~14M |
+| ranking_snapshots | ~27,846 (273×102) | ~10M |
+| brand_ranking_snapshots | ~54,600 (273×200) | ~20M |
 | promotion_items | ~207 (7모듈×30) | ~75K |
 | promotions | 7 | ~2,500 |
 
@@ -295,3 +301,14 @@ dart_financials  → companies
 - **브랜드위크 브랜드 연결**: CAROUSEL_MODULAR_SNAPPING_DYNAMIC_TAB_BRAND 모듈 items의 brand_id → brands.slug 조인
 - **선착순특가 모니터링**: limitedOffer.remainingCount 실시간 추적 시 promotion_items 수집 빈도 높여야 (현재: 1회/일)
 - **DART 비상장사**: `audit_report_xml` 파싱 → 감사보고서 XBRL 구조 별도 확인 필요
+
+### 📋 조사 대기 (고도화 시 진행)
+
+| 항목 | 조사 목적 | 예상 테이블 |
+|---|---|---|
+| **무신사 스냅** | 스냅 1건에 태그된 상품 목록 수집. "랭킹 외 스타일링 노출" — 랭킹 진입 전 트렌드 선행 신호 감지 | `snap_features` |
+| **무신사 라이브** | 방송 1회 등장 상품 목록. "라이브 → 랭킹 스파이크" 인과 추적 | `live_features` |
+| **무신사 매거진** | 기사 1건 등장 상품 링크. "에디터 픽 → 매출" 영향력 측정 | `magazine_features` |
+
+> 세 가지 모두 공통 패턴: 콘텐츠 ID + 상품 목록 → products 연결 → ranking_snapshots 조인으로 "노출 후 랭킹 변화" 분석 가능.
+> API 엔드포인트·응답 구조 미확인 — 고도화 시 실측 조사 필요.

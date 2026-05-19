@@ -63,12 +63,17 @@ CATEGORY_CODES = {
     "상의":          "001",
     "아우터":        "002",
     "바지":          "003",
-    "신발":          "004",
-    "가방":          "005",
-    "액세서리":      "006",
-    "뷰티":          "010",
-    "원피스/스커트": "020",
+    "가방":          "004",
+    "스포츠/레저":   "017",
+    "속옷/홈웨어":   "026",
+    "원피스/스커트": "100",
+    "소품":          "101",
+    "디지털/라이프": "102",
+    "신발":          "103",
+    "뷰티":          "104",
+    "키즈":          "106",
 }
+# 2026-05-19 ranking API TAB_OUTLINED 실측. 구 코드(004=신발, 005=가방 등) 전부 오류였음.
 
 GENDER_FILTERS = ["A", "M", "F"]
 
@@ -91,7 +96,7 @@ def build_combinations() -> list[tuple]:
     ]
 
 RANKING_COMBINATIONS = build_combinations()
-assert len(RANKING_COMBINATIONS) == 189  # 9 × 3 × 7
+assert len(RANKING_COMBINATIONS) == 273  # 13 × 3 × 7
 ```
 
 ---
@@ -207,7 +212,7 @@ async def scrape_all_combinations(
     period: str = "DAILY",
 ) -> list[dict]:
     """
-    189개 조합 순차 수집.
+    273개 조합 순차 수집.
     예상 소요: 189 × 4초 ≈ 13분
     """
     import random, asyncio
