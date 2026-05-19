@@ -1,29 +1,34 @@
-# Environment variables
+# 환경변수 / 비밀 키 — 절대 커밋 금지
 .env
-.env.local
-.env.*.local
+.env.*
+.secret/
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Build outputs
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
 dist/
 build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Viewer
+node_modules/
 .next/
 out/
 
-# IDE
-.vscode/settings.json
-.idea/
-
-# Logs
+# Logs — 파일만 무시, 디렉토리 추적 허용
+logs/*.log
 *.log
-logs/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
