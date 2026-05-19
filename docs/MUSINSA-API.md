@@ -302,13 +302,126 @@ dart_financials  → companies
 - **선착순특가 모니터링**: limitedOffer.remainingCount 실시간 추적 시 promotion_items 수집 빈도 높여야 (현재: 1회/일)
 - **DART 비상장사**: `audit_report_xml` 파싱 → 감사보고서 XBRL 구조 별도 확인 필요
 
-### 📋 조사 대기 (고도화 시 진행)
+### 스냅·매거진·라이브 조사 결과 (2026-05-20 실측)
 
-| 항목 | 조사 목적 | 예상 테이블 |
-|---|---|---|
-| **무신사 스냅** | 스냅 1건에 태그된 상품 목록 수집. "랭킹 외 스타일링 노출" — 랭킹 진입 전 트렌드 선행 신호 감지 | `snap_features` |
-| **무신사 라이브** | 방송 1회 등장 상품 목록. "라이브 → 랭킹 스파이크" 인과 추적 | `live_features` |
-| **무신사 매거진** | 기사 1건 등장 상품 링크. "에디터 픽 → 매출" 영향력 측정 | `magazine_features` |
+---
 
-> 세 가지 모두 공통 패턴: 콘텐츠 ID + 상품 목록 → products 연결 → ranking_snapshots 조인으로 "노출 후 랭킹 변화" 분석 가능.
-> API 엔드포인트·응답 구조 미확인 — 고도화 시 실측 조사 필요.
+#### 무신사 스냅 ✅ API 확인
+
+```
+Base: https://content.musinsa.com
+인증: 불필요 (쿠키 없이 200 반환)
+
+# 스냅 목록
+GET /api2/content/snap/v1/snaps
+  ?page=1&pageSize=20&sort=LATEST|POPULAR
+  &contentType=USER_SNAP|CODISHOP_SNAP|MUSINSA_SNAP  (선택)
+
+응답:
+  data.list[]
+    .id                  → snap ID (snowflake)
+    .contentType         → USER_SNAP (일반유저) / CODISHOP_SNAP (코디샵) / MUSINSA_SNAP (공식)
+    .formatType          → POST (이미지) / SHORTS (숏폼 영상)
+    .createdAt           → 업로드 시각 ISO8601
+    .goods[]
+      .goodsNo           → 무신사 상품번호 ← products 테이블 연결 키
+      .goodsPlatform     → MUSINSA / SOLDOUT
+      .isMatched         → 상품 매칭 여부
+    .aggregations
+      .likeCount         → 좋아요 수
+      .viewCount         → 조회수
+      .commentCount      → 댓글 수
+      .goodsClickCount   → 상품 클릭 수
+    .model
+      .gender            → WOMEN / MEN
+      .height            → 키 (cm)
+      .weight            → 몸무게 (kg)
+    .tags[].name         → 해시태그
+    .labels[].id         → 스타일 라벨 ID
+
+# 스냅 상세
+GET /api2/content/snap/v1/snaps/{snapId}
+→ 동일 구조 (goods[] 포함)
+
+# 스냅에 태그된 상품 전체 + 상품 상세
+GET /api2/content/snap/v1/snap-goods?snapId={snapId}
+
+응답 data.list[]:
+  .goodsNo             → 무신사 상품번호
+  .goodsName           → 상품명
+  .brand.brandId       → 브랜드 slug
+  .brand.brandName     → 브랜드명
+  .price.normalPrice   → 정상가
+  .price.finalPrice    → 최종가
+  .price.discountRate  → 할인율 (%)
+  .saleState           → SALE / SOLD_OUT
+  .categories[]        → 카테고리 계층
+  .aggregations.snapCount → 이 상품이 등장한 총 스냅 수 ← 트렌드 선행 신호
+
+# 특정 상품이 등장한 스냅 목록
+GET /api2/content/snap/v1/snap-goods?goodsNo={goodsNo}
+```
+
+**수집 가치**: `snapCount` = 랭킹 진입 전 트렌드 선행 신호.
+상품이 스냅에 많이 등장할수록 조만간 랭킹 상승 가능성.
+
+---
+
+#### 무신사 매거진 ⚠️ 목록 API만 (상품 목록은 Playwright 필요)
+
+```
+Base: https://api.musinsa.com
+인증: 불필요
+
+# 매거진 모듈 (탭 목록)
+GET /api2/hm/web/v2/pans/contents/modules?storeCode=musinsa
+
+응답: data.modules[] (5개 섹션)
+  - 최근 매거진 (CAROUSEL_ONEROW_SNAPPING_DYNAMIC_TAB)
+  - 최근 쇼케이스
+  - BEST 매거진
+  - 스타일/코디
+  각 섹션 → tabs[].onClick.apiUrl 으로 탭별 아이템 조회
+
+# 탭별 기사 목록
+GET /api2/hm/web/v2/pans/contents/sections/{sectionId}/tab-items
+  ?storeCode=musinsa&gf=A&tabKey=0
+
+응답 data.items[]:
+  .id                   → 기사 ID (정수)
+  .info.title.text      → 기사 제목
+  .info.subTitle.text   → 요약
+  .info.category.text   → 카테고리 (트렌드/쇼핑, 브랜드 쇼케이스, 스타일/코디)
+  .info.brandInfo.brandName.text → 피처드 브랜드명
+  .info.releaseDateTime.dateTime → 발행일 ISO8601
+  .info.viewCount.text  → 조회수 (텍스트: "1.5만" 형태)
+  .info.commentCount.text → 댓글 수
+  .onClick.url          → https://www.musinsa.com/content/{id}
+
+제약:
+  기사 본문 + 태그된 상품 목록: SPA 렌더링 → Playwright 필요
+  현재 공개 API로는 기사 목록·메타데이터만 수집 가능
+```
+
+---
+
+#### 무신사 라이브 ❌ 독립 API 없음
+
+```
+조사 결과:
+  - www.musinsa.com/live      → 404
+  - live.musinsa.com          → 연결 거부 (서비스 없음)
+  - 메인 네비게이션에 Live 탭  → 없음 (추천/랭킹/세일/발매/콘텐츠만 존재)
+  - snap API formatType="SHORTS" 존재 → 숏폼 영상 기능은 스냅에 통합됨
+
+결론: 무신사 라이브 커머스(실시간 방송)는 현재 웹 공개 API 없음.
+      숏폼 영상(SHORTS)은 스냅 API의 formatType=SHORTS로 수집 가능.
+```
+
+---
+
+**세 가지 공통 분석 패턴** (스냅·매거진 모두):
+```
+콘텐츠 ID + 상품 목록 → products.musinsa_no 연결
+→ ranking_snapshots JOIN → "콘텐츠 노출 이후 랭킹 변화" 분석
+```
