@@ -59,7 +59,9 @@ GET https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/{sectionId}
   contentsId=             빈 문자열 필수
   period=DAILY            일별 집계 → "최근 1일" 필터 적용됨
   gf={gender}             성별 (A=전체, M=남성, F=여성) — 동작 확인
-  ❌ age 파라미터 제거됨 — 2026-05-19 기준 어떤 값도 효과 없음
+  ageBand={band}          연령대 — 파라미터명 변경됨 (구: age=10/20/25/30/35/40/A)
+                          AGE_BAND_ALL / AGE_BAND_MINOR / AGE_BAND_20 /
+                          AGE_BAND_25 / AGE_BAND_30 / AGE_BAND_35 / AGE_BAND_40
 
 응답에서 상품 파싱:
   data.modules[type=="MULTICOLUMN"].items[]
@@ -141,16 +143,21 @@ URL: https://www.musinsa.com/products/{musinsa_no}/reviews (또는 API)
 ```python
 CATEGORY_CODES = ["000","001","002","003","004","005","006","010","020"]
 GENDER_FILTERS = ["A", "M", "F"]
-AGE_FILTERS    = ["A", "10", "20", "25", "30", "35", "40"]
+AGE_BANDS = [
+    "AGE_BAND_ALL", "AGE_BAND_MINOR", "AGE_BAND_20",
+    "AGE_BAND_25",  "AGE_BAND_30",    "AGE_BAND_35", "AGE_BAND_40",
+]
+# 구 파라미터 age=A/10/20/25/30/35/40 → 신 파라미터 ageBand=AGE_BAND_ALL/MINOR/20/...
 
 COMBINATIONS = [
-    (cat, gf, "A")      # age는 항상 "A" (API에서 age 필터 제거됨)
-    for cat in CATEGORY_CODES
-    for gf  in GENDER_FILTERS
+    (cat, gf, age_band)
+    for cat      in CATEGORY_CODES
+    for gf       in GENDER_FILTERS
+    for age_band in AGE_BANDS
 ]
-# 9 × 3 = 27 조합 (이전: 9 × 3 × 7 = 189)
-# 27 × ~102건 = 2,754건/일
-# 예상 소요: 27 × 4초 ≈ 2분 (이전 13분)
+# 9 × 3 × 7 = 189 조합 (gf × ageBand 모두 서버에서 실제 다른 결과 반환 확인)
+# 189 × ~102건 = 19,278건/일
+# 예상 소요: 189 × 4초 ≈ 13분
 ```
 
 ---
