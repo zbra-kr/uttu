@@ -85,6 +85,39 @@ worker/.venv/bin/python3 -m worker.scrapers.dart_scraper --target all --years 1
 
 ---
 
+## 🟡 이상탐지 모듈
+
+> 테이블: `anomalies` / 스크래퍼: `worker/detectors/` / 스크립트: `scripts/run_detect.sh`
+
+### 상품기획 / 영업기획 (`module = 'product_planning'`)
+
+| anomaly_type | 설명 | 임계값 | 구현 |
+|---|---|---|---|
+| `rank_spike` | 경쟁 상품 순위 급등 | 전일 대비 +20위 이상 상승 & TOP50 진입 | ✅ `ranking_detector.py` |
+| `rank_drop_own` | 자사 상품 순위 이탈 | 전일 대비 -10위 이상 하락 | ✅ `ranking_detector.py` |
+| `new_entrant_top10` | 경쟁 상품 TOP10 신규 진입 | 오늘 TOP10, 어제 TOP20 밖 | ✅ `ranking_detector.py` |
+| `sold_out` | 랭킹 상품 품절 전환 | TOP50 내 is_sold_out 변경 | ✅ `ranking_detector.py` |
+| `promo_heavy_discount` | 비정상 고할인율 | promotion_items discount_rate ≥ 50% | ✅ `ranking_detector.py` |
+| `price_drop` | 가격 급락 | 전일 대비 final_price -10% 이상 | ✅ `ranking_detector.py` |
+
+### CS (`module = 'cs'`)
+
+| anomaly_type | 설명 | 임계값 | 구현 |
+|---|---|---|---|
+| `review_rating_drop` | 자사 상품 별점 급락 | 최근 7일 평균 < 전체 평균 - 0.3 | ✅ `review_detector.py` |
+| `review_negative_surge` | 부정 리뷰 급증 | 최근 7일 1~2점 비율 ≥ 30% | ✅ `review_detector.py` |
+| `review_count_surge` | 리뷰 폭증 (바이럴/이슈) | 오늘 리뷰 수 > 30일 일평균 × 3 | ✅ `review_detector.py` |
+
+### 재무팀 (`module = 'finance'`) — 추후 개발
+
+| anomaly_type | 설명 | 구현 |
+|---|---|---|
+| `dart_new_disclosure` | 경쟁사 신규 공시 | ❌ |
+| `financial_revenue_drop` | 매출 전년 대비 -30% | ❌ |
+| `financial_debt_ratio` | 부채비율 임계값 초과 | ❌ |
+
+---
+
 ## 🟡 수집 관련
 
 ### 브랜드 상세 수집 완료 확인
@@ -102,6 +135,15 @@ worker/.venv/bin/python3 -m worker.scrapers.dart_scraper --target all --years 1
 ---
 
 ## 🟢 Viewer 관련
+
+### 프로모션 페이지 — AI 노트 전환 (TO-BE)
+- **현재**: "요약" 섹션 — 이미 로드된 데이터로 문장 조합 (AI 호출 없음), live 뱃지 숨김
+- **전환 시**: 섹션명 "AI 노트"로 복원, `<span className="capsule"><span className="ico" /> live</span>` 뱃지 복원
+- **구현 방법 (선택)**
+  - Ollama (로컬, $0): `POST http://localhost:11434/api/generate` — `gemma4:e4b` 모델 이미 세팅됨
+  - Claude API (유료, 품질 높음): `claude-haiku-4-5-20251001` 권장 (비용 최소)
+- **연결 위치**: `viewer/src/app/(app)/promo/page.tsx` PromoHub 컴포넌트 내 요약 섹션
+- **API 라우트 필요**: `viewer/src/app/api/ai-promo-note/route.ts` (서버사이드 — API 키 보호)
 
 ### 재무 데이터 뷰 추가
 - `dart_financials` 수집됐으나 Viewer에 표시 안 됨
@@ -122,3 +164,6 @@ worker/.venv/bin/python3 -m worker.scrapers.dart_scraper --target all --years 1
 - [x] skip-detail 정책 적용 (111,081개 제외)
 - [x] Teams + Telegram 알림 시스템
 - [x] DART 스크래퍼 초기 버전 (B.CAVE 5개년, 더네이쳐홀딩스 3개년)
+- [x] 이상탐지 모듈 — product_planning (rank_spike/rank_drop_own/new_entrant_top10/sold_out/promo_heavy_discount/price_drop)
+- [x] 이상탐지 모듈 — CS (review_rating_drop/review_negative_surge/review_count_surge)
+- [x] anomalies 테이블 마이그레이션 (`00300_anomalies.sql`) + runner + run_detect.sh

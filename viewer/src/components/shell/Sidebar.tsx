@@ -5,6 +5,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcSettings, IcMore, IcChevL, IcChevR, IcChevD } from '../ui/icons';
 
+const ADMIN_EMAIL   = 'it@bcave.co.kr';
+const ADMIN_ONLY    = new Set(['snap', 'magazine', 'matching', 'reviews']);
+
 const ROUTES = [
   { id: 'home',         path: '/',             label: '홈',        Icon: IcHome,        section: 'main' },
   { id: 'ranking',      path: '/ranking',      label: '상품 랭킹',  Icon: IcRanking,     section: 'main' },
@@ -54,8 +57,9 @@ export default function Sidebar({ collapsed, onToggle, theme }: SidebarProps) {
   const [user, setUser] = React.useState<{ name: string; email: string; initials: string } | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
 
-  const isPeek = collapsed && hovering;
-  const show = !collapsed || hovering;
+  const isPeek  = collapsed && hovering;
+  const show    = !collapsed || hovering;
+  const isAdmin = user?.email === ADMIN_EMAIL;
 
   // 로그인 유저 정보
   React.useEffect(() => {
@@ -141,6 +145,21 @@ export default function Sidebar({ collapsed, onToggle, theme }: SidebarProps) {
           const isParent = GROUP_PARENTS.has(r.id);
           const isOpen   = open.has(r.id);
           if (isSub && !open.has(r.parent!)) return null;
+
+          const locked = ADMIN_ONLY.has(r.id) && !isAdmin;
+          if (locked) {
+            return (
+              <div key={r.id}
+                className={`sb-item${isSub ? ' sub' : ''}`}
+                title="준비 중 (개발 진행 중)"
+                style={{ cursor: 'not-allowed', userSelect: 'none', filter: 'blur(0.5px)', opacity: 0.35, pointerEvents: 'none' }}
+              >
+                <r.Icon size={isSub ? 13 : 16} />
+                {show && <span>{r.label}</span>}
+              </div>
+            );
+          }
+
           return (
             <div key={r.id} style={{ position: 'relative' }}>
               <Link

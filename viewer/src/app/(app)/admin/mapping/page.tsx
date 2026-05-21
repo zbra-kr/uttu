@@ -140,6 +140,10 @@ function MappingPanel({ company, onSaved }: { company: Company; onSaved: (id: st
         body: JSON.stringify({ corp_code: parsed, is_listed: isListed }),
       });
       const json = await res.json();
+      if (res.status === 409) {
+        setSaveError(`이미 '${json.existing_corp_name}'에 등록된 corp_code입니다. 해당 회사의 중복 레코드로 보입니다.`);
+        return;
+      }
       if (!res.ok) throw new Error(json.error ?? '저장 실패');
       onSaved(company.id);
     } catch (e: any) { setSaveError(e.message); }
@@ -152,6 +156,13 @@ function MappingPanel({ company, onSaved }: { company: Company; onSaved: (id: st
       : 'unknown'
     : null;
 
+  const [linkedBrands, setLinkedBrands] = React.useState<{ id: string; name: string }[]>([]);
+  React.useEffect(() => {
+    supabaseBrowser()
+      .from('brands').select('id, name').eq('company_id', company.id).order('name').limit(50)
+      .then(({ data }) => setLinkedBrands(data ?? []));
+  }, [company.id]);
+
   return (
     <div className="col-flex gap-14" style={{ height: '100%' }}>
       <div className="panel" style={{ background: 'var(--snk)' }}>
@@ -160,6 +171,16 @@ function MappingPanel({ company, onSaved }: { company: Company; onSaved: (id: st
           {company.dart_skip && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--f4)', fontWeight: 400, fontStyle: 'italic' }}>건너뜀 처리됨</span>}
         </div>
         <div className="mono" style={{ fontSize: 11, color: 'var(--f4)', marginTop: 2 }}>사업자번호 {company.business_number ?? '—'}</div>
+        {linkedBrands.length > 0 && (
+          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {linkedBrands.map(b => (
+              <span key={b.id} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10,
+                background: 'var(--bg)', border: '1px solid var(--bd)', color: 'var(--f3)' }}>
+                {b.name}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="row-flex gap-6">
@@ -683,15 +704,16 @@ function DartTab() {
 // 브랜드-회사 매핑 탭 (회사 기준)
 // ═══════════════════════════════════════════════════════════════════════════
 function BrandTab() {
-  const [companies, setCompanies]       = React.useState<CompanyListItem[]>([]);
-  const [total, setTotal]               = React.useState(0);
-  const [page, setPage]                 = React.useState(0);
-  const [search, setSearch]             = React.useState('');
-  const [debSearch, setDebSearch]       = React.useState('');
-  const [loading, setLoading]           = React.useState(true);
-  const [error, setError]               = React.useState('');
-  const [selected, setSelected]         = React.useState<CompanyListItem | null>(null);
-  const [showSkipped, setShowSkipped]   = React.useState(false);
+  const [companies, setCompanies]         = React.useState<CompanyListItem[]>([]);
+  const [total, setTotal]                 = React.useState(0);
+  const [page, setPage]                   = React.useState(0);
+  const [search, setSearch]               = React.useState('');
+  const [debSearch, setDebSearch]         = React.useState('');
+  const [loading, setLoading]             = React.useState(true);
+  const [error, setError]                 = React.useState('');
+  const [selected, setSelected]           = React.useState<CompanyListItem | null>(null);
+  const [showSkipped, setShowSkipped]     = React.useState(false);
+  const [hideAllConfirmed, setHideAllConfirmed] = React.useState(true);
 
   React.useEffect(() => {
     const t = setTimeout(() => { setDebSearch(search); setPage(0); }, 300);
@@ -701,6 +723,26 @@ function BrandTab() {
   const fetchCompanies = React.useCallback(async () => {
     setLoading(true); setError('');
     try {
+      let excludeIds: string[] | null = null;
+      if (hideAllConfirmed) {
+        // 연결된 브랜드가 있으면서 전부 confirmed/skipped인 회사만 제외
+        // 브랜드가 아예 없는 회사는 제외하지 않음(미완료 상태)
+        const [{ data: allPd }, { data: unfinPd }] = await Promise.all([
+          supabaseBrowser().from('brands').select('company_id').limit(5000),
+          supabaseBrowser()
+            .from('brands').select('company_id')
+            .eq('company_confirmed', false).eq('company_skip', false).limit(5000),
+        ]);
+        const allLinkedIds = new Set(
+          (allPd ?? []).map((b: any) => b.company_id as string).filter(Boolean)
+        );
+        const unfinishedIds = new Set(
+          (unfinPd ?? []).map((b: any) => b.company_id as string).filter(Boolean)
+        );
+        // 완료 = 연결 브랜드 있고, 미완료 브랜드 없음
+        excludeIds = [...allLinkedIds].filter(id => !unfinishedIds.has(id));
+      }
+
       let q = (supabaseBrowser()
         .from('companies')
         .select('id, corp_name, business_number', { count: 'exact' })
@@ -708,12 +750,15 @@ function BrandTab() {
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)) as any;
       if (!showSkipped) q = q.eq('dart_skip', false);
       if (debSearch.trim()) q = q.ilike('corp_name', `%${debSearch.trim()}%`);
+      if (excludeIds && excludeIds.length > 0) {
+        for (const id of excludeIds) q = q.neq('id', id);
+      }
       const { data, error: err, count } = await q;
       if (err) throw err;
       setCompanies(data ?? []); setTotal(count ?? 0);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
-  }, [page, debSearch, showSkipped]);
+  }, [page, debSearch, showSkipped, hideAllConfirmed]);
 
   React.useEffect(() => { fetchCompanies(); }, [fetchCompanies]);
 
@@ -728,6 +773,10 @@ function BrandTab() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="회사명 검색"
             style={{ background: 'none', border: 'none', outline: 'none', fontSize: 12, width: '100%', color: 'var(--f1)' }} />
         </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--f3)', cursor: 'pointer', userSelect: 'none' }}>
+          <input type="checkbox" checked={hideAllConfirmed} onChange={e => { setHideAllConfirmed(e.target.checked); setPage(0); }} style={{ cursor: 'pointer' }} />
+          미완료만 보기
+        </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--f3)', cursor: 'pointer', userSelect: 'none' }}>
           <input type="checkbox" checked={showSkipped} onChange={e => { setShowSkipped(e.target.checked); setPage(0); }} style={{ cursor: 'pointer' }} />
           건너뜀 포함 보기

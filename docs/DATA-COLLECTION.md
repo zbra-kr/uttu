@@ -6,11 +6,11 @@
 
 | 소스 | 구현 상태 | 테이블 수 |
 |---|---|---|
-| 무신사 API (httpx) — 경쟁사 데이터 | 완료 | 11개 |
-| 무신사 API (httpx) — 자사 브랜드 상품 전수 | 완료 | products (is_own=true) |
-| 자사 ERP (Snowflake) | 미구현 | 2개 |
-| DART OpenAPI | 미구현 | 2개 |
-| 무신사 리뷰 (Playwright) + LLM | 미구현 | 2개 |
+| 무신사 API (httpx) — 경쟁사 데이터 | ✅ 완료 | 11개 |
+| 무신사 API (httpx) — 자사 브랜드 상품 전수 | ✅ 완료 | products (is_own=true) |
+| 자사 ERP (Snowflake) | ❌ 미구현 | 2개 |
+| DART OpenAPI | ✅ 완료 (이름 매칭 실패 912개는 수동 등록 필요) | 2개 |
+| 무신사 리뷰 (httpx) | ✅ 수집 완료 (LLM 분석 미구현) | 2개 |
 
 ### 자사 브랜드 슬러그 & 상품 수 (2026-05-20 기준)
 
@@ -108,10 +108,22 @@ stub 형태: `{musinsa_no, name:"(stub)", is_own:false, detail_fetched_at:NULL}`
 | API | `www.musinsa.com/products/{musinsa_no}` (HTML 페이지) |
 | 파싱 | `window.__MSS__.product.state` JSON |
 | 수집 필드 | name, category, gender, season, fit/texture/elasticity/transparency/thickness, 각종 플래그(monopoly/outlet/drop 등), review_count, satisfaction_score, ranking_best_records |
-| 1회 처리 수 | 50개 (limit 파라미터) |
+| 1회 처리 수 | 50개 (기본값, `--limit` 파라미터로 변경 가능) |
 | 소요 시간 | ~1~2초/상품 |
 | 스크립트 | `scripts/run_product.sh` |
-| 권장 주기 | 매일 03:00 (랭킹·스냅·매거진 수집 후) |
+| 권장 주기 | 매일 04:00 (랭킹 수집 후) |
+
+**일간 루틴 모드 (`--today-ranking`)** (2026-05-22 결정)
+
+111,119개 보류 상품 전체 수집 대신, 오늘 랭킹 TOP50 이내 미수집 상품만 수집하는 방식으로 운영.
+
+```bash
+worker/.venv/bin/python3 -m worker.scrapers.musinsa_product --today-ranking --ranking-top-n 50
+```
+
+- `ranking_snapshots`에서 오늘 날짜 + `rank_position ≤ 50` 상품 목록 추출
+- 그 중 `detail_fetched_at IS NULL`인 상품만 처리
+- 보류 111k개는 건드리지 않음
 
 ---
 
@@ -175,6 +187,14 @@ stub 형태: `{musinsa_no, name:"(stub)", is_own:false, detail_fetched_at:NULL}`
 | upsert 기준 | promotion_id + musinsa_no + snapshot_date |
 | 스크립트 | `scripts/run_event.sh` |
 | 권장 주기 | 매일 02:00 |
+
+**상품 목록 변경 처리 방식**: upsert 키에 `snapshot_date` 포함 → 상품 목록이 바뀌어도 이전 상품은 삭제되지 않고 과거 `snapshot_date`로 누적 보존 (이력 추적 가능).
+
+Viewer 조회 시에는 각 프로모션의 `promotions.snapshot_date`와 일치하는 items만 필터링해 최신 상품 목록만 표시:
+```typescript
+// Viewer — promotion_items 조회 시
+.or(selPromos.map(p => `and(promotion_id.eq.${p.id},snapshot_date.eq.${p.snapshot_date})`).join(','))
+```
 
 ---
 
@@ -260,42 +280,81 @@ stub 형태: `{musinsa_no, name:"(stub)", is_own:false, detail_fetched_at:NULL}`
 
 ---
 
-### 14–15. dart_disclosures / dart_financials — DART (미구현)
+### 14–15. dart_disclosures / dart_financials — DART ✅
 
 | 항목 | 내용 |
 |---|---|
-| 소스 | DART OpenAPI |
-| 대상 | companies.business_number 기반 — 상장 49사 + 비상장 45사 예상 |
-| 구현 조건 | DART API 키 |
-| 수집 순서 | companies 수집 → business_number로 corp_code 조회 → 공시/재무 수집 |
+| 스크래퍼 | `worker/scrapers/dart_scraper.py` |
+| 소스 | DART OpenAPI (opendart.fss.or.kr) |
+| 수집 현황 | corp_code 확보 254개 / 1,195개, 공시 5,464건, 재무 523건 (2026-05-22 기준) |
+| 스크립트 | `worker/.venv/bin/python3 -m worker.scrapers.dart_scraper --target all --years 3` |
+| 권장 주기 | 매주 일요일 06:00 |
+
+**3단계 수집 흐름**
+
+| 단계 | 내용 |
+|---|---|
+| Step 1: corp_code 조회 | `corpCode.xml` ZIP 다운로드 → 회사명 매칭 → `company.json` API로 사업자번호 검증 → `companies.corp_code` 업데이트 |
+| Step 2: 공시 수집 | `list.json` API → `dart_disclosures` upsert (rcept_no 기준) |
+| Step 3: 재무 수집 | 상장사: `fnlttSinglAcnt.json` API / 비상장사: `dart-fss` 라이브러리로 감사보고서 HTML 파싱 |
+
+**이름 매칭 실패 처리**
+
+- 1,195개 중 912개 자동 매칭 실패 (개인사업자, 해외 브랜드, DART 미등록명, 사업자번호 불일치)
+- Viewer `/mapping` 페이지에서 담당자가 수동으로 corp_code 입력 (개발 예정)
+- 미매핑 회사 확인 쿼리:
+  ```sql
+  SELECT corp_name, business_number FROM companies
+  WHERE corp_code IS NULL AND dart_fetched_at IS NOT NULL ORDER BY corp_name;
+  ```
 
 ---
 
-### 16–17. reviews / review_analysis — 자사 리뷰 + LLM 분석 (미구현)
+### 16. reviews — 자사 리뷰 ✅
 
 | 항목 | 내용 |
 |---|---|
-| 소스 | `goods-detail.musinsa.com` (Playwright 세션 쿠키 필요) |
+| 스크래퍼 | `worker/scrapers/musinsa_review.py` |
+| 소스 | `goods-detail.musinsa.com` (httpx, 세션 쿠키 불필요) |
 | 대상 | 자사 브랜드(CO/LE/WA) 상품만 |
+| 수집 필드 | product_id, musinsa_no, rating, review_text, size_fit, color_comment, collected_at |
+| 수집 현황 | 31,494건 (2026-05-22 기준) |
 | 금지 | 닉네임, 사용자 ID 절대 수집·저장 금지 |
-| review_analysis | Ollama gemma4:e4b 로컬 LLM으로 요약 (비용 $0) |
-| 구현 조건 | Playwright 환경 + 무신사 로그인 세션 쿠키 |
+| upsert 기준 | product_id + (리뷰 고유 식별자) |
+| 스크립트 | `scripts/run_reviews.sh` |
+| 권장 주기 | 매일 03:00 |
+
+### 17. review_analysis — LLM 분석 ❌ (미구현)
+
+| 항목 | 내용 |
+|---|---|
+| 소스 | reviews 테이블 |
+| 분석 대상 | 저점(별점 1~2) 리뷰 문제점, 고점(별점 4~5) 리뷰 강점 |
+| 구현 예정 | Ollama gemma4:e4b 로컬 LLM으로 요약·감성분석 (비용 $0) |
+| 구현 조건 | Ollama 실행 환경 + gemma4:e4b 모델 로드 |
 
 ---
 
-## 일별 수집 스케줄 (권장)
+## 일별 수집 스케줄 (권장, 2026-05-22 확정)
 
 ```
-00:30  run_own_products.sh   # 자사 브랜드 상품 전수 (~7분, 신상품 즉시 반영)
-01:00  run_ranking.sh        # 상품 랭킹 273조합 (~20분)
-01:30  run_brand_ranking.sh  # 브랜드 랭킹 273조합 (~20분)
-02:00  run_event.sh          # 프로모션 (~1분)
-02:00  run_snap.sh           # 스냅 (~2분)
-02:30  run_magazine.sh       # 매거진 (~2분)
-03:00  run_product.sh        # stub 상품 상세 50개씩 (~4분, 반복 실행 권장)
+00:30  run_own_products.sh          # 자사 브랜드 상품 전수 (~7분, 신상품 즉시 반영)
+01:00  run_ranking.sh               # 상품 랭킹 273조합 (~20분)
+01:30  run_brand_ranking.sh         # 브랜드 랭킹 273조합 (~20분)
+02:00  run_event.sh                 # 프로모션 (~1분)
+02:00  run_snap.sh                  # 스냅 (~3분)
+02:30  run_magazine.sh              # 매거진 (~5분)
+03:00  run_reviews.sh               # 자사 리뷰 (~10분)
+04:00  musinsa_product --today-ranking --ranking-top-n 50   # 오늘 랭킹 TOP50 상세 (~5분)
+```
+
+**주간**
+```
+일요일 06:00  dart_scraper --target all --years 1   # DART 공시·재무 (~30분)
 ```
 
 > cron 등록은 직접 수동으로. `scripts/` 하위 쉘 스크립트를 crontab에 등록.
+> 상품 상세 111,119개 보류분 전체 수집은 별도 판단 후 결정.
 
 ---
 

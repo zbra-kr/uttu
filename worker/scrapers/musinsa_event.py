@@ -6,7 +6,7 @@ API: api.musinsa.com/api2/hm/web/v3/pans/sale/modules?storeCode=musinsa
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -93,15 +93,16 @@ class EventScraper(BaseScraper):
                 ignore_duplicates=True,
             ).execute()
 
-    def _get_promotion_id(self, musinsa_event_id: str) -> str | None:
-        result = (
+    def _get_today_promotion_id(self, musinsa_event_id: str, snapshot_date: str) -> str | None:
+        rows = (
             self.client.table("promotions")
             .select("id")
             .eq("musinsa_event_id", musinsa_event_id)
+            .eq("snapshot_date", snapshot_date)
             .limit(1)
             .execute()
+            .data or []
         )
-        rows = result.data or []
         return rows[0]["id"] if rows else None
 
     # ── 파싱 ─────────────────────────────────────────────────────────────────
@@ -168,15 +169,12 @@ class EventScraper(BaseScraper):
 
     async def run(self) -> None:
         snapshot_date = _kst_today()
+        yesterday = (datetime.now(KST).date() - timedelta(days=1)).isoformat()
         modules = await self._fetch_modules()
-        logger.info("promotions_fetched", modules=len(modules))
+        logger.info(f"promotions_fetched modules={len(modules)}")
 
         # 모든 모듈의 상품번호 수집 → stub 삽입
-        all_nos = [
-            str(item["id"])
-            for m in modules
-            for item in m.get("items", [])
-        ]
+        all_nos = [str(item["id"]) for m in modules for item in m.get("items", [])]
         unique_nos = list(dict.fromkeys(all_nos))
         id_map: dict[str, str] = {}
         if unique_nos:
@@ -186,19 +184,39 @@ class EventScraper(BaseScraper):
                 self._insert_stub_products(missing)
                 id_map = self._product_id_map(unique_nos)
 
+        collected_event_ids: list[str] = []
         total_items = 0
-        for module in modules:
-            # promotions upsert
-            promo_row = self._parse_promotion(module, snapshot_date)
-            self.client.table("promotions").upsert(
-                promo_row,
-                on_conflict="musinsa_event_id",
-            ).execute()
 
-            promotion_id = self._get_promotion_id(module["id"])
-            if not promotion_id:
-                logger.warning("promotion_id_not_found", event_id=module["id"])
-                continue
+        for module in modules:
+            musinsa_event_id = module["id"]
+            collected_event_ids.append(musinsa_event_id)
+            promo_data = self._parse_promotion(module, snapshot_date)
+
+            # 오늘 날짜 행 존재 여부 확인
+            existing = (
+                self.client.table("promotions")
+                .select("id")
+                .eq("musinsa_event_id", musinsa_event_id)
+                .eq("snapshot_date", snapshot_date)
+                .limit(1)
+                .execute()
+                .data or []
+            )
+
+            if existing:
+                # 오늘 이미 수집됨 → update
+                promotion_id = existing[0]["id"]
+                update_data = {k: v for k, v in promo_data.items()
+                               if k not in ("musinsa_event_id", "snapshot_date")}
+                self.client.table("promotions").update(update_data).eq("id", promotion_id).execute()
+            else:
+                # 새 날짜 → 기존 활성 행 종료 처리 후 신규 insert
+                self.client.table("promotions").update({"ended_at": yesterday}) \
+                    .eq("musinsa_event_id", musinsa_event_id) \
+                    .is_("ended_at", "null") \
+                    .execute()
+                result = self.client.table("promotions").insert(promo_data).execute()
+                promotion_id = result.data[0]["id"]
 
             items = module.get("items", [])
             if not items:
@@ -222,14 +240,27 @@ class EventScraper(BaseScraper):
                 ).execute()
 
             total_items += len(item_rows)
-            logger.info(
-                "promotion_module_done",
-                event_id=module["id"],
-                title=promo_row["title"],
-                items=len(item_rows),
-            )
+            logger.info(f"promotion_module_done event_id={musinsa_event_id} items={len(item_rows)}")
 
-        logger.info("promotions_run_done", total_modules=len(modules), total_items=total_items)
+        # 오늘 API에 없던 활성 프로모션 종료 처리
+        active_rows = (
+            self.client.table("promotions")
+            .select("id, musinsa_event_id")
+            .is_("ended_at", "null")
+            .lt("snapshot_date", snapshot_date)
+            .execute()
+            .data or []
+        )
+        collected_set = set(collected_event_ids)
+        to_end = [r["id"] for r in active_rows if r["musinsa_event_id"] not in collected_set]
+        if to_end:
+            for i in range(0, len(to_end), 200):
+                self.client.table("promotions").update({"ended_at": snapshot_date}) \
+                    .in_("id", to_end[i : i + 200]) \
+                    .execute()
+            logger.info(f"promotions_ended count={len(to_end)}")
+
+        logger.info(f"promotions_run_done total_modules={len(modules)} total_items={total_items}")
 
 
 async def main() -> None:

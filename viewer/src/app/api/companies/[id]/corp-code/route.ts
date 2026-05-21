@@ -28,6 +28,26 @@ export async function PATCH(
 
   try {
     const supabase = adminClient();
+
+    // corp_code 중복 사전 확인 — 다른 회사에 이미 등록된 경우 409 반환
+    const { data: existing } = await supabase
+      .from('companies')
+      .select('id, corp_name')
+      .eq('corp_code', corp_code)
+      .neq('id', id)
+      .maybeSingle();
+
+    if (existing) {
+      return NextResponse.json(
+        {
+          error: `이 corp_code(${corp_code})는 이미 '${existing.corp_name}'에 등록되어 있습니다.`,
+          existing_id: existing.id,
+          existing_corp_name: existing.corp_name,
+        },
+        { status: 409 },
+      );
+    }
+
     const { data, error } = await supabase
       .from('companies')
       .update({
