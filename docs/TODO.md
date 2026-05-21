@@ -4,6 +4,61 @@
 
 ---
 
+## 📅 일간 수집 루틴 (매일 수동 실행)
+
+> 결정일: 2026-05-22. 상품 상세 111k 보류분은 수집 제외, 오늘 랭킹 TOP50만 수집.
+
+### 실행 순서
+
+```bash
+# 1. 랭킹 (가장 먼저 — 이후 상품 상세의 기준이 됨)
+scripts/run_ranking.sh
+
+# 2. 프로모션 · 스냅 · 매거진 (랭킹과 독립, 동시 실행 가능)
+scripts/run_event.sh
+scripts/run_snap.sh
+scripts/run_magazine.sh
+
+# 3. 리뷰
+scripts/run_reviews.sh
+
+# 4. 상품 상세 — 오늘 랭킹 TOP50 이내 상품 중 미수집분만
+worker/.venv/bin/python3 -m worker.scrapers.musinsa_product --today-ranking --ranking-top-n 50
+
+# 5. DART (주 1회, 매주 일요일 권장)
+worker/.venv/bin/python3 -m worker.scrapers.dart_scraper --target all --years 1
+```
+
+### 예상 소요 시간
+
+| 항목 | 예상 |
+|---|---|
+| 랭킹 | ~2분 |
+| 프로모션 | ~1분 |
+| 스냅 | ~3분 |
+| 매거진 | ~5분 |
+| 리뷰 | ~10분 |
+| 상품 상세 (TOP50) | ~5분 (조합당 ~50개 × 27조합 = 최대 1,350개) |
+| **합계** | **~26분** |
+
+### cron 등록 예시 (정호철 직접 등록)
+
+```bash
+# 매일 02:00 — 랭킹·프로모션·스냅·매거진
+0 2 * * * cd /Users/macmini/projects/uttu && scripts/run_ranking.sh && scripts/run_event.sh && scripts/run_snap.sh && scripts/run_magazine.sh
+
+# 매일 03:00 — 리뷰
+0 3 * * * cd /Users/macmini/projects/uttu && scripts/run_reviews.sh
+
+# 매일 04:00 — 상품 상세 (오늘 랭킹 TOP50)
+0 4 * * * cd /Users/macmini/projects/uttu && worker/.venv/bin/python3 -m worker.scrapers.musinsa_product --today-ranking --ranking-top-n 50
+
+# 매주 일요일 06:00 — DART
+0 6 * * 0 cd /Users/macmini/projects/uttu && worker/.venv/bin/python3 -m worker.scrapers.dart_scraper --target all --years 1
+```
+
+---
+
 ## 🟡 DART 관련
 
 ### corp_code 수동 등록 기능

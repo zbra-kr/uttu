@@ -3,7 +3,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import { UttuMark, IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcSettings, IcMore, IcChevL, IcChevR, IcChevD } from '../ui/icons';
+import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcSettings, IcMore, IcChevL, IcChevR, IcChevD } from '../ui/icons';
 
 const ROUTES = [
   { id: 'home',         path: '/',             label: '홈',        Icon: IcHome,        section: 'main' },
@@ -35,6 +35,7 @@ const NAV_COUNTS: Record<string, number> = {
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  theme: string;
 }
 
 const GROUP_PARENTS = new Set(ROUTES.filter(r => r.parent).map(r => r.parent!));
@@ -45,7 +46,7 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export default function Sidebar({ collapsed, onToggle, theme }: SidebarProps) {
   const pathname = usePathname();
   const router   = useRouter();
   const [hovering, setHovering] = React.useState(false);
@@ -114,8 +115,15 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       onMouseLeave={() => setHovering(false)}
     >
       <div className="sb-brand">
-        {show && <UttuMark size={1.1} color="var(--hs)" />}
-        {show && <span className="sb-brand-text">b.cave</span>}
+        {show && (
+          <img
+            src={theme === 'dark'
+              ? '/images/uttu/svg/uttu-wordmark-white.svg'
+              : '/images/uttu/svg/uttu-wordmark.svg'}
+            alt="UTTU"
+            style={{ height: 22, objectFit: 'contain', objectPosition: 'left', flexShrink: 0 }}
+          />
+        )}
         <button
           className="toggle"
           onClick={onToggle}

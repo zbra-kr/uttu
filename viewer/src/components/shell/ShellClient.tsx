@@ -142,7 +142,7 @@ export default function ShellClient({ children }: { children: React.ReactNode })
   return (
     <>
       <div className="shell">
-        <Sidebar collapsed={sbCollapsed} onToggle={toggleSb} />
+        <Sidebar collapsed={sbCollapsed} onToggle={toggleSb} theme={theme} />
         <main className="main">
           <Topbar
             breadcrumb={breadcrumb}
@@ -152,7 +152,24 @@ export default function ShellClient({ children }: { children: React.ReactNode })
             onToggleAip={toggleAip}
             onOpenCmdk={() => setCmdkOpen(true)}
           />
-          <div className="main-body">{children}</div>
+          <div className="main-body">
+            {children}
+            <footer style={{
+              marginTop: 'auto', paddingTop: 28,
+              borderTop: '0.5px solid var(--bd)',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <img
+                src={theme === 'dark' ? '/images/bcave/logo-white.png' : '/images/bcave/logo.png'}
+                alt="B.CAVE"
+                style={{ height: 12, opacity: 0.35, objectFit: 'contain', display: 'block' }}
+                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+              />
+              <span style={{ fontSize: 10, color: 'var(--f4)', letterSpacing: '0.01em' }}>
+                ⓒ 2026 B.CAVE Corp. All rights reserved.
+              </span>
+            </footer>
+          </div>
         </main>
         <AiPanel open={aipOpen} onToggle={toggleAip} context={context} route={pathname} />
       </div>

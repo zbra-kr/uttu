@@ -168,31 +168,79 @@ class ProductScraper(BaseScraper):
 
     # ── 수집 루프 ────────────────────────────────────────────────────────────
 
-    async def run(self, limit: int = 50, own_only: bool = False) -> int:
-        """
-        detail_fetched_at IS NULL인 stub 상품부터 수집.
-        limit: 1회 실행당 최대 수집 수.
-        own_only: True면 is_own=True 상품만 수집 (자사 상품 우선 처리용).
-        """
-        # PostgREST 1,000행 캡 우회: 1,000개씩 페이지네이션
-        targets: list[dict] = []
+    def _get_today_ranking_ids(self, top_n: int = 50) -> list[str]:
+        """오늘 ranking_snapshots에서 rank_position <= top_n인 product_id 목록."""
+        today = datetime.now(KST).date().isoformat()
+        rows: list[dict] = []
         offset = 0
-        while len(targets) < limit:
-            batch_size = min(1000, limit - len(targets))
-            base_query = (
-                self.client.table("products")
-                .select("id, musinsa_no")
-                .is_("detail_fetched_at", "null")
-                .filter("labels", "not.cs", "{skip-detail}")
+        while True:
+            batch = (
+                self.client.table("ranking_snapshots")
+                .select("product_id")
+                .eq("snapshot_date", today)
+                .lte("rank_position", top_n)
+                .range(offset, offset + 999)
+                .execute()
+                .data or []
             )
-            if own_only:
-                base_query = base_query.eq("is_own", True)
-            rows = base_query.range(offset, offset + batch_size - 1).execute().data or []
-            targets.extend(rows)
-            if len(rows) < batch_size:
+            rows.extend(batch)
+            if len(batch) < 1000:
                 break
-            offset += batch_size
-        logger.info("product_detail_start", targets=len(targets))
+            offset += 1000
+        return list({r["product_id"] for r in rows})
+
+    async def run(
+        self,
+        limit: int = 50,
+        own_only: bool = False,
+        today_ranking: bool = False,
+        ranking_top_n: int = 50,
+    ) -> int:
+        """
+        detail_fetched_at IS NULL인 stub 상품 수집.
+        today_ranking=True면 오늘 랭킹 top_n 이내 상품만 수집 (111k 보류분 제외).
+        """
+        if today_ranking:
+            product_ids = self._get_today_ranking_ids(top_n=ranking_top_n)
+            if not product_ids:
+                logger.info("product_detail_today_ranking_empty")
+                return 0
+            logger.info("product_detail_today_ranking", candidates=len(product_ids))
+
+            # 청크 200개씩 쿼리 (PostgREST URL 오버플로 방지)
+            targets: list[dict] = []
+            for i in range(0, len(product_ids), 200):
+                chunk = product_ids[i:i + 200]
+                rows = (
+                    self.client.table("products")
+                    .select("id, musinsa_no")
+                    .in_("id", chunk)
+                    .is_("detail_fetched_at", "null")
+                    .execute()
+                    .data or []
+                )
+                targets.extend(rows)
+            logger.info("product_detail_start", targets=len(targets))
+        else:
+            # PostgREST 1,000행 캡 우회: 1,000개씩 페이지네이션
+            targets = []
+            offset = 0
+            while len(targets) < limit:
+                batch_size = min(1000, limit - len(targets))
+                base_query = (
+                    self.client.table("products")
+                    .select("id, musinsa_no")
+                    .is_("detail_fetched_at", "null")
+                    .filter("labels", "not.cs", "{skip-detail}")
+                )
+                if own_only:
+                    base_query = base_query.eq("is_own", True)
+                rows = base_query.range(offset, offset + batch_size - 1).execute().data or []
+                targets.extend(rows)
+                if len(rows) < batch_size:
+                    break
+                offset += batch_size
+            logger.info("product_detail_start", targets=len(targets))
 
         success = 0
         for row in targets:
@@ -240,10 +288,10 @@ class ProductScraper(BaseScraper):
         return success
 
 
-async def main(limit: int = 50, own_only: bool = False) -> None:
+async def main(limit: int = 50, own_only: bool = False, today_ranking: bool = False, ranking_top_n: int = 50) -> None:
     client = _supabase_client()
     scraper = ProductScraper(client)
-    await scraper.run(limit=limit, own_only=own_only)
+    await scraper.run(limit=limit, own_only=own_only, today_ranking=today_ranking, ranking_top_n=ranking_top_n)
 
 
 if __name__ == "__main__":
@@ -253,5 +301,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--own-only", action="store_true", help="자사 상품(is_own=True)만 수집")
+    parser.add_argument("--today-ranking", action="store_true", help="오늘 랭킹 top-n 상품만 수집 (보류분 111k 제외)")
+    parser.add_argument("--ranking-top-n", type=int, default=50, help="랭킹 몇 위까지 수집할지 (기본 50)")
     args = parser.parse_args()
-    asyncio.run(main(limit=args.limit, own_only=args.own_only))
+    asyncio.run(main(limit=args.limit, own_only=args.own_only, today_ranking=args.today_ranking, ranking_top_n=args.ranking_top_n))
