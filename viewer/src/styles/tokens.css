@@ -1,0 +1,81 @@
+/* UTTU · design tokens — verbatim from tone board (light + dark) */
+
+:root {
+  /* surface · border · fg (light) */
+  --bg:        oklch(97.5% 0.010 80);
+  --sur:       oklch(99%   0.005 80);
+  --rai:       #ffffff;
+  --snk:       oklch(95%   0.012 80);
+  --hov:       oklch(94%   0.012 80);
+  --bh:        oklch(92%   0.008 80);
+  --bs:        oklch(88%   0.010 80);
+  --bd:        oklch(82%   0.012 80);
+  --bst:       oklch(60%   0.012 80);
+
+  --f1:        oklch(20%   0.010 60);
+  --f2:        oklch(38%   0.010 60);
+  --f3:        oklch(52%   0.011 60);
+  --f4:        oklch(62%   0.010 60);
+
+  /* signal · severity */
+  --shb:       oklch(95%   0.04 35);
+  --shf:       oklch(42%   0.16 32);
+  --smb:       oklch(95%   0.04 80);
+  --smf:       oklch(42%   0.10 75);
+  --slb:       oklch(94%   0.025 145);
+  --slf:       oklch(38%   0.08 148);
+
+  /* trend · brand */
+  --tu:        oklch(46%   0.10 148);
+  --td:        oklch(50%   0.16 32);
+  --hs:        oklch(38%   0.14 25);
+  --hs-soft:   oklch(95%   0.04 30);
+
+  /* type */
+  --mono:      "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans:      "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --pixel:     "JetBrains Mono", ui-monospace, monospace;
+
+  /* layout */
+  --sb-w:      220px;
+  --aip-w:     340px;
+  --aip-w-collapsed: 40px;
+  --tb-h:      52px;
+  --r-1:       3px;
+  --r-2:       5px;
+  --r-3:       7px;
+  --r-4:       10px;
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg:        oklch(14%   0.006 70);
+  --sur:       oklch(17.5% 0.007 70);
+  --rai:       oklch(21%   0.008 70);
+  --snk:       oklch(11%   0.005 70);
+  --hov:       oklch(23%   0.009 70);
+  --bh:        oklch(22%   0.008 70);
+  --bs:        oklch(25%   0.009 70);
+  --bd:        oklch(32%   0.011 70);
+  --bst:       oklch(48%   0.012 70);
+
+  --f1:        oklch(95%   0.008 75);
+  --f2:        oklch(76%   0.008 75);
+  --f3:        oklch(58%   0.009 75);
+  --f4:        oklch(45%   0.008 75);
+
+  --shb:       oklch(24%   0.06 35);
+  --shf:       oklch(78%   0.11 38);
+  --smb:       oklch(24%   0.05 80);
+  --smf:       oklch(82%   0.10 82);
+  --slb:       oklch(22%   0.03 145);
+  --slf:       oklch(76%   0.07 148);
+
+  --tu:        oklch(72%   0.08 148);
+  --td:        oklch(70%   0.13 32);
+  --hs:        oklch(60%   0.11 25);
+  --hs-soft:   oklch(24%   0.06 30);
+
+  color-scheme: dark;
+}

@@ -32,15 +32,38 @@ class BaseScraper:
     # 실제 차단: captcha 직접 노출, 비정상 접근 메시지, cf challenge 페이지
     _BLOCK_SIGNALS = ["captcha", "비정상적", "접근이 제한", "just a moment", "enable javascript and cookies"]
 
-    # 공통 User-Agent (브라우저 UA 필수)
+    # JSON API 호출용 (XHR/fetch 요청처럼 보이게)
     DEFAULT_HEADERS = {
-        "Accept": "application/json, text/html, */*",
-        "Accept-Language": "ko-KR,ko;q=0.9",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://www.musinsa.com/",
         "User-Agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/124.0.0.0 Safari/537.36"
         ),
+        "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-site",
+    }
+
+    # HTML 페이지 직접 탐색용 (navigate 요청처럼 보이게)
+    PAGE_HEADERS = {
+        **DEFAULT_HEADERS,
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;"
+            "q=0.9,image/avif,image/webp,image/apng,*/*;"
+            "q=0.8,application/signed-exchange;v=b3;q=0.7"
+        ),
+        "Cache-Control": "max-age=0",
+        "Upgrade-Insecure-Requests": "1",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-user": "?1",
     }
 
     async def _sleep(self) -> None:

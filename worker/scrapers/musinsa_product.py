@@ -42,13 +42,8 @@ class ProductScraper(BaseScraper):
     # ── API 호출 ──────────────────────────────────────────────────────────────
 
     async def _fetch_product_html(self, musinsa_no: str) -> str | None:
-        headers = {
-            **self.DEFAULT_HEADERS,
-            "Referer": "https://www.musinsa.com/",
-        }
-
         async def _call() -> str:
-            async with httpx.AsyncClient(timeout=30, headers=headers) as http:
+            async with httpx.AsyncClient(timeout=30, headers=self.PAGE_HEADERS) as http:
                 resp = await http.get(PRODUCT_URL.format(musinsa_no=musinsa_no))
                 resp.raise_for_status()
                 self._check_bot_blocked(resp.text)
@@ -76,7 +71,7 @@ class ProductScraper(BaseScraper):
     @staticmethod
     def _extract_company(state: dict[str, Any]) -> dict[str, Any] | None:
         """state.company → companies 테이블 행. None이면 스킵."""
-        co = state.get("company", {})
+        co = state.get("company") or {}
         biz_no = co.get("businessNumber")
         corp_name = co.get("name")
         if not corp_name:
@@ -173,19 +168,29 @@ class ProductScraper(BaseScraper):
 
     # ── 수집 루프 ────────────────────────────────────────────────────────────
 
-    async def run(self, limit: int = 50) -> int:
+    async def run(self, limit: int = 50, own_only: bool = False) -> int:
         """
         detail_fetched_at IS NULL인 stub 상품부터 수집.
         limit: 1회 실행당 최대 수집 수.
+        own_only: True면 is_own=True 상품만 수집 (자사 상품 우선 처리용).
         """
-        result = (
-            self.client.table("products")
-            .select("id, musinsa_no")
-            .is_("detail_fetched_at", "null")
-            .limit(limit)
-            .execute()
-        )
-        targets = result.data or []
+        # PostgREST 1,000행 캡 우회: 1,000개씩 페이지네이션
+        targets: list[dict] = []
+        offset = 0
+        while len(targets) < limit:
+            batch_size = min(1000, limit - len(targets))
+            base_query = (
+                self.client.table("products")
+                .select("id, musinsa_no")
+                .is_("detail_fetched_at", "null")
+            )
+            if own_only:
+                base_query = base_query.eq("is_own", True)
+            rows = base_query.range(offset, offset + batch_size - 1).execute().data or []
+            targets.extend(rows)
+            if len(rows) < batch_size:
+                break
+            offset += batch_size
         logger.info("product_detail_start", targets=len(targets))
 
         success = 0
@@ -234,13 +239,18 @@ class ProductScraper(BaseScraper):
         return success
 
 
-async def main() -> None:
+async def main(limit: int = 50, own_only: bool = False) -> None:
     client = _supabase_client()
     scraper = ProductScraper(client)
-    await scraper.run(limit=50)
+    await scraper.run(limit=limit, own_only=own_only)
 
 
 if __name__ == "__main__":
     import asyncio
+    import argparse
 
-    asyncio.run(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--limit", type=int, default=50)
+    parser.add_argument("--own-only", action="store_true", help="자사 상품(is_own=True)만 수집")
+    args = parser.parse_args()
+    asyncio.run(main(limit=args.limit, own_only=args.own_only))
