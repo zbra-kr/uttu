@@ -87,16 +87,36 @@ class RankingScraper(BaseScraper):
                 id_map[row["musinsa_no"]] = row["id"]
         return id_map
 
-    def _insert_stub_products(self, musinsa_nos: list[str]) -> None:
+    def _insert_stub_products(self, musinsa_nos: list[str], thumb_map: dict[str, str] | None = None) -> None:
         if not musinsa_nos:
             return
-        stubs = [{"musinsa_no": no, "name": "(stub)", "is_own": False} for no in musinsa_nos]
+        stubs = [
+            {"musinsa_no": no, "name": "(stub)", "is_own": False,
+             **({"thumbnail_url": thumb_map[no]} if thumb_map and no in thumb_map else {})}
+            for no in musinsa_nos
+        ]
         for i in range(0, len(stubs), 500):
             self.client.table("products").upsert(
                 stubs[i : i + 500],
                 on_conflict="musinsa_no",
                 ignore_duplicates=True,
             ).execute()
+
+    def _patch_missing_thumbnails(self, thumb_map: dict[str, str]) -> None:
+        """기존 상품 중 thumbnail_url 없는 것만 업데이트."""
+        if not thumb_map:
+            return
+        result = (
+            self.client.table("products")
+            .select("id, musinsa_no")
+            .in_("musinsa_no", list(thumb_map.keys()))
+            .is_("thumbnail_url", "null")
+            .execute()
+        )
+        for row in result.data or []:
+            url = thumb_map.get(row["musinsa_no"])
+            if url:
+                self.client.table("products").update({"thumbnail_url": url}).eq("id", row["id"]).execute()
 
     # ── 파싱 ─────────────────────────────────────────────────────────────────
 
@@ -158,11 +178,17 @@ class RankingScraper(BaseScraper):
         # rank 없는 아이템(광고/추천 상품) 제외
         items = [item for item in items if item.get("image", {}).get("rank") is not None]
         musinsa_nos = [str(item["id"]) for item in items]
+        thumb_map = {
+            str(item["id"]): item["image"]["url"]
+            for item in items
+            if item.get("image", {}).get("url")
+        }
         id_map = self._product_id_map(musinsa_nos)
         missing = [no for no in musinsa_nos if no not in id_map]
         if missing:
-            self._insert_stub_products(missing)
+            self._insert_stub_products(missing, thumb_map=thumb_map)
             id_map = self._product_id_map(musinsa_nos)
+        self._patch_missing_thumbnails(thumb_map)
 
         rows = [
             self._parse_item(item, id_map[str(item["id"])], snapshot_date, category, gf, age_band)
@@ -176,6 +202,43 @@ class RankingScraper(BaseScraper):
                     rows[i : i + 500],
                     on_conflict="product_id,snapshot_date,store_code,category_code,gender_filter,age_filter",
                 ).execute()
+
+            # ── 브랜드 upsert + brand_id 백필 ───────────────────────────────
+            # 1단계: rows에서 slug → name 맵 빌드
+            brand_slugs: dict[str, str] = {}
+            for row in rows:
+                slug = row.get("brand_slug") or ""
+                if slug:
+                    brand_slugs.setdefault(slug, row.get("brand_name") or "")
+
+            # 2단계: brands upsert → brand_id_map 획득
+            brand_id_map: dict[str, str] = {}
+            if brand_slugs:
+                payloads = [{"slug": s, "name": n} for s, n in brand_slugs.items()]
+                for i in range(0, len(payloads), 500):
+                    self.client.table("brands").upsert(
+                        payloads[i : i + 500],
+                        on_conflict="slug",
+                        ignore_duplicates=True,
+                    ).execute()
+                res = self.client.table("brands").select("id, slug").in_("slug", list(brand_slugs)).execute()
+                brand_id_map = {r["slug"]: r["id"] for r in res.data or []}
+
+            # 3단계: brand_id NULL인 상품만 업데이트
+            if brand_id_map:
+                res = (
+                    self.client.table("products")
+                    .select("id, musinsa_no")
+                    .in_("musinsa_no", list(id_map.keys()))
+                    .is_("brand_id", "null")
+                    .execute()
+                )
+                mno_to_id = {r["musinsa_no"]: r["id"] for r in res.data or []}
+                for row in rows:
+                    pid = mno_to_id.get(row["musinsa_no"])
+                    bid = brand_id_map.get(row.get("brand_slug") or "")
+                    if pid and bid:
+                        self.client.table("products").update({"brand_id": bid}).eq("id", pid).execute()
 
         logger.info(
             "ranking_combo_done",

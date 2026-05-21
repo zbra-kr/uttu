@@ -81,6 +81,7 @@ export const IcLink = (p: IconProps) => <Icon {...p} d={<><path d="M6.5 9.5l3-3M
 export const IcMenu = (p: IconProps) => <Icon {...p} d={<><path d="M2 4h12M2 8h12M2 12h12"/></>} />;
 export const IcCalendar = (p: IconProps) => <Icon {...p} d={<><rect x="2.5" y="3.5" width="11" height="10"/><path d="M2.5 6.5h11M5 2v3M11 2v3"/></>} />;
 export const IcRanking = (p: IconProps) => <Icon {...p} d={<><path d="M2 13h2v-4h-2zM6 13h2v-7h-2zM10 13h2v-10h-2z"/></>} />;
+export const IcBrandRanking = (p: IconProps) => <Icon {...p} d={<><rect x="5.5" y="5" width="5" height="8"/><rect x="1.5" y="7.5" width="4" height="5.5"/><rect x="10.5" y="9" width="4" height="4"/><path d="M1 13.5h14"/></>} />;
 export const IcFlag = (p: IconProps) => <Icon {...p} d={<><path d="M3 2v12M3 3h9l-2 2.5L12 8H3"/></>} />;
 export const IcUser = (p: IconProps) => <Icon {...p} d={<><circle cx="8" cy="5.5" r="2.5"/><path d="M2.5 13.5C2.5 11 5 9 8 9s5.5 2 5.5 4.5"/></>} />;
 export const IcSnap = (p: IconProps) => <Icon {...p} d={<><rect x="2" y="4.5" width="12" height="8.5" rx="1"/><circle cx="8" cy="8.75" r="2.5"/><path d="M5.5 4.5l1-1.5h3l1 1.5"/></>} />;

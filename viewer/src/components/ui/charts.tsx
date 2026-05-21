@@ -1,5 +1,10 @@
 'use client';
 import React from 'react';
+import {
+  LineChart, Line as RLine, BarChart, Bar as RBar, LabelList,
+  XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer,
+} from 'recharts';
 
 interface SparkProps { w?: number; h?: number; up?: boolean; color?: string; style?: React.CSSProperties; }
 export const Spark = ({ w = 60, h = 18, up = true, color, style = {} }: SparkProps) => {
@@ -14,37 +19,47 @@ export const Spark = ({ w = 60, h = 18, up = true, color, style = {} }: SparkPro
   );
 };
 
-interface SeriesItem { points: number[]; color?: string; dashed?: boolean; }
-interface LineProps { h?: number; series: SeriesItem[]; yMin?: number; yMax?: number; style?: React.CSSProperties; fill?: boolean; dots?: boolean; accentIdx?: number; }
-export const Line = ({ h = 180, series, yMin = 0, yMax = 100, style = {}, fill = false, dots = true, accentIdx }: LineProps) => {
-  const vw = 400;
-  const norm = (v: number) => h - ((v - yMin) / (yMax - yMin)) * h;
+interface SeriesItem { points: number[]; color?: string; dashed?: boolean; label?: string; }
+interface LineProps { h?: number; series: SeriesItem[]; yMin?: number; yMax?: number; style?: React.CSSProperties; fill?: boolean; dots?: boolean; accentIdx?: number; labels?: string[]; reversed?: boolean; }
+export const Line = ({ h = 180, series, yMin, yMax, style = {}, dots = true, accentIdx, labels, reversed = false }: LineProps) => {
+  const len = Math.max(...series.map(s => s.points.length), 2);
+  const allPoints = series.flatMap(s => s.points);
+  const domainMin = yMin ?? Math.min(...allPoints);
+  const domainMax = yMax ?? Math.max(...allPoints);
+  const data = Array.from({ length: len }, (_, i) => {
+    const row: Record<string, number | string | null> = { i: labels?.[i] ?? i };
+    series.forEach((s, si) => { row[`s${si}`] = s.points[i] ?? null; });
+    return row;
+  });
+  const domain: [number | string, number | string] = reversed ? [domainMax, domainMin] : [domainMin, domainMax];
   return (
-    <svg viewBox={`0 0 ${vw} ${h}`} width="100%" height={h} preserveAspectRatio="none"
-      style={{ display: 'block', overflow: 'visible', ...style }}>
-      <line x1="0" y1={h - 0.5} x2={vw} y2={h - 0.5} stroke="var(--bs)" strokeWidth="1" />
-      {[0.25, 0.5, 0.75].map((g, i) => (
-        <line key={i} x1="0" y1={h * g} x2={vw} y2={h * g} stroke="var(--bs)" strokeWidth="0.5" strokeDasharray="3 4" />
-      ))}
-      {series.map((s, si) => {
-        const stepX = vw / (s.points.length - 1);
-        const d = s.points.map((p, i) => `${i === 0 ? 'M' : 'L'}${i * stepX},${norm(p)}`).join(' ');
-        const accent = accentIdx === si;
-        const color = s.color || (accent ? 'var(--hs)' : si === 0 ? 'var(--f1)' : si === 1 ? 'var(--f3)' : 'var(--bd)');
-        return (
-          <g key={si}>
-            {fill && <path d={`${d} L${vw},${h} L0,${h} Z`} fill={color} opacity="0.06" />}
-            <path d={d} fill="none" stroke={color} strokeWidth={accent ? 1.75 : 1.4}
-              strokeLinecap="round" strokeLinejoin="round"
-              strokeDasharray={s.dashed ? '4 4' : '0'}
-              vectorEffect="non-scaling-stroke" />
-            {dots && s.points.map((p, i) => (
-              <circle key={i} cx={i * stepX} cy={norm(p)} r={accent ? 2.2 : 1.6} fill={color} />
-            ))}
-          </g>
-        );
-      })}
-    </svg>
+    <div style={{ width: '100%', height: h, ...style }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 4" stroke="var(--bs)" vertical={false} />
+          <XAxis dataKey="i" hide={!labels} tick={{ fontSize: 9, fill: 'var(--f4)', fontFamily: 'var(--mono)' }} axisLine={false} tickLine={false} />
+          <YAxis domain={domain} hide reversed={reversed} />
+          <Tooltip
+            contentStyle={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' }}
+            labelStyle={{ color: 'var(--f3)' }}
+            itemStyle={{ color: 'var(--f1)' }}
+          />
+          {series.map((s, si) => {
+            const accent = accentIdx === si;
+            const color = s.color || (accent ? 'var(--hs)' : si === 0 ? 'var(--f1)' : si === 1 ? 'var(--f3)' : 'var(--bd)');
+            return (
+              <RLine key={si} dataKey={`s${si}`} name={s.label ?? `시리즈 ${si + 1}`}
+                stroke={color} strokeWidth={accent ? 1.75 : 1.4}
+                strokeDasharray={s.dashed ? '4 4' : undefined}
+                dot={dots ? { r: 2, fill: color, strokeWidth: 0 } : false}
+                activeDot={{ r: 3.5 }}
+                connectNulls
+              />
+            );
+          })}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 };
 
@@ -153,4 +168,43 @@ export const Stars = ({ rating, max = 5, size = 12 }: StarsProps) => (
       <span key={i} style={{ color: i < Math.round(rating) ? 'var(--hs)' : 'var(--bd)', fontSize: size, lineHeight: 1 }}>★</span>
     ))}
   </span>
+);
+
+const tooltipStyle = {
+  contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' },
+  labelStyle: { color: 'var(--f3)' },
+  itemStyle: { color: 'var(--f1)' },
+  cursor: { fill: 'var(--snk)' },
+};
+
+interface HorizBarsProps { data: { name: string; value: number }[]; color?: string; labelWidth?: number; rowH?: number; style?: React.CSSProperties; }
+export const HorizBars = ({ data, color = 'var(--hs)', labelWidth = 60, rowH = 22, style = {} }: HorizBarsProps) => (
+  <div style={{ width: '100%', height: data.length * rowH + 8, ...style }}>
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart layout="vertical" data={data} margin={{ top: 0, right: 32, left: 0, bottom: 0 }}>
+        <XAxis type="number" hide />
+        <YAxis type="category" dataKey="name" width={labelWidth}
+          tick={{ fontSize: 10, fill: 'var(--f3)', fontFamily: 'var(--mono)' }}
+          axisLine={false} tickLine={false} />
+        <Tooltip {...tooltipStyle} />
+        <RBar dataKey="value" name="SKU" fill={color} radius={[0, 2, 2, 0]} barSize={rowH - 8}>
+          <LabelList dataKey="value" position="right"
+            style={{ fontSize: 10, fill: 'var(--f2)', fontFamily: 'var(--mono)' }} />
+        </RBar>
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+);
+
+interface VertBarsProps { data: { name: string; value: number }[]; h?: number; color?: string; style?: React.CSSProperties; }
+export const VertBars = ({ data, h = 80, color = 'var(--hs)', style = {} }: VertBarsProps) => (
+  <div style={{ width: '100%', height: h, ...style }}>
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+        <XAxis dataKey="name" tick={{ fontSize: 9, fill: 'var(--f4)', fontFamily: 'var(--mono)' }} axisLine={false} tickLine={false} />
+        <Tooltip {...tooltipStyle} />
+        <RBar dataKey="value" name="상품수" fill={color} opacity={0.85} radius={[2, 2, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
 );

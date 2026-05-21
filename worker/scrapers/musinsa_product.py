@@ -183,6 +183,7 @@ class ProductScraper(BaseScraper):
                 self.client.table("products")
                 .select("id, musinsa_no")
                 .is_("detail_fetched_at", "null")
+                .filter("labels", "not.cs", "{skip-detail}")
             )
             if own_only:
                 base_query = base_query.eq("is_own", True)

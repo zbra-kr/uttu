@@ -10,15 +10,16 @@ const BREADCRUMBS: Record<string, string[]> = {
   '/':                ['홈', '대시보드'],
   '/ranking':         ['랭킹', '글로벌 상품'],
   '/anomaly':         ['이상탐지'],
-  '/company':         ['회사', '코웰패션'],
-  '/brand':           ['회사 · 코웰패션', '브랜드 · 커버낫'],
-  '/product':         ['브랜드 · 커버낫', '시그니처 로고 스웻셔츠'],
+  '/company':         ['회사'],
+  '/brand':           ['브랜드'],
+  '/product':         ['상품'],
   '/promo':           ['프로모션 / 세일'],
   '/snap':            ['스냅샷'],
   '/magazine':        ['매거진'],
   '/reviews':         ['리뷰'],
   '/matching':        ['자사 매칭'],
   '/admin':           ['매핑', '회사 ↔ 브랜드'],
+  '/admin/mapping':   ['매핑', 'Corp Code'],
   '/settings':        ['설정'],
   '/me':              ['마이페이지'],
 };
@@ -43,6 +44,8 @@ const CONTEXTS: Record<string, string[]> = {
 export default function ShellClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [theme, setTheme] = React.useState<string>('light');
+  const [productCrumb, setProductCrumb] = React.useState<{ brand: string; name: string } | null>(null);
+  const [brandCrumb,   setBrandCrumb]   = React.useState<{ company: string; name: string } | null>(null);
   const [aipOpen, setAipOpen] = React.useState(false);
   const [cmdkOpen, setCmdkOpen] = React.useState(false);
   const [sbCollapsed, setSbCollapsed] = React.useState(false);
@@ -69,6 +72,29 @@ export default function ShellClient({ children }: { children: React.ReactNode })
       setAipOpen(saved === 'open');
     } catch {}
   }, []);
+
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const { brand, name } = (e as CustomEvent).detail;
+      setProductCrumb((brand || name) ? { brand, name } : null);
+    };
+    window.addEventListener('uttu:crumb', handler);
+    return () => window.removeEventListener('uttu:crumb', handler);
+  }, []);
+
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const { company, name } = (e as CustomEvent).detail;
+      setBrandCrumb(name ? { company, name } : null);
+    };
+    window.addEventListener('uttu:brand-crumb', handler);
+    return () => window.removeEventListener('uttu:brand-crumb', handler);
+  }, []);
+
+  React.useEffect(() => {
+    if (pathname !== '/product') setProductCrumb(null);
+    if (pathname !== '/brand')   setBrandCrumb(null);
+  }, [pathname]);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -100,7 +126,17 @@ export default function ShellClient({ children }: { children: React.ReactNode })
     try { localStorage.setItem('uttu-sb-collapsed', String(next)); } catch {}
   };
 
-  const breadcrumb = BREADCRUMBS[pathname] || ['UTTU'];
+  // productCrumb.brand 가 회사명으로도 사용됨 (company 페이지)
+  const breadcrumb =
+    pathname === '/product' && productCrumb && productCrumb.name
+      ? [`브랜드 · ${productCrumb.brand}`, productCrumb.name]
+      : pathname === '/company' && productCrumb && productCrumb.brand
+        ? [`회사 · ${productCrumb.brand}`]
+        : pathname === '/brand' && brandCrumb
+          ? brandCrumb.company
+            ? [`회사 · ${brandCrumb.company}`, `브랜드 · ${brandCrumb.name}`]
+            : [`브랜드 · ${brandCrumb.name}`]
+          : (BREADCRUMBS[pathname] || ['UTTU']);
   const context = CONTEXTS[pathname] || ['UTTU'];
 
   return (
