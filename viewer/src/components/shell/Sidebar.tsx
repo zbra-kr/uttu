@@ -120,13 +120,15 @@ export default function Sidebar({ collapsed, onToggle, theme }: SidebarProps) {
     >
       <div className="sb-brand">
         {show && (
-          <img
-            src={theme === 'dark'
-              ? '/images/uttu/svg/uttu-wordmark-white.svg'
-              : '/images/uttu/svg/uttu-wordmark.svg'}
-            alt="UTTU"
-            style={{ height: 22, objectFit: 'contain', objectPosition: 'left', flexShrink: 0 }}
-          />
+          <Link href="/" style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <img
+              src={theme === 'dark'
+                ? '/images/uttu/svg/uttu-wordmark-white.svg'
+                : '/images/uttu/svg/uttu-wordmark.svg'}
+              alt="UTTU"
+              style={{ height: 22, objectFit: 'contain', objectPosition: 'left' }}
+            />
+          </Link>
         )}
         <button
           className="toggle"

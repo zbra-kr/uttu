@@ -77,7 +77,7 @@ export default function LoginPage() {
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '44px 0 36px' }}>
             <p style={{ fontSize: 11, color: 'var(--f4)', lineHeight: 1.7, margin: '0 0 22px', letterSpacing: '0.005em' }}>
-              수메르 신화에서 실을 엮어 옷을 만든 여신, UTTU.
+              고대 바빌론, 실을 엮어 옷을 만든 여신 Uttu.
             </p>
             <p style={{ fontSize: 19, fontWeight: 700, color: 'var(--f1)', lineHeight: 1.45, letterSpacing: '-0.025em', margin: '0 0 18px' }}>
               흩어진 데이터를<br />한 자리에 엮어<br />인사이트로 만듭니다.
