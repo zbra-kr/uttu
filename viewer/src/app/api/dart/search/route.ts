@@ -10,16 +10,34 @@ let cache: { entries: CorpEntry[]; at: number } | null = null;
 const TTL = 3_600_000; // 1시간
 
 async function extractZipFirstEntry(buf: Buffer): Promise<Buffer> {
-  const sig = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-  const idx = buf.indexOf(sig);
+  const localSig = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  const idx = buf.indexOf(localSig);
   if (idx < 0) throw new Error('ZIP signature not found');
 
+  const flags   = buf.readUInt16LE(idx + 6);
   const method  = buf.readUInt16LE(idx + 8);
-  const compSz  = buf.readUInt32LE(idx + 18);
+  let   compSz  = buf.readUInt32LE(idx + 18);
   const fnLen   = buf.readUInt16LE(idx + 26);
   const exLen   = buf.readUInt16LE(idx + 28);
   const dataOff = idx + 30 + fnLen + exLen;
-  const data    = buf.subarray(dataOff, dataOff + compSz);
+
+  // streaming ZIP (flags bit 3): compSz=0 in local header → read from Central Directory
+  if ((flags & 0x0008) !== 0 && compSz === 0) {
+    const cdSig  = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+    const cdIdx  = buf.indexOf(cdSig);
+    if (cdIdx >= 0) {
+      compSz = buf.readUInt32LE(cdIdx + 20);
+    } else {
+      // fallback: EOCD offset gives us where central dir starts
+      const eocdSig = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+      const eocdIdx = buf.lastIndexOf(eocdSig);
+      if (eocdIdx >= 0) compSz = buf.readUInt32LE(eocdIdx + 16) - dataOff;
+    }
+  }
+
+  if (compSz === 0) throw new Error('ZIP: compressed size could not be determined');
+
+  const data = buf.subarray(dataOff, dataOff + compSz);
 
   if (method === 0) return data;
   if (method === 8) return inflateRawAsync(data);
@@ -46,9 +64,17 @@ async function getAll(): Promise<CorpEntry[]> {
   const key = process.env.DART_API_KEY;
   if (!key) throw new Error('DART_API_KEY not configured');
 
-  const res = await fetch(`https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key=${key}`, {
-    next: { revalidate: 3600 },
-  });
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), 20_000);
+  let res: Response;
+  try {
+    res = await fetch(`https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key=${key}`, {
+      signal: ctrl.signal,
+      cache: 'no-store',
+    });
+  } finally {
+    clearTimeout(tid);
+  }
   if (!res.ok) throw new Error(`DART API ${res.status}`);
 
   const buf    = Buffer.from(await res.arrayBuffer());

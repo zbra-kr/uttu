@@ -30,7 +30,9 @@ class BaseScraper:
 
     def _check_bot_blocked(self, response_text: str):
         """봇 차단 감지 — 감지 시 BotBlockedError raise"""
-        blocked_signals = ["captcha", "robot", "비정상적", "접근이 제한"]
+        # ⚠️ "robot"·"cloudflare" 제외 — 정상 HTML에 포함됨
+        blocked_signals = ["captcha", "비정상적", "접근이 제한",
+                           "just a moment", "enable javascript and cookies"]
         if any(s in response_text.lower() for s in blocked_signals):
             raise BotBlockedError(f"Bot blocked detected")
 ```
@@ -327,6 +329,121 @@ URL: https://www.musinsa.com/products/{musinsa_no}/reviews (또는 API)
 수집 금지:
   닉네임 (개인정보)
   사용자 ID (개인정보)
+```
+
+---
+
+### 스냅 랭킹 API (2026-05-21 확인)
+
+```
+GET https://content.musinsa.com/api2/content/snap/v1/snap-rankings
+
+파라미터:
+  filter={style}    ← 핵심. 스타일 필터 — ALL | CASUAL | STREET | MINIMAL | GIRLISH | ROMANTIC | CHIC
+                      ⚠️ style= / styleType= / labelId= 등 다른 파라미터명 전부 무시됨. filter= 만 동작.
+  gender={gender}   성별 — ALL | MEN | WOMEN
+  period={period}   집계 기간 — DAILY | WEEKLY | MONTHLY
+  page={n}          0-based 페이지 (서버가 pageSize=20 이상 무시 → 50개 수집 시 3 페이지 필요)
+  pageSize=20       20 고정 (더 크게 줘도 20개만 반환)
+
+응답 구조:
+  data.content[]              ← 스냅 목록
+    .snapId                   → snap_id (TEXT PK)
+    .contentType              → USER_SNAP | BRAND_SNAP | CODISHOP_SNAP
+    .medias[0].path           → thumbnail_url (없으면 .thumbnailUrl 폴백)
+    .contentText              → content_text
+    .likeCount / .viewCount / .scrapCount / .goodsClickCount / .commentCount / .clickCount
+    .createdBy.gender         → model_gender (WOMEN | MEN | null)
+    .createdBy.profilePhysical.height / .weight / .skinTone → model_height / model_weight / model_skin_tone
+    .publishedAt              → published_at
+    .hashTags[]               → hashtags (문자열 배열)
+    .styleLabelIds[]          → style_label_ids (정수 배열)
+    .rankingInfo.rank         → rank_position
+    .rankingInfo.previousRank → prev_rank_position (null = NEW)
+    .rankingInfo.highlight    → highlight (NEW | MOST_LIKED 등)
+
+  data.totalElements          → 전체 수 (페이지 계산용)
+
+수집 전략:
+  SNAP_STYLE_FILTERS = ["ALL", "CASUAL", "STREET", "MINIMAL", "GIRLISH", "ROMANTIC", "CHIC"]
+  GENDER_FILTERS = ["ALL", "MEN", "WOMEN"]  ← ALL만 수집, 성별 조합 현재 미사용
+  PERIOD = "DAILY"
+  목표: 스타일별 50개 → 7 styles × ceil(50/20) = 21 페이지
+  하루 총: 7 × 50 = 350건 → snap_rankings 에 style_filter 컬럼으로 구분
+
+upsert 키: snapshot_date, snap_id, style_filter, gender_filter, ranking_period
+```
+
+```python
+SNAP_RANKING_BASE = "https://content.musinsa.com/api2/content/snap/v1/snap-rankings"
+PAGE_SIZE = 20
+
+async def _fetch_rankings_page(self, page: int, style: str = "ALL", gender: str = "ALL") -> dict:
+    resp = await self._client.get(
+        SNAP_RANKING_BASE,
+        params={"filter": style, "gender": gender, "period": "DAILY",
+                "page": page, "pageSize": PAGE_SIZE},
+    )
+    resp.raise_for_status()
+    return resp.json()
+```
+
+---
+
+### 스냅 프로필 랭킹 API (2026-05-21 확인)
+
+```
+GET https://content.musinsa.com/api2/content/snap/v1/profile-rankings/{profileType}/{period}
+
+  profileType: USER | BRAND
+               ⚠️ MEMBER → HTTP 404 "존재하지 않는 프로필 타입". 반드시 USER 사용.
+  period:      DAILY
+
+파라미터:
+  page={n}        0-based
+  pageSize=20     20 고정 (더 크게 줘도 무시)
+
+응답 구조:
+  data.content[]                  ← 프로필 목록
+    .id                           → profile_id
+    .profileType                  → USER | BRAND
+    .nickname
+    .bio
+    .profileImageUrl
+    .followerCount                → follower_count
+    .rankingInfo.rank             → rank_position
+    .rankingInfo.previousRank     → prev_rank_position (null = NEW)
+    .rankingInfo.highlight        → highlight
+
+    .snaps[]                      ← 각 프로필에 내장된 최근 스냅 (최대 10개)
+      .snapId / .contentType / .medias / .publishedAt / 등
+      .goods[].brand.brandId      → BRAND 프로필의 brand_code 추출 경로
+
+  data.totalElements
+
+수집 전략:
+  PROFILE_TYPES = ["USER", "BRAND"]
+  PROFILE_RANKING_MAX = 30 → 2 페이지 (20+10)
+  embedded snaps: 프로필당 최대 10개 → snap_profile_snaps 에 저장 (추가 API 호출 없음)
+  brand_code: snaps[0].goods[0].brand.brandId (BRAND 타입만)
+  키/몸무게/팔로잉수/게시물수: /profiles/{id} 상세 API 필요 → 현재 미수집, DB 기본값 0/null
+
+upsert 키:
+  snap_profiles: id (TEXT PK, ON CONFLICT DO UPDATE)
+  snap_profile_rankings: snapshot_date, profile_id, ranking_period
+  snap_profile_snaps: snapshot_date, profile_id, snap_id
+```
+
+```python
+PROFILE_RANKING_BASE = "https://content.musinsa.com/api2/content/snap/v1/profile-rankings"
+
+async def _fetch_profile_rankings_page(self, profile_type: str, page: int, period: str = "DAILY") -> dict:
+    resp = await self._client.get(
+        f"{PROFILE_RANKING_BASE}/{profile_type}/{period}",
+        params={"page": page, "pageSize": PAGE_SIZE},
+    )
+    resp.raise_for_status()
+    return resp.json()
 ```
 
 ---

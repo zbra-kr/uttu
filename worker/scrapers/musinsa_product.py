@@ -88,14 +88,14 @@ class ProductScraper(BaseScraper):
 
     @staticmethod
     def _parse_product(state: dict[str, Any]) -> dict[str, Any]:
-        cat = state.get("category", {})
-        review = state.get("goodsReview", {})
+        cat = state.get("category") or {}
+        review = state.get("goodsReview") or {}
         sex_code = state.get("sexCode", 0)
         gender = {2: "M", 4: "F", 6: "U"}.get(sex_code, "U")
 
         materials = {}
         seasons_list: list[str] = []
-        for mat in state.get("goodsMaterial", {}).get("materials", []):
+        for mat in (state.get("goodsMaterial") or {}).get("materials", []):
             if mat["name"] == "계절":
                 seasons_list = [i["name"] for i in mat.get("items", []) if i.get("isSelected")]
             else:
@@ -136,7 +136,7 @@ class ProductScraper(BaseScraper):
             "labels": [lb["code"] for lb in state.get("labels", [])],
             "review_count": review.get("totalCount", 0),
             "satisfaction_score": review.get("satisfactionScore") or None,
-            "ranking_best_records": state.get("rankingRecord", {}).get("rankingRecordsTop", []),
+            "ranking_best_records": (state.get("rankingRecord") or {}).get("rankingRecordsTop", []),
             "detail_fetched_at": datetime.now(KST).isoformat(),
         }
 
@@ -153,7 +153,7 @@ class ProductScraper(BaseScraper):
         return rows[0]["id"] if rows else None
 
     def _link_brand_to_company(self, brand_slug: str, company_id: str) -> None:
-        self.client.table("brands").update({"company_id": company_id}).eq("slug", brand_slug).execute()
+        self.client.table("brands").update({"company_id": company_id}).eq("slug", brand_slug).eq("company_confirmed", False).execute()
 
     def _get_brand_id(self, brand_slug: str) -> str | None:
         result = (
@@ -167,6 +167,44 @@ class ProductScraper(BaseScraper):
         return rows[0]["id"] if rows else None
 
     # ── 수집 루프 ────────────────────────────────────────────────────────────
+
+    def _get_snap_product_ids(self) -> list[str]:
+        """snap_products 에 연결된 products.id 중 detail_fetched_at IS NULL 목록."""
+        # 1) snap_products 의 고유 musinsa_no 수집
+        snap_nos: set[str] = set()
+        offset = 0
+        while True:
+            batch = (
+                self.client.table("snap_products")
+                .select("musinsa_no")
+                .not_.is_("musinsa_no", "null")
+                .range(offset, offset + 999)
+                .execute()
+                .data or []
+            )
+            snap_nos.update(r["musinsa_no"] for r in batch if r.get("musinsa_no"))
+            if len(batch) < 1000:
+                break
+            offset += 1000
+
+        if not snap_nos:
+            return []
+
+        # 2) 해당 musinsa_no 중 detail_fetched_at IS NULL 인 products.id 수집
+        nos_list = list(snap_nos)
+        product_ids: list[str] = []
+        for i in range(0, len(nos_list), 200):
+            chunk = nos_list[i : i + 200]
+            rows = (
+                self.client.table("products")
+                .select("id")
+                .in_("musinsa_no", chunk)
+                .is_("detail_fetched_at", "null")
+                .execute()
+                .data or []
+            )
+            product_ids.extend(r["id"] for r in rows)
+        return product_ids
 
     def _get_today_ranking_ids(self, top_n: int = 50) -> list[str]:
         """오늘 ranking_snapshots에서 rank_position <= top_n인 product_id 목록."""
@@ -195,12 +233,33 @@ class ProductScraper(BaseScraper):
         own_only: bool = False,
         today_ranking: bool = False,
         ranking_top_n: int = 50,
+        snap_only: bool = False,
     ) -> int:
         """
         detail_fetched_at IS NULL인 stub 상품 수집.
         today_ranking=True면 오늘 랭킹 top_n 이내 상품만 수집 (111k 보류분 제외).
+        snap_only=True면 snap_products 에 연결된 상품만 우선 수집.
         """
-        if today_ranking:
+        if snap_only:
+            product_ids = self._get_snap_product_ids()
+            if not product_ids:
+                logger.info("product_detail_snap_only_empty")
+                return 0
+            logger.info("product_detail_snap_only", candidates=len(product_ids))
+            targets: list[dict] = []
+            for i in range(0, len(product_ids), 200):
+                chunk = product_ids[i : i + 200]
+                rows = (
+                    self.client.table("products")
+                    .select("id, musinsa_no")
+                    .in_("id", chunk)
+                    .is_("detail_fetched_at", "null")
+                    .execute()
+                    .data or []
+                )
+                targets.extend(rows)
+            logger.info("product_detail_start", targets=len(targets))
+        elif today_ranking:
             product_ids = self._get_today_ranking_ids(top_n=ranking_top_n)
             if not product_ids:
                 logger.info("product_detail_today_ranking_empty")
@@ -288,10 +347,10 @@ class ProductScraper(BaseScraper):
         return success
 
 
-async def main(limit: int = 50, own_only: bool = False, today_ranking: bool = False, ranking_top_n: int = 50) -> None:
+async def main(limit: int = 50, own_only: bool = False, today_ranking: bool = False, ranking_top_n: int = 50, snap_only: bool = False) -> None:
     client = _supabase_client()
     scraper = ProductScraper(client)
-    await scraper.run(limit=limit, own_only=own_only, today_ranking=today_ranking, ranking_top_n=ranking_top_n)
+    await scraper.run(limit=limit, own_only=own_only, today_ranking=today_ranking, ranking_top_n=ranking_top_n, snap_only=snap_only)
 
 
 if __name__ == "__main__":
@@ -303,5 +362,6 @@ if __name__ == "__main__":
     parser.add_argument("--own-only", action="store_true", help="자사 상품(is_own=True)만 수집")
     parser.add_argument("--today-ranking", action="store_true", help="오늘 랭킹 top-n 상품만 수집 (보류분 111k 제외)")
     parser.add_argument("--ranking-top-n", type=int, default=50, help="랭킹 몇 위까지 수집할지 (기본 50)")
+    parser.add_argument("--snap-only", action="store_true", help="snap_products 연결 상품만 우선 수집 (111k 보류분 제외)")
     args = parser.parse_args()
-    asyncio.run(main(limit=args.limit, own_only=args.own_only, today_ranking=args.today_ranking, ranking_top_n=args.ranking_top_n))
+    asyncio.run(main(limit=args.limit, own_only=args.own_only, today_ranking=args.today_ranking, ranking_top_n=args.ranking_top_n, snap_only=args.snap_only))

@@ -104,7 +104,10 @@ function MappingPanel({ company, onSaved }: { company: Company; onSaved: (id: st
     setSearchLoading(true); setSearchError(''); setCandidates([]);
     try {
       const res  = await fetch(`/api/dart/search?q=${encodeURIComponent(searchQ.trim())}`);
-      const json = await res.json();
+      const text = await res.text();
+      if (!text) throw new Error('서버 응답이 비어 있습니다. DART_API_KEY 설정을 확인하거나 잠시 후 다시 시도하세요.');
+      let json: any;
+      try { json = JSON.parse(text); } catch { throw new Error(`응답 파싱 오류 (HTTP ${res.status})`); }
       if (!res.ok) throw new Error(json.error ?? '검색 실패');
       setCandidates(json.results ?? []);
     } catch (e: any) { setSearchError(e.message); }
@@ -273,6 +276,7 @@ function MappingPanel({ company, onSaved }: { company: Company; onSaved: (id: st
 function CompanyBrandPanel({ company }: { company: CompanyListItem }) {
   const [brands, setBrands]         = React.useState<LinkedBrand[]>([]);
   const [loading, setLoading]       = React.useState(true);
+  const [dartCount, setDartCount]   = React.useState<number | null>(null);
   const [checkedIds, setCheckedIds] = React.useState<Set<string>>(new Set());
   const [addQ, setAddQ]             = React.useState('');
   const [addResults, setAddResults] = React.useState<AddBrandOption[]>([]);
@@ -298,6 +302,15 @@ function CompanyBrandPanel({ company }: { company: CompanyListItem }) {
     setCheckedIds(new Set()); setAddQ(''); setAddResults([]);
   }, [fetchBrands]);
 
+  React.useEffect(() => {
+    setDartCount(null);
+    supabaseBrowser()
+      .from('dart_financials')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', company.id)
+      .then(({ count }) => setDartCount(count ?? 0));
+  }, [company.id]);
+
   // 브랜드 추가 검색 (현재 회사 제외)
   React.useEffect(() => {
     if (!addQ.trim()) { setAddResults([]); return; }
@@ -309,7 +322,7 @@ function CompanyBrandPanel({ company }: { company: CompanyListItem }) {
         .select('id, name, name_eng, slug, company_id, companies(corp_name)')
         .or(`name.ilike.%${q}%,slug.ilike.%${q}%`)
         .not('detail_fetched_at', 'is', null)
-        .neq('company_id', company.id)
+        .or(`company_id.neq.${company.id},company_id.is.null`)
         .order('name')
         .limit(15) as any);
       setAddResults(data ?? []);
@@ -404,7 +417,16 @@ function CompanyBrandPanel({ company }: { company: CompanyListItem }) {
       <div className="panel" style={{ background: 'var(--snk)' }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--f1)' }}>{company.corp_name}</div>
         {company.business_number && <div className="mono" style={{ fontSize: 11, color: 'var(--f4)', marginTop: 2 }}>사업자번호 {company.business_number}</div>}
-        {!loading && <div style={{ fontSize: 11, color: 'var(--f4)', marginTop: 2 }}>{brands.length}개 브랜드 연결됨</div>}
+        {!loading && (
+          <div style={{ fontSize: 11, color: 'var(--f4)', marginTop: 2 }}>
+            {brands.length}개 브랜드 연결됨
+            {dartCount !== null && (
+              <span style={{ marginLeft: 8, color: dartCount > 0 ? 'var(--slf)' : 'var(--f4)' }}>
+                · {dartCount > 0 ? `${dartCount}개년 재무정보 수집됨` : 'DART 미수집'}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 연결된 브랜드 목록 */}
@@ -537,7 +559,6 @@ function DartTab() {
       let q = supabaseBrowser()
         .from('companies')
         .select('id, corp_name, business_number, dart_skip', { count: 'exact' })
-        .not('dart_fetched_at', 'is', null)
         .order('corp_name')
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
       if (!showDone)    q = q.is('corp_code', null);
@@ -834,10 +855,183 @@ function BrandTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 직접 등록 탭
+// ═══════════════════════════════════════════════════════════════════════════
+function CreateTab() {
+  const [cCorpName, setCCorpName]     = React.useState('');
+  const [cBizNo, setCBizNo]           = React.useState('');
+  const [cIncludeDart, setCIncludeDart] = React.useState(false);
+  const [cSaving, setCSaving]         = React.useState(false);
+  const [cError, setCError]           = React.useState('');
+  const [cSuccess, setCSuccess]       = React.useState('');
+
+  const [bSlug, setBSlug]             = React.useState('');
+  const [bName, setBName]             = React.useState('');
+  const [bNameEng, setBNameEng]       = React.useState('');
+  const [bCompanyQ, setBCompanyQ]     = React.useState('');
+  const [bCompanyResults, setBCompanyResults] = React.useState<CompanyOption[]>([]);
+  const [bCompanySelected, setBCompanySelected] = React.useState<CompanyOption | null>(null);
+  const [bSearching, setBSearching]   = React.useState(false);
+  const [bSaving, setBSaving]         = React.useState(false);
+  const [bError, setBError]           = React.useState('');
+  const [bSuccess, setBSuccess]       = React.useState('');
+
+  React.useEffect(() => {
+    if (!bCompanyQ.trim()) { setBCompanyResults([]); return; }
+    const t = setTimeout(async () => {
+      setBSearching(true);
+      const { data } = await supabaseBrowser()
+        .from('companies').select('id, corp_name')
+        .ilike('corp_name', `%${bCompanyQ.trim()}%`)
+        .order('corp_name').limit(10);
+      setBCompanyResults((data ?? []) as CompanyOption[]);
+      setBSearching(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [bCompanyQ]);
+
+  const submitCompany = async () => {
+    if (!cCorpName.trim()) { setCError('법인명은 필수입니다'); return; }
+    setCSaving(true); setCError(''); setCSuccess('');
+    try {
+      const res = await fetch('/api/companies', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ corp_name: cCorpName.trim(), business_number: cBizNo.trim() || undefined, include_dart: cIncludeDart }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? '등록 실패');
+      setCSuccess(`등록 완료: ${json.corp_name}`);
+      setCCorpName(''); setCBizNo(''); setCIncludeDart(false);
+    } catch (e: any) { setCError(e.message); }
+    finally { setCSaving(false); }
+  };
+
+  const submitBrand = async () => {
+    if (!bSlug.trim()) { setBError('slug은 필수입니다'); return; }
+    if (!bName.trim()) { setBError('브랜드명은 필수입니다'); return; }
+    setBSaving(true); setBError(''); setBSuccess('');
+    try {
+      const res = await fetch('/api/brands', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: bSlug.trim(), name: bName.trim(),
+          name_eng: bNameEng.trim() || undefined,
+          company_id: bCompanySelected?.id,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? '등록 실패');
+      setBSuccess(`등록 완료: ${json.name} (${json.slug})`);
+      setBSlug(''); setBName(''); setBNameEng('');
+      setBCompanyQ(''); setBCompanySelected(null); setBCompanyResults([]);
+    } catch (e: any) { setBError(e.message); }
+    finally { setBSaving(false); }
+  };
+
+  const fieldStyle: React.CSSProperties = { background: 'none', border: 'none', outline: 'none', fontSize: 12, width: '100%', color: 'var(--f1)' };
+
+  return (
+    <div className="row-flex gap-14" style={{ alignItems: 'flex-start', height: 'calc(100vh - 140px)' }}>
+      {/* 회사 등록 */}
+      <div className="panel col-flex gap-12" style={{ width: 340, flexShrink: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--f1)' }}>회사 직접 등록</div>
+        <div className="col-flex gap-8">
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--f3)', marginBottom: 4 }}>법인명 <span style={{ color: 'var(--shf)' }}>*</span></div>
+            <div className="input">
+              <input value={cCorpName} onChange={e => setCCorpName(e.target.value)} placeholder="(주)브랜드코리아"
+                onKeyDown={e => e.key === 'Enter' && submitCompany()} style={fieldStyle} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--f3)', marginBottom: 4 }}>사업자번호 (선택)</div>
+            <div className="input">
+              <input value={cBizNo} onChange={e => setCBizNo(e.target.value)} placeholder="000-00-00000"
+                className="mono" style={fieldStyle} />
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--f3)', cursor: 'pointer', userSelect: 'none' }}>
+            <input type="checkbox" checked={cIncludeDart} onChange={e => setCIncludeDart(e.target.checked)} style={{ cursor: 'pointer' }} />
+            dart_fetched_at 설정 (DART 처리 완료 표시)
+          </label>
+        </div>
+        {cError   && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '6px 8px', background: 'var(--shb)', borderRadius: 4 }}>{cError}</div>}
+        {cSuccess && <div style={{ fontSize: 11, color: 'var(--slf)', padding: '6px 8px', background: 'rgba(34,197,94,0.08)', borderRadius: 4, border: '1px solid rgba(34,197,94,0.2)' }}>{cSuccess}</div>}
+        <button className="btn sm" style={{ background: 'var(--hs)', color: '#fff', borderColor: 'var(--hs)' }}
+          onClick={submitCompany} disabled={cSaving}>
+          {cSaving ? '등록 중…' : '회사 등록'}
+        </button>
+      </div>
+
+      {/* 브랜드 등록 */}
+      <div className="panel col-flex gap-12" style={{ width: 340, flexShrink: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--f1)' }}>브랜드 직접 등록</div>
+        <div className="col-flex gap-8">
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--f3)', marginBottom: 4 }}>slug <span style={{ color: 'var(--shf)' }}>*</span></div>
+            <div className="input">
+              <input value={bSlug} onChange={e => setBSlug(e.target.value)} placeholder="adidas"
+                className="mono" style={fieldStyle} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--f3)', marginBottom: 4 }}>브랜드명 <span style={{ color: 'var(--shf)' }}>*</span></div>
+            <div className="input">
+              <input value={bName} onChange={e => setBName(e.target.value)} placeholder="아디다스" style={fieldStyle} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--f3)', marginBottom: 4 }}>영문명 (선택)</div>
+            <div className="input">
+              <input value={bNameEng} onChange={e => setBNameEng(e.target.value)} placeholder="Adidas" style={fieldStyle} />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--f3)', marginBottom: 4 }}>회사 연결 (선택)</div>
+            {bCompanySelected ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'var(--snk)', borderRadius: 6, border: '1px solid var(--bd)' }}>
+                <span style={{ fontSize: 12, color: 'var(--f1)', flex: 1 }}>{bCompanySelected.corp_name}</span>
+                <button className="btn sm" style={{ fontSize: 10, padding: '2px 6px', color: 'var(--shf)' }}
+                  onClick={() => { setBCompanySelected(null); setBCompanyQ(''); }}>✕</button>
+              </div>
+            ) : (
+              <div className="col-flex gap-4">
+                <div className="input row-flex center gap-6">
+                  <IcSearch size={12} style={{ color: 'var(--f4)', flexShrink: 0 }} />
+                  <input value={bCompanyQ} onChange={e => setBCompanyQ(e.target.value)} placeholder="회사명 검색"
+                    style={fieldStyle} />
+                </div>
+                {bSearching && <div style={{ fontSize: 11, color: 'var(--f4)' }}>검색 중…</div>}
+                {bCompanyResults.length > 0 && (
+                  <div style={{ border: '1px solid var(--bd)', borderRadius: 6, overflow: 'hidden' }}>
+                    {bCompanyResults.map(c => (
+                      <div key={c.id} className="row hover" style={{ gridTemplateColumns: '1fr', cursor: 'pointer' }}
+                        onClick={() => { setBCompanySelected(c); setBCompanyQ(''); setBCompanyResults([]); }}>
+                        <span style={{ fontSize: 12 }}>{c.corp_name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        {bError   && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '6px 8px', background: 'var(--shb)', borderRadius: 4 }}>{bError}</div>}
+        {bSuccess && <div style={{ fontSize: 11, color: 'var(--slf)', padding: '6px 8px', background: 'rgba(34,197,94,0.08)', borderRadius: 4, border: '1px solid rgba(34,197,94,0.2)' }}>{bSuccess}</div>}
+        <button className="btn sm" style={{ background: 'var(--hs)', color: '#fff', borderColor: 'var(--hs)' }}
+          onClick={submitBrand} disabled={bSaving}>
+          {bSaving ? '등록 중…' : '브랜드 등록'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 메인 페이지
 // ═══════════════════════════════════════════════════════════════════════════
 export default function MappingPage() {
-  const [tab, setTab] = React.useState<'dart' | 'brand'>('dart');
+  const [tab, setTab] = React.useState<'dart' | 'brand' | 'create'>('dart');
 
   return (
     <>
@@ -853,11 +1047,15 @@ export default function MappingPage() {
           <button className={`btn sm${tab === 'brand' ? ' active' : ''}`} onClick={() => setTab('brand')}>
             브랜드-회사 매핑
           </button>
+          <button className={`btn sm${tab === 'create' ? ' active' : ''}`} onClick={() => setTab('create')}>
+            직접 등록
+          </button>
         </div>
       </div>
 
-      {tab === 'dart'  && <DartTab />}
-      {tab === 'brand' && <BrandTab />}
+      {tab === 'dart'   && <DartTab />}
+      {tab === 'brand'  && <BrandTab />}
+      {tab === 'create' && <CreateTab />}
     </>
   );
 }

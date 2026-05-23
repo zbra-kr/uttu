@@ -1,15 +1,16 @@
 """
 무신사 자사 브랜드 상품 리뷰 스크래퍼
 API: api.musinsa.com/api2/review/v1/view/list (인증 불필요)
-대상: products.is_own = True 상품 전체
+대상: products.is_own = True, 수집 주기:
+  - 리뷰 있는 상품: 매일 확인 (review_checked_at < 1일)
+  - 리뷰 없는 상품: 7일마다 확인 (review_checked_at < 7일 또는 NULL)
 증분: reviews 테이블의 MAX(review_date) 이후 신규 리뷰만 수집
-     첫 실행 시 전체 수집 (10~30시간 예상)
 금지: userNickName, userId, encryptedUserId — 개인정보 절대 저장 금지
 pageSize 최대 20 (50+ → HTTP 400)
 """
 
 import os
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -88,24 +89,64 @@ class ReviewScraper(BaseScraper):
 
     # ── DB 헬퍼 ──────────────────────────────────────────────────────────────
 
-    def _get_own_products(self) -> list[dict[str, str]]:
-        """is_own=True 상품 전체 (id, musinsa_no)."""
-        all_rows: list[dict] = []
+    def _get_products_to_check(self) -> list[dict[str, str]]:
+        """
+        수집 대상 자사 상품 (id, musinsa_no) 반환.
+        - 리뷰 있는 상품: review_checked_at < now() - 1일 (또는 NULL)
+        - 리뷰 없는 상품: review_checked_at < now() - 7일 (또는 NULL)
+        """
+        now = datetime.now(KST)
+        daily_cutoff = (now - timedelta(days=1)).isoformat()
+        weekly_cutoff = (now - timedelta(days=7)).isoformat()
+
+        # 리뷰가 있는 product_id 집합
+        reviewed_ids: set[str] = set()
         offset = 0
         while True:
-            result = (
-                self.client.table("products")
-                .select("id, musinsa_no")
-                .eq("is_own", True)
+            rows = (
+                self.client.table("reviews")
+                .select("product_id")
                 .range(offset, offset + 999)
                 .execute()
+                .data or []
             )
-            rows = result.data or []
-            all_rows.extend(rows)
+            reviewed_ids.update(r["product_id"] for r in rows)
             if len(rows) < 1000:
                 break
             offset += 1000
-        return all_rows
+
+        # 자사 상품 전체 조회
+        all_products: list[dict] = []
+        offset = 0
+        while True:
+            rows = (
+                self.client.table("products")
+                .select("id, musinsa_no, review_checked_at")
+                .eq("is_own", True)
+                .range(offset, offset + 999)
+                .execute()
+                .data or []
+            )
+            all_products.extend(rows)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+
+        targets: list[dict] = []
+        for p in all_products:
+            checked = p.get("review_checked_at")
+            has_review = p["id"] in reviewed_ids
+            if has_review and (checked is None or checked < daily_cutoff):
+                targets.append(p)
+            elif not has_review and checked is not None and checked < weekly_cutoff:
+                targets.append(p)
+
+        return targets
+
+    def _mark_checked(self, product_id: str) -> None:
+        self.client.table("products").update(
+            {"review_checked_at": datetime.now(KST).isoformat()}
+        ).eq("id", product_id).execute()
 
     def _get_last_review_date(self, product_id: str) -> date | None:
         """해당 상품의 가장 최근 리뷰 날짜. 없으면 None (= 첫 수집)."""
@@ -122,8 +163,16 @@ class ReviewScraper(BaseScraper):
             return None
         return date.fromisoformat(rows[0]["review_date"])
 
+    @staticmethod
+    def _sanitize(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """PostgreSQL이 거부하는 \x00 null byte를 텍스트 필드에서 제거."""
+        def clean(v: Any) -> Any:
+            return v.replace('\x00', '') if isinstance(v, str) else v
+        return [{k: clean(v) for k, v in row.items()} for row in rows]
+
     def _upsert_reviews(self, rows: list[dict[str, Any]]) -> int:
         """upsert 후 실제 삽입된 행 수 반환 (중복은 ignore_duplicates=True로 스킵)."""
+        rows = self._sanitize(rows)
         inserted = 0
         for i in range(0, len(rows), 500):
             result = self.client.table("reviews").upsert(
@@ -193,10 +242,14 @@ class ReviewScraper(BaseScraper):
 
     async def run(self, limit: int | None = None) -> int:
         """
-        자사 상품 전체 리뷰 수집.
+        자사 상품 리뷰 수집 (스마트 주기).
+        - 리뷰 있는 상품: 매일 확인
+        - 리뷰 없는 상품: 7일마다 확인
         limit: 테스트용 상품 수 제한 (None = 전체).
         """
-        products = self._get_own_products()
+        from worker.tasks.notify import send
+
+        products = self._get_products_to_check()
         if limit:
             products = products[:limit]
 
@@ -207,6 +260,7 @@ class ReviewScraper(BaseScraper):
             product_id = row["id"]
             musinsa_no = row["musinsa_no"]
             upserted = await self.run_product(product_id, musinsa_no)
+            self._mark_checked(product_id)
             grand_total += upserted
 
             if idx % 100 == 0:
@@ -218,6 +272,10 @@ class ReviewScraper(BaseScraper):
                 )
 
         logger.info("review_run_done", total_products=len(products), total_reviews=grand_total)
+        send(
+            f"[UTTU] 리뷰 수집 완료\n"
+            f"확인 상품: {len(products)}개 / 신규 리뷰: {grand_total}건"
+        )
         return grand_total
 
 

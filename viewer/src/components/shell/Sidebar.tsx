@@ -6,7 +6,7 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcSettings, IcMore, IcChevL, IcChevR, IcChevD } from '../ui/icons';
 
 const ADMIN_EMAIL   = 'it@bcave.co.kr';
-const ADMIN_ONLY    = new Set(['snap', 'magazine', 'matching', 'reviews']);
+const ADMIN_ONLY    = new Set(['magazine', 'matching', 'reviews']);
 
 const ROUTES = [
   { id: 'home',         path: '/',             label: '홈',        Icon: IcHome,        section: 'main' },
@@ -15,7 +15,8 @@ const ROUTES = [
   { id: 'brand-ranking',path: '/brand-ranking',label: '브랜드 랭킹',Icon: IcBrandRanking,section: 'main' },
   { id: 'brand',        path: '/brand',        label: '브랜드',     Icon: IcBrand,       section: 'main', parent: 'brand-ranking' },
   { id: 'anomaly',      path: '/anomaly',      label: '이상탐지',   Icon: IcFlag,        section: 'main' },
-  { id: 'company',      path: '/company',      label: '회사',      Icon: IcCompany,     section: 'main' },
+  { id: 'companies',    path: '/companies',    label: '회사 목록',  Icon: IcCompany,     section: 'main' },
+  { id: 'company',      path: '/company',      label: '회사 상세',  Icon: IcCompany,     section: 'main', parent: 'companies' },
   { id: 'promo',        path: '/promo',        label: '프로모션',   Icon: IcPromo,       section: 'main' },
   { id: 'snap',         path: '/snap',         label: '스냅샷',     Icon: IcSnap,        section: 'main' },
   { id: 'magazine',     path: '/magazine',     label: '매거진',     Icon: IcBook,        section: 'main' },

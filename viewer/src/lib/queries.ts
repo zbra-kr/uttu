@@ -567,6 +567,101 @@ export async function fetchCompanyDisclosures(companyId: string, limit = 30): Pr
   return (data ?? []) as DartDisclosure[];
 }
 
+// ── 회사 목록 ────────────────────────────────────────────────────────────
+export interface CompanyListRow {
+  id: string;
+  corp_name: string;
+  is_listed: boolean;
+  corp_code: string | null;
+  brand_count: number;
+  own_brand_count: number;
+  fiscal_year: number | null;
+  revenue: number | null;
+  operating_income: number | null;
+  net_income: number | null;
+  total_assets: number | null;
+  total_liabilities: number | null;
+  op_margin: number | null;
+  net_margin: number | null;
+  debt_ratio: number | null;
+  roe: number | null;
+  rev_yoy: number | null;
+  rev_history: (number | null)[];  // [oldest → newest]
+  top_brands: string[];            // is_own 우선, 최대 3개
+}
+
+export async function fetchCompanyList(): Promise<CompanyListRow[]> {
+  const [companiesRes, finsRes] = await Promise.all([
+    supabase
+      .from('companies')
+      .select('id, corp_name, is_listed, corp_code, brands(id, is_own, name)')
+      .order('corp_name')
+      .limit(500),
+    supabase
+      .from('dart_financials')
+      .select('company_id, fiscal_year, revenue, operating_income, net_income, total_assets, total_liabilities')
+      .order('company_id')
+      .order('fiscal_year', { ascending: false })
+      .limit(2000),
+  ]);
+
+  const companies = companiesRes.data ?? [];
+  const fins      = finsRes.data ?? [];
+
+  // company_id별로 연도 내림차순 그룹
+  const finMap = new Map<string, typeof fins>();
+  for (const f of fins) {
+    const arr = finMap.get(f.company_id) ?? [];
+    arr.push(f);
+    finMap.set(f.company_id, arr);
+  }
+
+  return companies.map(c => {
+    const brands  = (c.brands as any[]) ?? [];
+    const fList   = finMap.get(c.id) ?? [];   // 최신 연도 먼저
+    const latest  = fList[0] ?? null;
+    const prev    = fList[1] ?? null;
+
+    const eq        = latest?.total_assets != null && latest?.total_liabilities != null
+      ? latest.total_assets - latest.total_liabilities : null;
+    const opMargin  = latest?.revenue && latest.revenue > 0 && latest.operating_income != null
+      ? Math.round((latest.operating_income / latest.revenue) * 1000) / 10 : null;
+    const netMargin = latest?.revenue && latest.revenue > 0 && latest.net_income != null
+      ? Math.round((latest.net_income / latest.revenue) * 1000) / 10 : null;
+    const debtRatio = eq != null && eq > 0 && latest?.total_liabilities != null
+      ? Math.round((latest.total_liabilities / eq) * 10) / 10 : null;
+    const roe       = latest?.net_income != null && eq != null && eq > 0
+      ? Math.round((latest.net_income / eq) * 1000) / 10 : null;
+    const revYoy    = prev?.revenue && prev.revenue > 0 && latest?.revenue != null
+      ? Math.round(((latest.revenue - prev.revenue) / prev.revenue) * 1000) / 10 : null;
+
+    return {
+      id:                c.id,
+      corp_name:         c.corp_name,
+      is_listed:         c.is_listed,
+      corp_code:         c.corp_code,
+      brand_count:       brands.length,
+      own_brand_count:   brands.filter((b: any) => b.is_own).length,
+      fiscal_year:       latest?.fiscal_year ?? null,
+      revenue:           latest?.revenue ?? null,
+      operating_income:  latest?.operating_income ?? null,
+      net_income:        latest?.net_income ?? null,
+      total_assets:      latest?.total_assets ?? null,
+      total_liabilities: latest?.total_liabilities ?? null,
+      op_margin:         opMargin,
+      net_margin:        netMargin,
+      debt_ratio:        debtRatio,
+      roe,
+      rev_yoy:           revYoy,
+      rev_history:       [...fList].reverse().map(f => f.revenue),
+      top_brands: [
+        ...brands.filter((b: any) => b.is_own).map((b: any) => b.name as string),
+        ...brands.filter((b: any) => !b.is_own).map((b: any) => b.name as string),
+      ].slice(0, 3),
+    };
+  });
+}
+
 // ── 회사 랭킹 통계 ──────────────────────────────────────────────────
 export interface CompanyRankStats {
   sku_count: number;
@@ -1386,4 +1481,164 @@ export async function fetchProductRankHistory(musinsaNo: string): Promise<{ date
   return [...seen.entries()]
     .map(([date, v]) => ({ date, rank: v.rank, category: v.category }))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ── 홈 대시보드 전용 쿼리 ───────────────────────────────────────────────
+
+export interface CollectionStat {
+  id: string;
+  label: string;
+  count: number;
+  latestDate: string | null;
+  target: number | null;
+  status: 'active' | 'partial' | 'pending';
+  link: string | null;
+}
+
+export async function fetchCollectionStats(): Promise<CollectionStat[]> {
+  const rs = await Promise.allSettled([
+    /* 0  ranking_snapshots     */ supabase.from('ranking_snapshots').select('snapshot_date', { count: 'exact' }).order('snapshot_date', { ascending: false }).limit(1),
+    /* 1  brand_ranking_snapshots */ supabase.from('brand_ranking_snapshots').select('snapshot_date', { count: 'exact' }).order('snapshot_date', { ascending: false }).limit(1),
+    /* 2  products is_own       */ supabase.from('products').select('*', { count: 'exact', head: true }).eq('is_own', true),
+    /* 3  products total        */ supabase.from('products').select('*', { count: 'exact', head: true }),
+    /* 4  products detail       */ supabase.from('products').select('*', { count: 'exact', head: true }).not('detail_fetched_at', 'is', null),
+    /* 5  snaps                 */ supabase.from('snaps').select('published_at', { count: 'exact' }).order('published_at', { ascending: false }).limit(1),
+    /* 6  magazine_articles     */ supabase.from('magazine_articles').select('published_at', { count: 'exact' }).order('published_at', { ascending: false }).limit(1),
+    /* 7  reviews               */ supabase.from('reviews').select('created_at', { count: 'exact' }).order('created_at', { ascending: false }).limit(1),
+    /* 8  promotions            */ supabase.from('promotions').select('snapshot_date', { count: 'exact' }).order('snapshot_date', { ascending: false }).limit(1),
+    /* 9  dart_financials       */ supabase.from('dart_financials').select('*', { count: 'exact', head: true }),
+    /* 10 companies             */ supabase.from('companies').select('*', { count: 'exact', head: true }),
+    /* 11 dart_disclosures      */ supabase.from('dart_disclosures').select('*', { count: 'exact', head: true }),
+    /* 12 own_sales_daily       */ supabase.from('own_sales_daily').select('*', { count: 'exact', head: true }),
+    /* 13 own_inventory         */ supabase.from('own_inventory').select('*', { count: 'exact', head: true }),
+    /* 14 review_analysis       */ supabase.from('review_analysis').select('*', { count: 'exact', head: true }),
+  ]);
+
+  const g = (i: number): { count: number; data: any[] } => {
+    const r = rs[i];
+    if (r.status !== 'fulfilled') return { count: 0, data: [] };
+    return { count: (r.value as any).count ?? 0, data: (r.value as any).data ?? [] };
+  };
+
+  const rank   = g(0);  const brank  = g(1);
+  const ownP   = g(2);  const allP   = g(3);  const detP   = g(4);
+  const snps   = g(5);  const mags   = g(6);  const revs   = g(7);  const proms  = g(8);
+  const dartF  = g(9);  const corps  = g(10); const dartD  = g(11);
+  const sales  = g(12); const inv    = g(13); const revA   = g(14);
+
+  const rankDate  = rank.data[0]?.snapshot_date?.slice(5) ?? null;
+  const brankDate = brank.data[0]?.snapshot_date?.slice(5) ?? null;
+  const snpsDate  = snps.data[0]?.published_at?.slice(5, 10) ?? null;
+  const magsDate  = mags.data[0]?.published_at?.slice(5, 10) ?? null;
+  const revsDate  = revs.data[0]?.created_at?.slice(5, 10) ?? null;
+  const promsDate = proms.data[0]?.snapshot_date?.slice(5) ?? null;
+
+  const compTotal  = allP.count - ownP.count;
+  const compDetail = Math.max(0, detP.count - ownP.count);
+
+  return [
+    { id: 'ranking',         label: '상품 랭킹 스냅샷',   count: rank.count,   latestDate: rankDate,  target: null,       status: 'active',                                  link: '/ranking' },
+    { id: 'brand-ranking',   label: '브랜드 랭킹 스냅샷', count: brank.count,  latestDate: brankDate, target: null,       status: 'active',                                  link: '/brand-ranking' },
+    { id: 'own-products',    label: '자사 상품 목록',     count: ownP.count,   latestDate: null,      target: null,       status: 'active',                                  link: '/matching' },
+    { id: 'comp-detail',     label: '경쟁사 상품 상세',   count: compDetail,   latestDate: null,      target: compTotal,  status: 'partial',                                 link: '/product' },
+    { id: 'promotions',      label: '프로모션 모듈',      count: proms.count,  latestDate: promsDate, target: null,       status: 'active',                                  link: '/promo' },
+    { id: 'snaps',           label: '스냅',              count: snps.count,   latestDate: snpsDate,  target: null,       status: 'active',                                  link: '/snap' },
+    { id: 'magazines',       label: '매거진 기사',        count: mags.count,   latestDate: magsDate,  target: null,       status: 'active',                                  link: '/magazine' },
+    { id: 'reviews',         label: '자사 리뷰',          count: revs.count,   latestDate: revsDate,  target: null,       status: 'active',                                  link: '/reviews' },
+    { id: 'companies',       label: '법인 마스터',        count: corps.count,  latestDate: null,      target: null,       status: 'active',                                  link: '/companies' },
+    { id: 'dart-disc',       label: 'DART 공시',          count: dartD.count,  latestDate: null,      target: null,       status: dartD.count > 0 ? 'partial' : 'pending',   link: '/companies' },
+    { id: 'dart-fin',        label: 'DART 재무제표',      count: dartF.count,  latestDate: null,      target: null,       status: dartF.count > 0 ? 'partial' : 'pending',   link: '/companies' },
+    { id: 'own-sales',       label: '자사 매출 (ERP)',    count: sales.count,  latestDate: null,      target: null,       status: 'pending',                                 link: null },
+    { id: 'own-inventory',   label: '자사 재고 (ERP)',    count: inv.count,    latestDate: null,      target: null,       status: 'pending',                                 link: null },
+    { id: 'review-analysis', label: 'LLM 리뷰 분석',     count: revA.count,   latestDate: null,      target: revs.count, status: 'pending',                                 link: null },
+  ];
+}
+
+export interface OwnBrandStat {
+  id: string;
+  slug: string;
+  name: string;
+  sku_count: number;
+  top100_count: number;
+  avg_satisfaction: number | null;
+}
+
+export async function fetchOwnBrandBreakdown(): Promise<OwnBrandStat[]> {
+  const { data: brands, error } = await supabase
+    .from('brands')
+    .select('id, slug, name')
+    .eq('is_own', true)
+    .order('name');
+  if (error || !brands?.length) return [];
+
+  const [productCounts, rankData] = await Promise.all([
+    Promise.all((brands as any[]).map(b =>
+      supabase.from('products')
+        .select('satisfaction_score', { count: 'exact' })
+        .eq('brand_id', b.id)
+        .limit(200)
+    )),
+    (async () => {
+      const { data: dateRow } = await supabase
+        .from('ranking_snapshots')
+        .select('snapshot_date')
+        .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
+        .order('snapshot_date', { ascending: false }).limit(1);
+      const latestDate = (dateRow as any[])?.[0]?.snapshot_date;
+      if (!latestDate) return null;
+      const names = (brands as any[]).map(b => b.name);
+      const { data } = await supabase
+        .from('ranking_snapshots')
+        .select('brand_name, rank_position')
+        .in('brand_name', names)
+        .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
+        .eq('snapshot_date', latestDate)
+        .lte('rank_position', 100)
+        .limit(5000);
+      return data;
+    })(),
+  ]);
+
+  const top100Map = new Map<string, number>();
+  for (const r of (rankData ?? []) as any[]) {
+    top100Map.set(r.brand_name, (top100Map.get(r.brand_name) ?? 0) + 1);
+  }
+
+  return (brands as any[]).map((brand, i) => {
+    const res = productCounts[i];
+    const count = res.count ?? 0;
+    const sats = ((res.data ?? []) as any[])
+      .map(p => p.satisfaction_score != null ? Number(p.satisfaction_score) : null)
+      .filter((n): n is number => n !== null);
+    const avgSat = sats.length > 0
+      ? Math.round(sats.reduce((s, v) => s + v, 0) / sats.length * 100) / 100
+      : null;
+    return {
+      id: brand.id as string,
+      slug: brand.slug as string,
+      name: brand.name as string,
+      sku_count: count,
+      top100_count: top100Map.get(brand.name) ?? 0,
+      avg_satisfaction: avgSat,
+    };
+  });
+}
+
+export interface PromoSummary {
+  id: string;
+  title: string;
+  promotion_type: string;
+  items_count: number;
+  end_at: string | null;
+  snapshot_date: string;
+}
+
+export async function fetchActivePromotions(limit = 10): Promise<PromoSummary[]> {
+  const { data, error } = await supabase
+    .from('promotions')
+    .select('id, title, promotion_type, items_count, end_at, snapshot_date')
+    .order('snapshot_date', { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return (data ?? []) as PromoSummary[];
 }

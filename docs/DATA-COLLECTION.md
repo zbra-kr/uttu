@@ -2,11 +2,11 @@
 
 ## 개요
 
-3개 외부 소스 → 17개 테이블 → Supabase (ogtrvberttzupxrffpoh, ap-northeast-2)
+3개 외부 소스 → 21개 테이블 → Supabase (ogtrvberttzupxrffpoh, ap-northeast-2)
 
 | 소스 | 구현 상태 | 테이블 수 |
 |---|---|---|
-| 무신사 API (httpx) — 경쟁사 데이터 | ✅ 완료 | 11개 |
+| 무신사 API (httpx) — 경쟁사 데이터 | ✅ 완료 | 15개 |
 | 무신사 API (httpx) — 자사 브랜드 상품 전수 | ✅ 완료 | products (is_own=true) |
 | 자사 ERP (Snowflake) | ❌ 미구현 | 2개 |
 | DART OpenAPI | ✅ 완료 (이름 매칭 실패 912개는 수동 등록 필요) | 2개 |
@@ -35,7 +35,9 @@
 [무신사 랭킹 API]     →  brands (slug/name/logo 자동 등록)
 [무신사 브랜드 API] →  brand_ranking_snapshots
 [무신사 세일 API]   →  promotions → promotion_items
-[무신사 스냅 API]   →  snaps → snap_products
+[무신사 스냅 API]   →  snaps → snap_products → snap_label_masters (마스터)
+                    →  snap_rankings (스타일별 순위 스냅샷)
+                    →  snap_profiles → snap_profile_rankings → snap_profile_snaps
 [무신사 매거진 API] →  magazine_articles → magazine_article_products
         ↓ (위 4개 스크래퍼가 신규 musinsa_no 발견 시)
     products (stub: name="(stub)", detail_fetched_at=NULL)
@@ -198,18 +200,260 @@ Viewer 조회 시에는 각 프로모션의 `promotions.snapshot_date`와 일치
 
 ---
 
-### 8. snaps — 무신사 스냅
+### 8. snaps — 무신사 스냅 마스터
+
+> **2026-05-22 구현 완료.** 마이그레이션: `00013_snaps.sql` + `00302_snap_expansion.sql`
+
+#### 스냅 수집 전체 구조
+
+```
+rankings API (style×period)          list API (content_type)
+       │                                      │
+       ▼                                      ▼
+[snaps] ←──────────────────────────────────────
+   │
+   ├─ snap_rankings     (스타일별 순위 스냅샷)
+   ├─ snap_products     (스냅에 태그된 상품 연결)
+   └─ snap_label_masters (스타일 라벨 마스터 25개)
+
+profile-rankings API (USER / BRAND)
+       │
+       ▼
+[snap_profiles]
+   │
+   ├─ snap_profile_rankings   (프로필 일간 순위 스냅샷)
+   └─ snap_profile_snaps      (순위 수집 시점 최신 스냅 10개)
+          │
+          └─ [snaps] (위와 공유)
+```
+
+#### contentType별 수집 방식
+
+| contentType | 설명 | 수집 방식 | 수집량 | API |
+|---|---|---|---|---|
+| `USER_SNAP` | 일반 회원 스냅 | 스타일 랭킹 (`rankings/DAILY?filter=`) | **350개/일** (7 스타일 × 50개) | rankings API |
+| `BRAND_SNAP` | 브랜드 공식 스냅 | 최신순 (`/snaps`) | 신규 100개/일 | snaps list API |
+| `CODISHOP_SNAP` | 코디샵 큐레이션 | 최신순 (`/snaps`) | 증분 (기존 snap_id 만나면 중단) | snaps list API |
+| `BRAND_SNAP` | 브랜드 프로필 내장 스냅 | profile-rankings/BRAND | 최대 300개/일 (30 브랜드 × 10개) | profile-rankings API |
+| `USER_SNAP` | 멤버 프로필 내장 스냅 | profile-rankings/USER | 최대 300개/일 (30 멤버 × 10개) | profile-rankings API |
+
+> **MUSINSA_SNAP 제외**: 2026-05-22 실측 — API 미지원 (빈 응답 반환, 코드에는 유지)
+
+#### 수집 필드 (snaps 테이블)
+
+| 컬럼 | API 경로 | 비고 |
+|---|---|---|
+| `snap_id` | `id` | UNIQUE — rankings/list/profile API 공통 |
+| `content_type` | `contentType` | USER_SNAP / BRAND_SNAP / CODISHOP_SNAP |
+| `format_type` | `detail.formatType` → top-level `formatType` 폴백 | POST / SHORTS |
+| `published_at` | `displayedFrom` (rankings API) → `createdAt` (list/profile API) 폴백 | NOT NULL |
+| `thumbnail_url` | `medias[0].path` → top-level `thumbnailUrl` (profile-embedded) 폴백 | |
+| `content_text` | `detail.content` → `text` / `description` 폴백 | 본문+해시태그 |
+| `like_count` | `aggregations.likeCount` | |
+| `view_count` | `aggregations.viewCount` | |
+| `comment_count` | `aggregations.commentCount` | |
+| `scrap_count` | `aggregations.scrapCount` | |
+| `click_count` | `aggregations.clickCount` | |
+| `goods_click_count` | `aggregations.goodsClickCount` | |
+| `model_gender` | `model.gender` | WOMEN / MEN |
+| `model_height` | `model.height` | cm (스냅 모델 신체, 프로필 owner ≠) |
+| `model_weight` | `model.weight` | kg |
+| `model_skin_tone` | `model.skinTone` | SPRING_WARM / NONE 등 |
+| `hashtags` | `tags[].name` | TEXT[] |
+| `style_label_ids` | `labels[].id` → `styleLabels[].id` 폴백 | INTEGER[] — snap_label_masters 참조 |
+
+> **개인정보 수집 제외**: `createdBy.id` (유저 ID), 닉네임, 프로필 이미지
 
 | 항목 | 내용 |
 |---|---|
 | 스크래퍼 | `worker/scrapers/musinsa_snap.py` |
-| API | `content.musinsa.com/api2/content/snap/v1/snaps` |
-| 수집 대상 | CODISHOP_SNAP(코디샵 공식) + MUSINSA_SNAP(무신사 공식) — USER_SNAP 제외 |
-| 수집 필드 | snap_id, content_type, format_type, published_at, like_count, view_count, comment_count, goods_click_count, model_gender, model_height, model_weight |
-| 증분 방식 | 기존 snap_id 등장 시 해당 페이지에서 중단 (이후는 이미 수집된 것으로 판단) |
-| upsert 기준 | snap_id |
+| upsert 기준 | `snap_id` (USER_SNAP은 메트릭 갱신, BRAND/CODISHOP은 ignore_duplicates=True) |
 | 스크립트 | `scripts/run_snap.sh` |
 | 권장 주기 | 매일 02:00 |
+
+---
+
+### 8-1. snap_rankings — 스냅 스타일별 랭킹 스냅샷
+
+> **2026-05-22 신규. 마이그레이션**: `00302_snap_expansion.sql` + `00303_snap_profile_rankings.sql`
+
+#### API 실측 결과 (2026-05-22)
+
+```
+GET https://content.musinsa.com/api2/content/snap/v1/rankings/DAILY
+파라미터:
+  filter={style}   ← 핵심. style=/styleLabel=/labelId= 등은 무효 (결과 동일)
+  page=1~5         max 100개 (20/page × 5page), page 6+ → HTTP 400
+  pageSize=20      API가 40 이상 무시하고 20 고정
+  gender=ALL       (선택, 현재 사용 안 함)
+
+스타일 필터 (ranking-filters API 실측):
+  ALL / CASUAL / STREET / MINIMAL / GIRLISH / ROMANTIC / CHIC
+  → 각 독립된 랭킹 결과 반환 확인 (CHIC은 35개로 적음)
+
+period 변형:
+  DAILY / WEEKLY / MONTHLY — 모두 동작 확인
+```
+
+#### 수집 정책
+
+| 항목 | 값 |
+|---|---|
+| 수집 스타일 | 7개 (ALL / CASUAL / STREET / MINIMAL / GIRLISH / ROMANTIC / CHIC) |
+| 스타일당 수집량 | 50개 (3 page × 20 = 60 요청 후 50 슬라이스) |
+| 하루 총 수집량 | **350개** (7 × 50) |
+| API 요청 수 | 7 × 3 = 21회 |
+| gender_filter | 항상 'ALL' (gender 차원 수집 안 함) |
+| ranking_period | 항상 'DAILY' |
+
+#### 수집 필드
+
+| 컬럼 | API 경로 | 비고 |
+|---|---|---|
+| `snapshot_date` | 수집 날짜 KST | |
+| `snap_id` | `id` | snaps 참조 |
+| `rank_position` | `ranking.rank` | 현재 순위 |
+| `prev_rank_position` | `ranking.previousRank` | 전일 순위 (null = 신규 진입) |
+| `highlight` | `ranking.highlight` | MOST_LIKED / NEW 등 |
+| `style_filter` | 요청 파라미터 `filter=` | ALL / CASUAL / STREET / MINIMAL / GIRLISH / ROMANTIC / CHIC |
+| `gender_filter` | 항상 'ALL' | 스키마 확장성 보존용 |
+| `ranking_period` | 항상 'DAILY' | 스키마 확장성 보존용 |
+| `ranked_at` | `rankedAt` | 랭킹 산정 기준 시각 |
+
+| upsert 기준 | `snapshot_date + snap_id + style_filter + gender_filter + ranking_period` |
+|---|---|
+
+---
+
+### 8-2. snap_label_masters — 스타일 라벨 마스터
+
+> **2026-05-22 MCP 직접 적용 (로컬 파일 없음)**. 25개 라벨 정적 등록.
+
+스냅에 태그되는 스타일 라벨의 ID → 이름 매핑 테이블. Viewer 필터 UI에서 참조.
+
+| category_id | category_name | 라벨 (id: 이름) |
+|---|---|---|
+| 1 | 계절 | 1:겨울, 2:가을, 3:여름, 4:봄 |
+| 2 | 스타일 | 5:미니멀, 6:워크웨어, 7:시티보이, 8:캐주얼, 9:클래식, 10:스트릿, 12:로맨틱, 13:걸리시, 14:스포티, 16:시크, 20:고프코어 |
+| 3 | TPO | 21:데이트, 22:캠퍼스, 24:출근, 25:결혼식, 26:바다/수영, 28:데일리, 29:러닝, 37:등산/아웃도어, 39:페스티벌, 42:피트니스 |
+
+> ID 발견 방법: list API에 `labelIds=X` 파라미터 → X 태그된 스냅 반환, 응답 `labels[].name` 확인
+> `snaps.style_label_ids INTEGER[]`는 이 테이블의 `id` 참조 (FK 없음, 배열이라 불가)
+
+---
+
+### 8-3. snap_profiles — 멤버·브랜드 프로필
+
+> **2026-05-22 신규. 마이그레이션**: `00303_snap_profile_rankings.sql`
+
+profile-rankings API로 수집되는 USER(일반 회원) / BRAND 프로필 마스터.
+
+#### API 실측 결과 (2026-05-22)
+
+```
+GET https://content.musinsa.com/api2/content/snap/v1/profile-rankings/{profileType}/{period}
+profileType: USER | BRAND  (MEMBER → 404, CREATOR → 404)
+period:      DAILY | WEEKLY | MONTHLY
+
+max 100개 (5 page × 20), page 6+ → HTTP 400
+
+응답 구조 (공통 필드):
+  id, nickname, bio, profileImageUrl, followerCount
+  ranking.rank, ranking.previousRank, ranking.highlight
+  rankedAt, badge.title (USER/BRAND/OFFICIAL/null)
+  snaps[]  ← 최신 스냅 최대 10개 내장 (별도 API 불필요)
+  isBlocked
+
+BRAND 추가: snaps[].goods[].brand.brandId → brand_code 추출
+USER  추가: /profiles/:id 상세 API에만 있음 → followingCount, snapCount, profilePhysical (height/weight/skinTone/gender)
+※ 상세 API 미호출 → height/weight/followingCount/snapCount는 0/null 상태
+```
+
+#### 수집 필드
+
+| 컬럼 | API 경로 | 비고 |
+|---|---|---|
+| `id` | `id` | PRIMARY KEY — snap 플랫폼 프로필 ID |
+| `profile_type` | 요청 파라미터 | USER / BRAND |
+| `nickname` | `nickname` | |
+| `bio` | `bio` | 자기소개 |
+| `profile_image_url` | `profileImageUrl` | |
+| `follower_count` | `followerCount` | |
+| `following_count` | `followingCount` | 현재 0 (상세 API 미호출) |
+| `snap_count` | `snapCount` | 현재 0 (상세 API 미호출) |
+| `height` | `profilePhysical.height` | USER만, 현재 NULL (상세 API 미호출) |
+| `weight` | `profilePhysical.weight` | USER만, 현재 NULL |
+| `skin_tone` | `profilePhysical.skinTone` | USER만, 현재 NULL |
+| `gender` | `profilePhysical.gender` | USER만, 현재 NULL |
+| `badge_title` | `badge.title` | USER / BRAND / OFFICIAL / null |
+| `badge_image_url` | `badge.imageUrl` | |
+| `brand_code` | `snaps[].goods[].brand.brandId` | BRAND만, e.g. "dolzabi" |
+| `updated_at` | 수집 시각 | upsert마다 갱신 |
+| `first_seen_at` | 최초 수집 시각 | INSERT 시만 세팅 |
+
+| upsert 기준 | `id` (on_conflict 갱신) |
+|---|---|
+
+---
+
+### 8-4. snap_profile_rankings — 프로필 일간 순위 스냅샷
+
+> **2026-05-22 신규. 마이그레이션**: `00303_snap_profile_rankings.sql`
+
+#### 수집 정책
+
+| 항목 | 값 |
+|---|---|
+| 수집 타입 | USER (멤버) + BRAND |
+| 수집량 | 각 30개/일 (총 60개) |
+| API 요청 수 | 각 2 page × 3초 = 2회 |
+| ranking_period | 항상 'DAILY' |
+
+#### 수집 필드
+
+| 컬럼 | API 경로 | 비고 |
+|---|---|---|
+| `snapshot_date` | 수집 날짜 KST | |
+| `profile_id` | `id` | snap_profiles 참조 |
+| `profile_type` | USER / BRAND | |
+| `rank_position` | `ranking.rank` | |
+| `prev_rank_position` | `ranking.previousRank` | null = 신규 진입 |
+| `highlight` | `ranking.highlight` | MOST_FOLLOWED / MOST_BRAND_FOLLOWED / NEW 등 |
+| `ranking_period` | 'DAILY' | |
+| `ranked_at` | `rankedAt` | |
+
+| upsert 기준 | `snapshot_date + profile_id + ranking_period` |
+|---|---|
+
+---
+
+### 8-5. snap_profile_snaps — 프로필 최신 스냅 일별 기록
+
+> **2026-05-22 신규. 마이그레이션**: `00303_snap_profile_rankings.sql`
+
+랭킹 수집 시점에 각 프로필 응답에 내장된 최신 스냅 목록 (최대 10개/프로필).
+snaps 테이블과 snap_profiles를 날짜 기준으로 연결하는 브릿지.
+
+| 컬럼 | 내용 |
+|---|---|
+| `snapshot_date` | 수집 날짜 |
+| `profile_id` | snap_profiles 참조 |
+| `snap_id` | snaps 참조 |
+| `display_order` | API 응답 내 순서 (0-based) |
+
+| upsert 기준 | `snapshot_date + profile_id + snap_id` |
+|---|---|
+
+**조회 패턴** (특정 프로필의 최신 스냅):
+```sql
+SELECT s.* FROM snap_profile_snaps sps
+JOIN snaps s ON s.snap_id = sps.snap_id
+WHERE sps.profile_id = $1
+  AND sps.snapshot_date = (
+    SELECT MAX(snapshot_date) FROM snap_profile_snaps WHERE profile_id = $1
+  )
+ORDER BY sps.display_order;
+```
 
 ---
 
@@ -218,10 +462,19 @@ Viewer 조회 시에는 각 프로모션의 `promotions.snapshot_date`와 일치
 | 항목 | 내용 |
 |---|---|
 | 스크래퍼 | `worker/scrapers/musinsa_snap.py` (snaps와 동시 수집) |
-| 파싱 | 스냅 응답의 `goods[].goodsNo` |
-| 수집 필드 | snap_id, product_id, musinsa_no, goods_platform |
+| 파싱 소스 | rankings API / list API / profile-rankings API 응답 내 `goods[]` |
 | stub 삽입 | 신규 musinsa_no → products 테이블에 stub 자동 삽입 |
-| upsert 기준 | snap_id + musinsa_no |
+| upsert 기준 | `snap_id + musinsa_no` |
+
+#### 수집 필드
+
+| 컬럼 | API 경로 | 비고 |
+|---|---|---|
+| `snap_id` | — | snaps 참조 |
+| `product_id` | — | products 참조 |
+| `musinsa_no` | `goods[].goodsNo` | |
+| `goods_platform` | `goods[].goodsPlatform` | MUSINSA / SOLDOUT |
+| `option_name` | `goods[].options[].optionName` 조합 | 색상·사이즈 문자열 `"/"` 구분. profile-embedded goods는 options 미제공 → NULL |
 
 ---
 
