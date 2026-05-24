@@ -8,7 +8,10 @@ import {
 } from 'recharts';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { IcBookmark, IcSearch } from '@/components/ui/icons';
+import { IcSearch, IcEdit } from '@/components/ui/icons';
+import BookmarkToggle from '@/components/me/BookmarkToggle';
+import NoteDrawer from '@/components/me/NoteDrawer';
+import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
 import { searchProducts, fetchProductDetail, fetchProductPriceHistory, fetchProductRankHistory, fetchProductCategoryRanks, fetchReviews, CATEGORY_MAP, type ProductDetail, type ReviewRow, type ProductSearchResult } from '@/lib/queries';
 
 function ProductSearch({ onSelect }: { onSelect: (no: string) => void }) {
@@ -269,6 +272,10 @@ function ProductPageInner() {
   const [categoryRanks,  setCategoryRanks]  = React.useState<{ category_code: string; best_rank: number; combo_count: number }[]>([]);
   const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
   const [loading, setLoading] = React.useState(!!noFromUrl);
+  const [noteCount, setNoteCount] = React.useState(0);
+  const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(
+    () => (params.get('notes') === 'open' || !!params.get('note')) && !!noFromUrl,
+  );
 
   React.useEffect(() => {
     if (!noFromUrl) {
@@ -313,6 +320,14 @@ function ProductPageInner() {
       setLoading(false);
     }).catch(e => { console.error(e); setLoading(false); });
   }, [selectedNo]);
+
+  React.useEffect(() => {
+    if (detail?.id) fetchNoteCountForEntity('product', detail.id).then(setNoteCount);
+  }, [detail?.id]);
+
+  React.useEffect(() => {
+    if (detail?.id) logView('product', detail.id, detail.name).catch(() => {});
+  }, [detail?.id]);
 
   // ── 가격 차트 ─────────────────────────────────────────────
   const prices = priceHistory.map(p => p.price);
@@ -375,6 +390,17 @@ function ProductPageInner() {
 
   return (
     <div className="col-flex gap-14">
+      {detail?.id && (
+        <NoteDrawer
+          key={detail.id}
+          entity_type="product"
+          entity_id={detail.id}
+          entity_label={detail.name}
+          open={noteDrawerOpen}
+          onClose={() => setNoteDrawerOpen(false)}
+          onCountChange={setNoteCount}
+        />
+      )}
       <div className="page-title">
         <div className="col-flex gap-2">
           <h1>{loading ? '…' : (detail?.name ?? '')}</h1>
@@ -396,7 +422,17 @@ function ProductPageInner() {
         )}
         <div className="row-flex gap-6" style={{ marginLeft: 'auto' }}>
           <ProductSearch onSelect={no => router.push(`/product?no=${no}`)} />
-          <button className="btn sm icon" title="북마크"><IcBookmark /></button>
+          {detail?.id && <BookmarkToggle entity_type="product" entity_id={detail.id} label={detail.name} />}
+          {detail?.id && (
+            <button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
+              <IcEdit /> 메모
+              {noteCount > 0 && (
+                <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: '#fff', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+                  {noteCount}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </div>
 

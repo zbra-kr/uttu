@@ -6,6 +6,7 @@ import { IcFilter, IcDownload, IcChevL, IcChevR } from '@/components/ui/icons';
 import { FilterBlock, CheckRow, PillGroup, SegGroup, SearchSelect } from '@/components/ui/filters';
 import { BarChart, Bar, Cell as RCell, XAxis, YAxis, Tooltip, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
 import { supabaseBrowser } from '@/lib/supabase/client';
+import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
 import { CATEGORY_MAP } from '@/lib/queries';
 
 const sb = supabaseBrowser();
@@ -341,6 +342,18 @@ function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null;
   const toggleType = (t: string) => setTypeFilters(prev => { const n = new Set(prev); n.has(t) ? n.delete(t) : n.add(t); return n; });
   const reset = () => { setTypeFilters(new Set()); setStatusFilter('all'); setBrandFilter(new Set()); setPeriod('7d'); setSel(new Set()); };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleLoadFilter = (filter: unknown) => {
+    const f = filter as any;
+    if (f.period !== undefined)          setPeriod(f.period);
+    if (f.customFrom !== undefined)      setCustomFrom(f.customFrom);
+    if (f.customTo !== undefined)        setCustomTo(f.customTo);
+    if (Array.isArray(f.typeFilters))    setTypeFilters(new Set(f.typeFilters));
+    if (f.statusFilter !== undefined)    setStatusFilter(f.statusFilter);
+    if (Array.isArray(f.brandFilter))    setBrandFilter(new Set(f.brandFilter));
+    if (f.sortBy !== undefined)          setSortBy(f.sortBy);
+  };
+
   const availableBrands = React.useMemo(
     () => [...new Set(detailItems.map(i => i.musinsa_brand_name).filter(Boolean) as string[])].sort(),
     [detailItems],
@@ -453,6 +466,17 @@ function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null;
         <div className="frh">
           <h3>필터</h3>
           <button className="btn sm" onClick={reset}>초기화</button>
+        </div>
+        <div style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+          <SavedFiltersDropdown
+            page="/promo"
+            currentFilter={{
+              period, customFrom, customTo,
+              typeFilters: [...typeFilters], statusFilter,
+              brandFilter: [...brandFilter], sortBy,
+            }}
+            onLoad={handleLoadFilter}
+          />
         </div>
         <div className="frb">
 

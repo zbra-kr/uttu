@@ -3,6 +3,7 @@ import React from 'react';
 import { PeriodFilter, FilterBlock, CheckRow, DismissChip, SegGroup } from '@/components/ui/filters';
 import { IcDownload, IcBookmark, IcArrowUR, IcX, IcCheck, IcPlus, IcChevL, IcChevR } from '@/components/ui/icons';
 import { supabaseBrowser } from '@/lib/supabase/client';
+import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
 
 interface ARow {
   id: string;
@@ -365,6 +366,17 @@ export default function AnomalyPage() {
     setStatus('open');
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleLoadFilter = (filter: unknown) => {
+    const f = filter as any;
+    if (f.period !== undefined)    setPeriod(f.period);
+    if (f.fromDate !== undefined)  setFromDate(f.fromDate);
+    if (f.toDate !== undefined)    setToDate(f.toDate);
+    if (Array.isArray(f.sev))      setSev(new Set(f.sev));
+    if (Array.isArray(f.area))     setArea(new Set(f.area));
+    if (f.status !== undefined)    setStatus(f.status);
+  };
+
   return (
     <>
       <div className="page-title">
@@ -404,6 +416,16 @@ export default function AnomalyPage() {
           <div className="frh">
             <h3>필터</h3>
             <button className="btn sm" onClick={reset}>초기화</button>
+          </div>
+          <div style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <SavedFiltersDropdown
+              page="/anomaly"
+              currentFilter={{
+                period, fromDate, toDate,
+                sev: [...sev], area: [...area], status,
+              }}
+              onLoad={handleLoadFilter}
+            />
           </div>
           <div className="frb">
             <PeriodFilter

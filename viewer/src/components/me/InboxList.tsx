@@ -28,24 +28,25 @@ export default function InboxList({ limit = 30, compact = false, onUnreadChange 
     fetchInbox(limit).then(rows => {
       setItems(rows);
       setLoading(false);
-      onUnreadChange?.(rows.filter(r => !r.is_read).length);
+      onUnreadChange?.(rows.filter(r => !r.read_at).length);
     });
     // onUnreadChange는 의도적으로 deps 제외 — 초기 로드 시 1회만 호출
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit]);
 
   const handleClick = async (item: NotificationInbox) => {
-    if (!item.is_read) {
-      const nextItems = items.map(r => r.id === item.id ? { ...r, is_read: true } : r);
+    if (!item.read_at) {
+      const nextItems = items.map(r => r.id === item.id ? { ...r, read_at: new Date().toISOString() } : r);
       setItems(nextItems);
-      onUnreadChange?.(nextItems.filter(r => !r.is_read).length);
+      onUnreadChange?.(nextItems.filter(r => !r.read_at).length);
       await markRead(item.id);
     }
     if (item.link) router.push(item.link);
   };
 
   const handleMarkAll = async () => {
-    const nextItems = items.map(r => ({ ...r, is_read: true }));
+    const now = new Date().toISOString();
+    const nextItems = items.map(r => ({ ...r, read_at: r.read_at ?? now }));
     setItems(nextItems);
     onUnreadChange?.(0);
     await markAllRead();
@@ -67,7 +68,7 @@ export default function InboxList({ limit = 30, compact = false, onUnreadChange 
     );
   }
 
-  const hasUnread = items.some(r => !r.is_read);
+  const hasUnread = items.some(r => !r.read_at);
   const pad = compact ? '7px 12px' : '9px 6px';
 
   return (
@@ -84,7 +85,7 @@ export default function InboxList({ limit = 30, compact = false, onUnreadChange 
           style={{
             padding: pad,
             borderBottom: i < items.length - 1 ? '0.5px dashed var(--bs)' : 'none',
-            background: item.is_read ? 'transparent' : 'var(--hs-soft)',
+            background: item.read_at ? 'transparent' : 'var(--hs-soft)',
             cursor: 'pointer',
             display: 'flex',
             gap: 8,
@@ -92,14 +93,14 @@ export default function InboxList({ limit = 30, compact = false, onUnreadChange 
           }}
         >
           <div style={{ width: 6, flexShrink: 0, paddingTop: 4, display: 'flex', justifyContent: 'center' }}>
-            {!item.is_read && (
+            {!item.read_at && (
               <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--hs)' }} />
             )}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
               fontSize: compact ? 12 : 12,
-              fontWeight: item.is_read ? 400 : 500,
+              fontWeight: item.read_at ? 400 : 500,
               color: 'var(--f1)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',

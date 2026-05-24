@@ -16,6 +16,7 @@ load_dotenv()
 from loguru import logger
 
 from worker.detectors.base import Anomaly, save_anomalies, supabase_client
+from worker.detectors.bookmark_detector import detect_bookmark_changes
 from worker.detectors.brand_ranking_detector import detect_brand_ranking
 from worker.detectors.ranking_detector import detect_promo_anomalies, detect_promo_discount, detect_ranking
 from worker.detectors.review_detector import detect_review
@@ -109,6 +110,13 @@ def run(target_date: date) -> None:
 
     _enqueue_anomalies(all_anomalies, target_date)
     logger.info(f"enqueue_done date={target_date} high={sum(1 for a in all_anomalies if a.severity=='high')} med={sum(1 for a in all_anomalies if a.severity=='medium')}")
+
+    # 북마크 기반 랭킹 변동 알림
+    try:
+        bm_count = detect_bookmark_changes(client=client, today=target_date)
+        logger.info(f"bookmark_detect_done date={target_date} enqueued={bm_count}")
+    except Exception as e:
+        logger.warning(f"bookmark_detect_error date={target_date} error={e}")
 
 
 def main() -> None:

@@ -3,6 +3,7 @@ import React from 'react';
 import { Spark, Line } from '@/components/ui/charts';
 import { FilterBlock, PillGroup, PeriodFilter, DismissChip, SegGroup, CheckRow, SearchSelect } from '@/components/ui/filters';
 import { IcSearch, IcArrowUR, IcDownload } from '@/components/ui/icons';
+import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
 import {
   fetchReviews, fetchReviewStats, fetchOwnProducts, fetchBrandOptions, fetchCompanyOptions,
   CATEGORY_MAP,
@@ -255,6 +256,23 @@ function RvBrowse() {
     setKeyword(''); setSort('recent'); setPage(0);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleLoadFilter = (filter: unknown) => {
+    const f = filter as any;
+    if (f.target !== undefined)         setTarget(f.target);
+    if (f.period !== undefined)         setPeriod(f.period);
+    if (f.fromDate !== undefined)       setFromDate(f.fromDate);
+    if (f.toDate !== undefined)         setToDate(f.toDate);
+    if (f.ratingFrom !== undefined)     setRatingFrom(f.ratingFrom);
+    if (f.ratingTo !== undefined)       setRatingTo(f.ratingTo);
+    if (Array.isArray(f.categories))    setCategories(new Set(f.categories));
+    if (Array.isArray(f.companies))     setCompanies(new Set(f.companies));
+    if (Array.isArray(f.brands))        setBrands(new Set(f.brands));
+    if (f.keyword !== undefined)        setKeyword(f.keyword);
+    if (f.sort !== undefined)           setSort(f.sort);
+    setPage(0);
+  };
+
   const visibleRows = brands.size > 0
     ? rows.filter(r => brands.has(r.brand_name))
     : rows;
@@ -265,6 +283,20 @@ function RvBrowse() {
         <div className="frh">
           <h3>조회 조건</h3>
           <button className="btn sm" onClick={reset}>초기화</button>
+        </div>
+        <div style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+          <SavedFiltersDropdown
+            page="/reviews"
+            currentFilter={{
+              target, period, fromDate, toDate,
+              ratingFrom, ratingTo,
+              categories: [...categories],
+              companies: [...companies],
+              brands: [...brands],
+              keyword, sort,
+            }}
+            onLoad={handleLoadFilter}
+          />
         </div>
         <div className="frb">
           <FilterBlock label="대상">

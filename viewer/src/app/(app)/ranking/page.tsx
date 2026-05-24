@@ -2,7 +2,10 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { PeriodFilter, FilterBlock, PillGroup, CheckRow, DismissChip, SearchSelect } from '@/components/ui/filters';
-import { IcDownload, IcChevL, IcChevR, IcBookmark } from '@/components/ui/icons';
+import { IcDownload, IcChevL, IcChevR, IcEdit } from '@/components/ui/icons';
+import NoteDrawer from '@/components/me/NoteDrawer';
+import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
+import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
 import {
   fetchLatestRanking, fetchBrandOptions, fetchCompanyOptions,
   CATEGORY_MAP, AGE_MAP, type RankingRow,
@@ -41,6 +44,18 @@ const PRICE_MAX = 50; // 만원 단위 — 50 = 50만+
 
 const FILTER_KEY = 'uttu-ranking-filters';
 
+// Supabase가 localStorage에 저장한 세션에서 userId를 동기적으로 읽음
+function getCurrentUserIdSync(): string | null {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+    const ref = url.match(/\/\/([^.]+)\.supabase\.co/)?.[1];
+    if (!ref) return null;
+    const raw = localStorage.getItem(`sb-${ref}-auth-token`);
+    if (!raw) return null;
+    return JSON.parse(raw)?.user?.id ?? null;
+  } catch { return null; }
+}
+
 function downloadCsv(rows: RankingRow[], multiDay: boolean) {
   const headers = [
     multiDay ? '날짜' : null, '순위', '변동', '상품명', '무신사번호',
@@ -75,6 +90,12 @@ function loadSavedFilters() {
     const raw = localStorage.getItem(FILTER_KEY);
     if (!raw) return null;
     const p = JSON.parse(raw);
+    // 저장된 userId와 현재 세션이 다르면 무시 (다른 계정 필터 오염 방지)
+    const currentUserId = getCurrentUserIdSync();
+    if (p.userId && currentUserId && p.userId !== currentUserId) {
+      localStorage.removeItem(FILTER_KEY);
+      return null;
+    }
     return {
       ...p,
       companies: new Set<string>(p.companies ?? []),
@@ -219,11 +240,14 @@ export default function RankingPage() {
   const [sort,        setSort]      = React.useState<string>(saved?.sort        ?? 'rank');
   const [sortDir,     setSortDir]   = React.useState<'asc'|'desc'>(saved?.sortDir ?? 'asc');
   const [page,        setPage]      = React.useState<number>(saved?.page ?? 1);
+  const [noteCount, setNoteCount] = React.useState(0);
+  const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(false);
 
   // ── 필터 상태 → localStorage 자동 저장 ───────────────────
   React.useEffect(() => {
     try {
       localStorage.setItem(FILTER_KEY, JSON.stringify({
+        userId: getCurrentUserIdSync(),
         period, fromDate, toDate, selectedCategory, gender, age,
         price, companies: [...companies], brands: [...brands],
         ownOnly, moverOnly, sort, sortDir, page,
@@ -324,17 +348,83 @@ export default function RankingPage() {
     setSort('rank'); setSortDir('asc'); setPage(1);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleLoadFilter = (filter: unknown) => {
+    const f = filter as any;
+    if (f.period !== undefined)           setPeriod(f.period);
+    if (f.fromDate !== undefined)         setFromDate(f.fromDate);
+    if (f.toDate !== undefined)           setToDate(f.toDate);
+    if (f.selectedCategory !== undefined) setSelectedCategory(f.selectedCategory);
+    if (f.gender !== undefined)           setGender(f.gender);
+    if (f.age !== undefined)              setAge(f.age);
+    if (Array.isArray(f.price))           setPrice(f.price as [number, number]);
+    if (Array.isArray(f.companies))       setCompanies(new Set(f.companies));
+    if (Array.isArray(f.brands))          setBrands(new Set(f.brands));
+    if (f.ownOnly !== undefined)          setOwnOnly(!!f.ownOnly);
+    if (f.moverOnly !== undefined)        setMoverOnly(!!f.moverOnly);
+    if (f.sort !== undefined)             setSort(f.sort);
+    if (f.sortDir !== undefined)          setSortDir(f.sortDir);
+    setPage(1);
+  };
+
   const catLabel = CATEGORY_DISPLAY.find(c => c.code === selectedCategory)?.label ?? '전체';
+
+  // ranking_filter entity_id: 알파벳순 정렬된 key=value 직렬화
+  const rankingEntityId = [
+    ['age', age],
+    ['category', selectedCategory],
+    ['gender', gender],
+    ['period', period],
+  ].sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
+
+  const rankingEntityLabel = [
+    gender === 'M' ? '남성' : gender === 'F' ? '여성' : null,
+    AGE_MAP[age] ?? null,
+    catLabel !== '전체' ? catLabel : null,
+    periodLabel,
+  ].filter(Boolean).join(' · ');
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  React.useEffect(() => {
+    fetchNoteCountForEntity('ranking_filter', rankingEntityId).then(setNoteCount);
+  }, [rankingEntityId]);
+
+  React.useEffect(() => {
+    if (!rankingEntityId) return;
+    const t = setTimeout(() => {
+      logView('ranking_filter', rankingEntityId, rankingEntityLabel).catch(() => {});
+    }, 300);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rankingEntityId]);
 
   return (
     <>
+      <NoteDrawer
+        key={rankingEntityId}
+        entity_type="ranking_filter"
+        entity_id={rankingEntityId}
+        entity_label={rankingEntityLabel}
+        open={noteDrawerOpen}
+        onClose={() => setNoteDrawerOpen(false)}
+        onCountChange={setNoteCount}
+      />
       <div className="page-title">
         <h1>상품 랭킹</h1>
         {snapshotDate && <span className="chip mono">{periodLabel} · {snapshotDate} 수집</span>}
         <span className="sub">전체 상품 랭킹 · 회사·브랜드·필터 적용</span>
         <div className="row-flex gap-6" style={{ marginLeft: 'auto' }}>
           <button className="btn sm" onClick={() => downloadCsv(sorted, multiDay)}><IcDownload /> CSV</button>
-          <button className="btn sm"><IcBookmark /> 필터 저장</button>
+<button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
+            <IcEdit /> 메모
+            {noteCount > 0 && (
+              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: '#fff', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+                {noteCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -344,6 +434,17 @@ export default function RankingPage() {
           <div className="frh">
             <h3>필터</h3>
             <button className="btn sm" onClick={reset}>초기화</button>
+          </div>
+          <div style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <SavedFiltersDropdown
+              page="/ranking"
+              currentFilter={{
+                period, fromDate, toDate, selectedCategory, gender, age,
+                price, companies: [...companies], brands: [...brands],
+                ownOnly, moverOnly, sort, sortDir,
+              }}
+              onLoad={handleLoadFilter}
+            />
           </div>
           <div className="frb">
             <PeriodFilter

@@ -8,7 +8,10 @@ import {
   XAxis, YAxis, Tooltip, Legend, ReferenceLine,
   ResponsiveContainer, CartesianGrid,
 } from 'recharts';
-import { IcCompany, IcBookmark, IcArrowUR } from '@/components/ui/icons';
+import { IcCompany, IcArrowUR, IcEdit } from '@/components/ui/icons';
+import NoteDrawer from '@/components/me/NoteDrawer';
+import BookmarkToggle from '@/components/me/BookmarkToggle';
+import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
 import { Line as ChartLine, HorizBars } from '@/components/ui/charts';
 import {
   searchCompanies, fetchCompanyInfo, fetchCompanyBrands,
@@ -917,6 +920,10 @@ function CompanyPageInner() {
   const [loading,     setLoading]     = React.useState(!!idFromUrl);
   const [rankLoading, setRankLoading] = React.useState(false);
   const [tab, setTab] = React.useState<'overview' | 'ranking' | 'financial' | 'disclosure'>('overview');
+  const [noteCount, setNoteCount] = React.useState(0);
+  const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(
+    () => (params.get('notes') === 'open' || !!params.get('note')) && !!idFromUrl,
+  );
 
   React.useEffect(() => {
     if (!idFromUrl) {
@@ -957,6 +964,14 @@ function CompanyPageInner() {
     }).catch(() => setLoading(false));
   }, [idFromUrl]);
 
+  React.useEffect(() => {
+    if (idFromUrl) fetchNoteCountForEntity('company', idFromUrl).then(setNoteCount);
+  }, [idFromUrl]);
+
+  React.useEffect(() => {
+    if (idFromUrl && info?.corp_name) logView('company', idFromUrl, info.corp_name).catch(() => {});
+  }, [idFromUrl, info?.corp_name]);
+
   if (!idFromUrl) return <CompanyPortal onSelect={id => router.push(`/company?id=${id}`)} />;
 
   const corpName = loading ? '…' : (info?.corp_name ?? '—');
@@ -964,6 +979,14 @@ function CompanyPageInner() {
 
   return (
     <div className="col-flex gap-14">
+      <NoteDrawer
+        entity_type="company"
+        entity_id={idFromUrl}
+        entity_label={corpName}
+        open={noteDrawerOpen}
+        onClose={() => setNoteDrawerOpen(false)}
+        onCountChange={setNoteCount}
+      />
       <div className="page-title">
         <h1>{corpName}</h1>
         {info?.is_listed && info.stock_code && <span className="chip mono">{info.stock_code}</span>}
@@ -972,7 +995,15 @@ function CompanyPageInner() {
         )}
         {brands.length > 0 && <span className="sub">산하 브랜드 {brands.length}개{ownCount > 0 ? ` · 자사 ${ownCount}개` : ''}</span>}
         <div className="row-flex gap-6" style={{ marginLeft: 'auto' }}>
-          <button className="btn sm"><IcBookmark /> 북마크</button>
+          <BookmarkToggle entity_type="company" entity_id={idFromUrl} label={corpName !== '…' && corpName !== '—' ? corpName : undefined} />
+          <button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
+            <IcEdit /> 메모
+            {noteCount > 0 && (
+              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: '#fff', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+                {noteCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 

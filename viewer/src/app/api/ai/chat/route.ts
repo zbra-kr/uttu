@@ -66,6 +66,12 @@ function buildSystem(context: string[], route: string, today: string): string {
 - 자사 브랜드: brands.is_own = true (B.CAVE CO/LE/WA 라인)
 - 페이지 이동이 도움이 된다면 navigate 도구를 사용해 안내
 
+## 실행 규칙 — 반드시 준수
+- **"X를 조회할게요", "Y를 가져올게요"** 등 계획 문장을 쓰고 멈추지 마 — 선언하면 즉시 tool call로 실행해
+- 분석이 완전히 끝나고 최종 인사이트를 도출하기 전까지 절대 응답을 종료하지 마
+- 필요한 쿼리를 모두 실행한 뒤 한 번에 완성된 분석 결과를 출력해
+- 중간 진행 상황을 알리려면 tool call label에 담고, 텍스트 응답은 최종 결과만 출력해
+
 ${DB_SCHEMA}`;
 }
 
@@ -252,10 +258,10 @@ export async function POST(req: NextRequest) {
       const collectedToolCalls: { name: string; label: string }[] = [];
 
       try {
-        for (let iter = 0; iter < 8; iter++) {
+        for (let iter = 0; iter < 15; iter++) {
           const stream = anthropic.messages.stream({
             model: 'claude-sonnet-4-6',
-            max_tokens: 4096,
+            max_tokens: 8192,
             system,
             tools: TOOLS,
             messages: msgs,

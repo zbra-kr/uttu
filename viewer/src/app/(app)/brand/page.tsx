@@ -3,9 +3,12 @@ import React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Suspense } from 'react';
 import { Line, HorizBars, VertBars } from '@/components/ui/charts';
-import { IcBookmark, IcBrand } from '@/components/ui/icons';
+import { IcBrand, IcEdit } from '@/components/ui/icons';
 import Link from 'next/link';
 import { supabaseBrowser } from '@/lib/supabase/client';
+import NoteDrawer from '@/components/me/NoteDrawer';
+import BookmarkToggle from '@/components/me/BookmarkToggle';
+import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
 import {
   searchBrands,
   fetchBrandInfo,
@@ -213,6 +216,10 @@ function BrandPageInner() {
   const [rankHistory, setRankHistory] = React.useState<BrandRankDay[]>([]);
   const [distribution, setDistribution] = React.useState<BrandDistRow[]>([]);
   const [loading, setLoading] = React.useState(!!idFromUrl);
+  const [noteCount, setNoteCount] = React.useState(0);
+  const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(
+    () => params.get('notes') === 'open' && !!idFromUrl,
+  );
 
   // 분포 필터
   const [distGender, setDistGender] = React.useState('');
@@ -257,6 +264,15 @@ function BrandPageInner() {
       setLoading(false);
     }).catch(e => { console.error(e); setLoading(false); });
   }, [selectedId]);
+
+  React.useEffect(() => {
+    if (selectedId) fetchNoteCountForEntity('brand', selectedId).then(setNoteCount);
+    else setNoteCount(0);
+  }, [selectedId]);
+
+  React.useEffect(() => {
+    if (selectedId && info?.name) logView('brand', selectedId, info.name).catch(() => {});
+  }, [selectedId, info?.name]);
 
   const handleBrandSelect = (id: string) => { setSelectedId(id); router.push(`/brand?id=${id}`); };
   const brandName = info?.name ?? '—';
@@ -310,6 +326,14 @@ function BrandPageInner() {
 
   return (
     <>
+      <NoteDrawer
+        entity_type="brand"
+        entity_id={selectedId}
+        entity_label={brandName !== '—' ? brandName : undefined}
+        open={noteDrawerOpen}
+        onClose={() => setNoteDrawerOpen(false)}
+        onCountChange={setNoteCount}
+      />
       <div className="page-title">
         <h1>{loading ? '…' : brandName}</h1>
         {info?.company_name && (
@@ -320,7 +344,27 @@ function BrandPageInner() {
         <span className="sub">{loading ? '' : info?.introduction?.slice(0, 50) ?? `${stats?.skuCount ?? 0} SKU`}</span>
         <div className="row-flex gap-6" style={{ marginLeft: 'auto' }}>
           <BrandSearch onSelect={handleBrandSelect} />
-          <button className="btn sm"><IcBookmark /> 북마크</button>
+          <button
+            className="btn sm"
+            onClick={() => setNoteDrawerOpen(true)}
+            style={{ position: 'relative' }}
+            title="메모 열기"
+          >
+            <IcEdit /> 메모
+            {noteCount > 0 && (
+              <span style={{
+                position: 'absolute', top: -4, right: -4,
+                minWidth: 14, height: 14, borderRadius: 7, padding: '0 3px',
+                background: 'var(--hs)', color: 'var(--bg)',
+                fontSize: 9, fontFamily: 'var(--mono)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                lineHeight: 1, pointerEvents: 'none',
+              }}>
+                {noteCount}
+              </span>
+            )}
+          </button>
+          <BookmarkToggle entity_type="brand" entity_id={selectedId} label={brandName !== '—' ? brandName : undefined} />
         </div>
       </div>
 
