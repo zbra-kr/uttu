@@ -2,12 +2,18 @@
 상품기획/영업기획 이상탐지 — ranking_snapshots + promotion_items 기반.
 
 탐지 항목:
-  rank_spike          — 경쟁 상품 순위 급등 (전일 대비 +20위↑ & TOP50 진입)
-  rank_drop_own       — 자사 상품 순위 이탈 (전일 대비 -10위↓)
-  new_entrant_top10   — TOP10 신규 진입 (어제 TOP20 밖)
-  sold_out            — TOP50 내 품절 전환
-  promo_heavy_discount — 프로모션 할인율 ≥ 50%
-  price_drop          — 전일 대비 final_price -10% 이상
+  rank_spike             — 경쟁 상품 순위 급등 (전일 대비 +20위↑ & TOP50 진입)
+  rank_drop_own          — 자사 상품 순위 이탈 (전일 대비 -10위↓)
+  new_entrant_top10      — TOP10 신규 진입 (어제 TOP20 밖)
+  sold_out               — TOP50 내 품절 전환
+  price_drop             — 전일 대비 final_price -10% 이상
+  price_rise             — 전일 대비 final_price +10% 이상
+  rank_exit_own          — 자사 상품 TOP100 이탈
+  rank_return_own        — 자사 상품 TOP50 재진입
+  rank_multi_drop_own    — 자사 상품 3개 이상 동시 하락
+  promo_heavy_discount   — 프로모션 할인율 ≥ 50%
+  promo_item_count_drop  — 프로모션 전체 상품 수 전일 대비 -30% 이상
+  promo_own_exit         — 자사 상품 프로모션 이탈
 
 기준 조합: category_code='000' (전체), gender_filter='A', age_filter='AGE_BAND_ALL'
 """
@@ -24,13 +30,18 @@ from worker.detectors.base import Anomaly
 MODULE = "product_planning"
 
 # 임계값
-RANK_SPIKE_DELTA      = 20   # 순위 상승 폭
-RANK_DROP_OWN_DELTA   = 10   # 자사 순위 하락 폭
-NEW_ENTRANT_TOP       = 10   # 오늘 TOP N
-NEW_ENTRANT_PREV_OUT  = 20   # 어제 이 순위 밖이면 신규 진입
-SOLD_OUT_MIN_RANK     = 50   # 이 순위 이내 품절만 탐지
-HEAVY_DISCOUNT_RATE   = 50.0 # 할인율 %
-PRICE_DROP_RATE       = 0.10 # 가격 하락 비율
+RANK_SPIKE_DELTA        = 20   # 순위 상승 폭
+RANK_DROP_OWN_DELTA     = 10   # 자사 순위 하락 폭
+NEW_ENTRANT_TOP         = 10   # 오늘 TOP N
+NEW_ENTRANT_PREV_OUT    = 20   # 어제 이 순위 밖이면 신규 진입
+SOLD_OUT_MIN_RANK       = 50   # 이 순위 이내 품절만 탐지
+HEAVY_DISCOUNT_RATE     = 50.0 # 할인율 %
+PRICE_DROP_RATE         = 0.10 # 가격 하락 비율
+PRICE_RISE_RATE         = 0.10 # 가격 상승 비율
+RANK_EXIT_TOP           = 100  # 자사 상품 이탈 기준 순위
+RANK_RETURN_TOP         = 50   # 자사 상품 재진입 기준 순위
+MULTI_DROP_MIN          = 3    # 동시 하락 최소 상품 수
+PROMO_COUNT_DROP_RATE   = 0.30 # 프로모션 상품 수 급감 임계
 
 
 def _load_ranking(client: Client, target_date: date) -> dict[str, dict]:
@@ -184,6 +195,61 @@ def detect_ranking(client: Client, target_date: date) -> list[Anomaly]:
                           "drop_rate": round(drop_rate, 3), "is_own": today["is_own"]},
                 ))
 
+        # price_rise — 전일 대비 가격 +10% 이상
+        if (
+            prev is not None
+            and prev["final_price"] and today["final_price"]
+            and prev["final_price"] > 0
+        ):
+            rise_rate = (today["final_price"] - prev["final_price"]) / prev["final_price"]
+            if rise_rate >= PRICE_RISE_RATE:
+                label = "[자사] " if today["is_own"] else f"[{brand}] "
+                severity = "medium" if today["is_own"] else "low"
+                anomalies.append(Anomaly(
+                    module=MODULE, severity=severity, anomaly_type="price_rise",
+                    entity_type="product", entity_id=pid, entity_name=name,
+                    description=f"{label}{name} — 가격 {prev['final_price']:,}원 → {today['final_price']:,}원 ({rise_rate*100:.0f}% 인상)",
+                    meta={"price_prev": prev["final_price"], "price_today": today["final_price"],
+                          "rise_rate": round(rise_rate, 3), "is_own": today["is_own"]},
+                ))
+
+        # rank_return_own — 자사 상품 TOP50 재진입
+        if (
+            today["is_own"]
+            and rank_today <= RANK_RETURN_TOP
+            and (rank_prev is None or rank_prev > RANK_RETURN_TOP)
+        ):
+            prev_str = f"{rank_prev}위" if rank_prev else "미진입"
+            anomalies.append(Anomaly(
+                module=MODULE, severity="low", anomaly_type="rank_return_own",
+                entity_type="product", entity_id=pid, entity_name=name,
+                description=f"[자사] {name} — TOP50 재진입 ({prev_str} → {rank_today}위)",
+                meta={"rank_today": rank_today, "rank_prev": rank_prev},
+            ))
+
+    # rank_exit_own — 어제 TOP100 이내였지만 오늘 랭킹에 없는 자사 상품
+    for pid, prev in prev_map.items():
+        if pid not in today_map and prev["is_own"] and prev["rank"] <= RANK_EXIT_TOP:
+            name = prev["product_name"] or "—"
+            anomalies.append(Anomaly(
+                module=MODULE, severity="high", anomaly_type="rank_exit_own",
+                entity_type="product", entity_id=pid, entity_name=name,
+                description=f"[자사] {name} — 전체 랭킹 TOP{RANK_EXIT_TOP} 이탈 (어제 {prev['rank']}위)",
+                meta={"rank_prev": prev["rank"]},
+            ))
+
+    # rank_multi_drop_own — 자사 상품 N개 이상 동시 하락 (rank_drop_own 해당 항목 집계)
+    drop_own_items = [a for a in anomalies if a.anomaly_type == "rank_drop_own"]
+    if len(drop_own_items) >= MULTI_DROP_MIN:
+        names = ", ".join(a.entity_name or "—" for a in drop_own_items[:5])
+        suffix = f" 외 {len(drop_own_items) - 5}개" if len(drop_own_items) > 5 else ""
+        anomalies.append(Anomaly(
+            module=MODULE, severity="high", anomaly_type="rank_multi_drop_own",
+            entity_type=None, entity_id=None, entity_name=None,
+            description=f"[자사] 자사 상품 {len(drop_own_items)}개 동시 순위 하락: {names}{suffix}",
+            meta={"count": len(drop_own_items), "products": [a.entity_id for a in drop_own_items]},
+        ))
+
     logger.info(f"ranking_detector_done date={target_date} anomalies={len(anomalies)}")
     return anomalies
 
@@ -213,4 +279,84 @@ def detect_promo_discount(client: Client, target_date: date) -> list[Anomaly]:
         ))
 
     logger.info(f"promo_detector_done date={target_date} anomalies={len(anomalies)}")
+    return anomalies
+
+
+def _count_promo_items(client: Client, target_date: date) -> int:
+    result = (
+        client.table("promotion_items")
+        .select("id", count="exact")
+        .eq("snapshot_date", target_date.isoformat())
+        .execute()
+    )
+    return result.count or 0
+
+
+def detect_promo_anomalies(client: Client, target_date: date) -> list[Anomaly]:
+    """
+    promo_item_count_drop — 전일 대비 프로모션 상품 수 -30% 이상 급감
+    promo_own_exit        — 어제 있던 자사 상품이 오늘 프로모션에서 빠짐
+    """
+    from worker.detectors.brand_ranking_detector import _load_own_brand_slugs
+
+    yesterday = target_date - timedelta(days=1)
+    anomalies: list[Anomaly] = []
+
+    # promo_item_count_drop
+    count_today = _count_promo_items(client, target_date)
+    count_prev  = _count_promo_items(client, yesterday)
+
+    if count_prev > 0 and count_today < count_prev * (1 - PROMO_COUNT_DROP_RATE):
+        drop_rate = (count_prev - count_today) / count_prev
+        anomalies.append(Anomaly(
+            module=MODULE, severity="medium", anomaly_type="promo_item_count_drop",
+            entity_type=None, entity_id=None, entity_name=None,
+            description=(
+                f"프로모션 상품 수 급감: {count_prev}건 → {count_today}건 "
+                f"({drop_rate*100:.0f}% 감소)"
+            ),
+            meta={"count_today": count_today, "count_prev": count_prev,
+                  "drop_rate": round(drop_rate, 3)},
+        ))
+
+    # promo_own_exit — 자사 브랜드 슬러그로 어제/오늘 비교
+    own_slugs = _load_own_brand_slugs(client)
+    if not own_slugs:
+        logger.info(f"promo_anomalies_done date={target_date} anomalies={len(anomalies)}")
+        return anomalies
+
+    def _load_own_promo_items(d: date) -> dict[str, str]:
+        """musinsa_no → product_name, 자사 브랜드만."""
+        result: dict[str, str] = {}
+        offset = 0
+        while True:
+            batch = (
+                client.table("promotion_items")
+                .select("musinsa_no, product_name, musinsa_brand_slug")
+                .eq("snapshot_date", d.isoformat())
+                .in_("musinsa_brand_slug", list(own_slugs))
+                .range(offset, offset + 999)
+                .execute()
+                .data or []
+            )
+            for r in batch:
+                result[r["musinsa_no"]] = r.get("product_name") or r["musinsa_no"]
+            if len(batch) < 1000:
+                break
+            offset += 1000
+        return result
+
+    prev_own = _load_own_promo_items(yesterday)
+    today_own = _load_own_promo_items(target_date)
+
+    exited = {no: name for no, name in prev_own.items() if no not in today_own}
+    for musinsa_no, product_name in exited.items():
+        anomalies.append(Anomaly(
+            module=MODULE, severity="medium", anomaly_type="promo_own_exit",
+            entity_type="product", entity_id=musinsa_no, entity_name=product_name,
+            description=f"[자사] {product_name} — 어제 프로모션 노출 → 오늘 이탈",
+            meta={"musinsa_no": musinsa_no},
+        ))
+
+    logger.info(f"promo_anomalies_done date={target_date} anomalies={len(anomalies)}")
     return anomalies

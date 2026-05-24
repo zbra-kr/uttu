@@ -280,9 +280,17 @@ class ReviewScraper(BaseScraper):
 
 
 async def main(limit: int | None = None) -> None:
+    from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = ReviewScraper(client)
-    await scraper.run(limit=limit)
+    tracker = JobTracker(client, script="musinsa_review", label="리뷰 수집")
+    await tracker.start()
+    try:
+        total = await scraper.run(limit=limit)
+        await tracker.finish(rows_done=total or 0)
+    except Exception as e:
+        await tracker.error(str(e))
+        raise
 
 
 if __name__ == "__main__":

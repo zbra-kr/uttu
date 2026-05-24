@@ -263,11 +263,22 @@ function AnomalyDrawer({ item, onClose, onPrev, onNext, onMarkRead }: {
 }
 
 export default function AnomalyPage() {
+  const jumpId = React.useMemo(() => {
+    if (typeof window !== 'undefined') return new URLSearchParams(window.location.search).get('id') ?? '';
+    return '';
+  }, []);
+
   const [period,   setPeriod]   = React.useState('7d');
   const [fromDate, setFromDate] = React.useState(() => kstDaysAgo(6));
   const [toDate,   setToDate]   = React.useState(kstToday);
 
-  const [sev,    setSev]    = React.useState(new Set(['hi', 'md', 'lo']));
+  const [sev,    setSev]    = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('sev');
+      if (p && ['hi', 'md', 'lo'].includes(p)) return new Set([p]);
+    }
+    return new Set(['hi', 'md', 'lo']);
+  });
   const [area,   setArea]   = React.useState(new Set(ALL_AREAS));
   const [status, setStatus] = React.useState('open');
   const [detail, setDetail] = React.useState<ARow | null>(null);
@@ -275,6 +286,25 @@ export default function AnomalyPage() {
   const [rows,    setRows]    = React.useState<ARow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [errMsg,  setErrMsg]  = React.useState<string | null>(null);
+
+  const jumpedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!jumpId || jumpedRef.current) return;
+    supabaseBrowser()
+      .from('anomalies')
+      .select('id, detected_at, detection_date, module, severity, anomaly_type, entity_type, entity_name, description, meta, is_read')
+      .eq('id', jumpId)
+      .single()
+      .then(({ data }) => {
+        if (!data) return;
+        jumpedRef.current = true;
+        const row: ARow = { ...data, sev: sevKey(data.severity), area: areaKey(data.anomaly_type) };
+        setSev(new Set(['hi', 'md', 'lo']));
+        setStatus('all');
+        setDetail(row);
+      });
+  }, [jumpId]);
 
   React.useEffect(() => {
     const { from, to } = computeDateRange(period, fromDate, toDate);

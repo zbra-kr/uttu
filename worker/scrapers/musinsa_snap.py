@@ -604,9 +604,17 @@ class SnapScraper(BaseScraper):
 
 
 async def main() -> None:
+    from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = SnapScraper(client)
-    await scraper.run()
+    tracker = JobTracker(client, script="musinsa_snap", label="스냅 수집")
+    await tracker.start()
+    try:
+        await scraper.run()
+        await tracker.finish(rows_done=0)
+    except Exception as e:
+        await tracker.error(str(e))
+        raise
 
 
 if __name__ == "__main__":

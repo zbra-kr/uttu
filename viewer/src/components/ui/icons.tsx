@@ -87,7 +87,10 @@ export const IcUser = (p: IconProps) => <Icon {...p} d={<><circle cx="8" cy="5.5
 export const IcSnap = (p: IconProps) => <Icon {...p} d={<><rect x="2" y="4.5" width="12" height="8.5" rx="1"/><circle cx="8" cy="8.75" r="2.5"/><path d="M5.5 4.5l1-1.5h3l1 1.5"/></>} />;
 export const IcBook = (p: IconProps) => <Icon {...p} d={<><path d="M3 3h4.5a1.5 1.5 0 0 1 1.5 1.5V13l-1.5-.8a1.5 1.5 0 0 0-1.5 0L3 13V3z"/><path d="M7 3h4.5a1.5 1.5 0 0 1 1.5 1.5V13l-1.5-.8a1.5 1.5 0 0 0-1.5 0L8.5 13"/></>} />;
 export const IcUsers = (p: IconProps) => <Icon {...p} d={<><circle cx="6" cy="6" r="2"/><circle cx="11" cy="6.5" r="1.5"/><path d="M2.5 13c0-2 1.6-3.5 3.5-3.5s3.5 1.5 3.5 3.5M10 13c0-1.5 1-2.5 2-2.5s2 1 2 2.5"/></>} />;
-export const IcShield = (p: IconProps) => <Icon {...p} d={<><path d="M8 1.5L13 3v5c0 3.3-2.4 5.7-5 6.5C5.4 13.7 3 11.3 3 8V3z"/><path d="M5.5 8L7 9.5l3.5-3.5"/></>} />;
+export const IcShield   = (p: IconProps) => <Icon {...p} d={<><path d="M8 1.5L13 3v5c0 3.3-2.4 5.7-5 6.5C5.4 13.7 3 11.3 3 8V3z"/><path d="M5.5 8L7 9.5l3.5-3.5"/></>} />;
+export const IcExpand   = (p: IconProps) => <Icon {...p} d={<><path d="M9 3h4v4M13 3l-4.5 4.5M7 13H3v-4M3 13l4.5-4.5"/></>} />;
+export const IcContract = (p: IconProps) => <Icon {...p} d={<><path d="M13 7H9V3M9 7l4.5-4.5M3 9h4v4M7 9l-4.5 4.5"/></>} />;
+export const IcClock    = (p: IconProps) => <Icon {...p} d={<><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 2"/></>} />;
 export const IcDot = ({ size = 6, color = 'currentColor', style = {} }: { size?: number; color?: string; style?: React.CSSProperties }) => (
   <span style={{ display: 'inline-block', width: size, height: size, borderRadius: 999, background: color, flexShrink: 0, ...style }} />
 );

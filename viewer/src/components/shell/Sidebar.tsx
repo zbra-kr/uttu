@@ -5,7 +5,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcSettings, IcMore, IcChevL, IcChevR, IcChevD } from '../ui/icons';
 
-const ADMIN_EMAIL   = 'it@bcave.co.kr';
 const ADMIN_ONLY    = new Set(['magazine', 'matching', 'reviews']);
 
 const ROUTES = [
@@ -26,20 +25,11 @@ const ROUTES = [
   { id: 'settings',     path: '/settings',     label: '설정',      Icon: IcSettings,    section: 'admin' },
 ];
 
-const NAV_COUNTS: Record<string, number> = {
-  home: 17,
-  anomaly: 17,
-  promo: 142,
-  snap: 38,
-  magazine: 4,
-  reviews: 184,
-  mapping: 912,
-};
-
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
   theme: string;
+  navCounts?: Record<string, number>;
 }
 
 const GROUP_PARENTS = new Set(ROUTES.filter(r => r.parent).map(r => r.parent!));
@@ -50,26 +40,31 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-export default function Sidebar({ collapsed, onToggle, theme }: SidebarProps) {
+export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: SidebarProps) {
   const pathname = usePathname();
   const router   = useRouter();
   const [hovering, setHovering] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const [user, setUser] = React.useState<{ name: string; email: string; initials: string } | null>(null);
+  const [user, setUser] = React.useState<{ name: string; email: string; initials: string; role: string; avatarUrl: string | null } | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
 
   const isPeek  = collapsed && hovering;
   const show    = !collapsed || hovering;
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const isAdmin = user?.role === 'admin';
 
   // 로그인 유저 정보
   React.useEffect(() => {
-    supabaseBrowser().auth.getUser().then(({ data }) => {
+    const sb = supabaseBrowser();
+    sb.auth.getUser().then(async ({ data }) => {
       if (!data.user) return;
       const email = data.user.email ?? '';
-      const name  = (data.user.user_metadata?.full_name as string | undefined)
-        || email.split('@')[0];
-      setUser({ name, email, initials: getInitials(name) });
+      const { data: profile } = await sb
+        .from('profiles')
+        .select('full_name, display_name, role, avatar_url')
+        .eq('id', data.user.id)
+        .single();
+      const name = profile?.full_name || email.split('@')[0];
+      setUser({ name, email, initials: getInitials(name), role: profile?.role ?? 'viewer', avatarUrl: profile?.avatar_url ?? null });
     });
   }, []);
 
@@ -172,7 +167,7 @@ export default function Sidebar({ collapsed, onToggle, theme }: SidebarProps) {
               >
                 <r.Icon size={isSub ? 13 : 16} />
                 {show && <span>{r.label}</span>}
-                {show && NAV_COUNTS[r.id] && <span className="num">{NAV_COUNTS[r.id]}</span>}
+                {show && navCounts[r.id] ? <span className="num">{navCounts[r.id]}</span> : null}
               </Link>
               {show && isParent && (
                 <button
@@ -252,7 +247,12 @@ export default function Sidebar({ collapsed, onToggle, theme }: SidebarProps) {
             style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, textDecoration: 'none', color: 'inherit', overflow: 'hidden' }}
             title={!show ? (user?.name ?? '내 프로필') : undefined}
           >
-            <div className="avatar" style={{ flexShrink: 0 }}>{user?.initials ?? '?'}</div>
+            <div className="avatar" style={{ flexShrink: 0, overflow: 'hidden', padding: user?.avatarUrl ? 0 : undefined }}>
+              {user?.avatarUrl
+                ? <img src={user.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                : (user?.initials ?? '?')
+              }
+            </div>
             {show && (
               <div className="who" style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
                 <span className="n" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

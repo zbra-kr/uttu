@@ -2,38 +2,153 @@
 import React from 'react';
 import { IcEdit, IcBell, IcShield, IcPlus } from '@/components/ui/icons';
 import Link from 'next/link';
+import { fetchMyProfile, uploadAvatar, MyProfile } from '@/lib/queries-me';
+import ProfileEditModal from '@/components/me/ProfileEditModal';
+import SubscriptionMatrix from '@/components/me/SubscriptionMatrix';
+import InboxList from '@/components/me/InboxList';
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
+function formatJoined(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatLastSeen(iso: string | null): string {
+  if (!iso) return '기록 없음';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  if (diffMs < 86400000 && d.getDate() === now.getDate()) {
+    return `오늘 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffDays === 1) return '어제';
+  if (diffDays < 7) return `${diffDays}일 전`;
+  return formatJoined(iso);
+}
+
+const ADMIN_CHIPS  = ['홈', '랭킹', '이상탐지', '회사', '브랜드', '상품', '프로모션', '스냅샷', '매거진', '리뷰', '매핑 (admin)', '설정 (admin)'];
+const VIEWER_CHIPS = ['홈', '랭킹', '이상탐지', '회사', '브랜드', '상품', '프로모션', '스냅샷'];
 
 export default function MePage() {
+  const [profile, setProfile] = React.useState<MyProfile | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const [avatarTs, setAvatarTs] = React.useState(Date.now());
+  const [avatarError, setAvatarError] = React.useState<string | null>(null);
+  const fileRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    fetchMyProfile().then(p => {
+      setProfile(p);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+    setUploading(true);
+    setAvatarError(null);
+    const { url, error } = await uploadAvatar(file, profile.id);
+    setUploading(false);
+    e.target.value = '';
+    if (error) { setAvatarError(error); return; }
+    if (url) {
+      setProfile(p => p ? { ...p, avatar_url: url } : p);
+      setAvatarTs(Date.now());
+    }
+  };
+
+  if (loading) {
+    return <div style={{ padding: 24, color: 'var(--f3)', fontSize: 13 }}>불러오는 중…</div>;
+  }
+
+  if (!profile) {
+    return <div style={{ padding: 24, color: 'var(--shf)', fontSize: 13 }}>프로필을 불러올 수 없습니다.</div>;
+  }
+
+  const isAdmin = profile.role === 'admin';
+  const name     = profile.full_name || profile.email.split('@')[0];
+  const initials = getInitials(name);
+  const chips    = isAdmin ? ADMIN_CHIPS : VIEWER_CHIPS;
+
   return (
     <>
+      {editOpen && (
+        <ProfileEditModal
+          profile={profile}
+          onClose={() => setEditOpen(false)}
+          onSaved={(patch) => {
+            setProfile(p => p ? { ...p, ...patch } : p);
+            setEditOpen(false);
+          }}
+        />
+      )}
+
       <section className="panel" style={{ padding: 24 }}>
         <div className="row-flex gap-16" style={{ alignItems: 'flex-start' }}>
-          <div className="panel compact" style={{ width: 88, height: 88, background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span className="mono" style={{ fontSize: 26, fontWeight: 500 }}>JH</span>
+          <div className="col-flex gap-4" style={{ flexShrink: 0, alignItems: 'center' }}>
+            <div
+              className="panel compact"
+              style={{ width: 88, height: 88, background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', position: 'relative', overflow: 'hidden', padding: 0 }}
+              onClick={() => fileRef.current?.click()}
+              title="클릭해서 이미지 변경"
+            >
+              {profile.avatar_url
+                ? <img src={`${profile.avatar_url}?t=${avatarTs}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="프로필" />
+                : <span className="mono" style={{ fontSize: 26, fontWeight: 500 }}>{initials}</span>
+              }
+              {uploading && (
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: '#fff', fontSize: 11 }}>업로드 중…</span>
+                </div>
+              )}
+              {!uploading && (
+                <div className="avatar-hover-overlay" style={{ position: 'absolute', inset: 0, background: 'transparent', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 6, opacity: 0, transition: 'opacity 120ms' }}
+                  onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'rgba(0,0,0,0.35)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.opacity = '0'; e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <span style={{ color: '#fff', fontSize: 10 }}>변경</span>
+                </div>
+              )}
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handleAvatarChange} />
+            </div>
+            {avatarError && <div style={{ fontSize: 10, color: 'var(--shf)', textAlign: 'center', maxWidth: 88 }}>{avatarError}</div>}
           </div>
           <div className="flex-1">
             <div className="row-flex baseline gap-10">
-              <h1 style={{ fontSize: 24, fontWeight: 500, margin: 0 }}>정호철</h1>
-              <span className="chip lg" style={{ background: 'var(--shb)', color: 'var(--shf)', borderColor: 'var(--shf)' }}>admin</span>
-              <span className="chip lg">IT팀장</span>
+              <h1 style={{ fontSize: 24, fontWeight: 500, margin: 0 }}>{name}</h1>
+              {isAdmin && (
+                <span className="chip lg" style={{ background: 'var(--shb)', color: 'var(--shf)', borderColor: 'var(--shf)' }}>admin</span>
+              )}
+              {profile.team && <span className="chip lg">{profile.team}</span>}
             </div>
-            <div className="mono dim" style={{ marginTop: 4, fontSize: 12 }}>zbra@zbra.co.kr · 가입 2025.11 · 마지막 접속 오늘 09:14</div>
+            <div className="mono dim" style={{ marginTop: 4, fontSize: 12 }}>
+              {profile.email} · 가입 {formatJoined(profile.created_at)} · 마지막 접속 {formatLastSeen(profile.last_sign_in_at)}
+            </div>
             <div className="row-flex gap-6" style={{ marginTop: 12 }}>
-              <Link href="/settings" className="btn sm"><IcEdit /> 프로필 편집</Link>
+              <button className="btn sm" onClick={() => setEditOpen(true)}><IcEdit /> 프로필 편집</button>
               <Link href="/settings" className="btn sm"><IcBell /> 알림 설정</Link>
               <Link href="/settings" className="btn sm"><IcShield /> 2FA</Link>
             </div>
           </div>
           <div className="col-flex gap-2" style={{ alignItems: 'flex-end' }}>
             <span className="sec-tag">activity score (30d)</span>
-            <span className="mono tnum" style={{ fontSize: 28, fontWeight: 500 }}>1,248</span>
-            <span className="mono dim" style={{ fontSize: 11 }}>↑ 14% vs 직전 30일</span>
+            <span className="mono tnum" style={{ fontSize: 28, fontWeight: 500 }}>—</span>
+            <span className="mono dim" style={{ fontSize: 11 }}>Phase 6에서 구현</span>
           </div>
         </div>
       </section>
 
       <div className="grid grid-6 gap-8">
-        {[['북마크', '24', '+ 3 (7d)'], ['저장 메모', '18', '+ 2'], ['검색 횟수', '142', '오늘 12'], ['저장 필터', '6', ''], ['활성 알림', '12', '6 영역'], ['해소한 이상', '38', '담당']].map(([l, v, d], i) => (
+        {[['북마크', '—', ''], ['저장 메모', '—', ''], ['검색 횟수', '—', ''], ['저장 필터', '—', ''], ['활성 알림', '—', ''], ['해소한 이상', '—', '']].map(([l, v, d], i) => (
           <div key={i} className="kpi">
             <span className="label">{l}</span>
             <div className="val">{v}</div>
@@ -71,7 +186,7 @@ export default function MePage() {
 
           <section className="panel">
             <div className="sec-head">
-              <h3>내 메모 <span className="sub">18건 · 최근순</span></h3>
+              <h3>내 메모 <span className="sub">최근순</span></h3>
               <button className="btn sm"><IcPlus /> 메모</button>
             </div>
             <div className="col-flex gap-8">
@@ -98,7 +213,7 @@ export default function MePage() {
         <div className="col-flex gap-12">
           <section className="panel">
             <div className="sec-head">
-              <h3>북마크 <span className="sub">24건 · 영역별</span></h3>
+              <h3>북마크 <span className="sub">영역별</span></h3>
               <button className="btn sm">관리 ↗</button>
             </div>
             {[
@@ -119,29 +234,24 @@ export default function MePage() {
 
           <section className="panel">
             <div className="sec-head">
-              <h3>알림 구독 <span className="sub">12개 활성</span></h3>
-              <Link href="/settings" className="btn sm">설정 ↗</Link>
+              <h3>알림 구독</h3>
             </div>
-            {[
-              ['일간 요약 (전일 03:30)', '이메일', true],
-              ['이상탐지 HIGH (담당 영역)', '이메일 + Slack', true],
-              ['이상탐지 MED (담당 영역)', 'Slack', true],
-              ['신규 공시 (구독 회사 4)', 'Slack', true],
-              ['자사 리뷰 ★1~2', '이메일', true],
-              ['랭킹 변동 (북마크 브랜드)', 'Slack', false],
-            ].map((n, i) => (
-              <div key={i} className="row-flex center gap-10" style={{ padding: '8px 0', borderBottom: i < 5 ? '0.5px dashed var(--bs)' : 'none' }}>
-                <span style={{ flex: 1, fontSize: 12, color: n[2] ? 'var(--f1)' : 'var(--f4)' }}>{n[0]}</span>
-                <span className="mono dim" style={{ fontSize: 11, width: 120 }}>{n[1]}</span>
-                <div className={`toggle ${n[2] ? 'on' : ''}`}><div className="thumb" /></div>
-              </div>
-            ))}
+            <SubscriptionMatrix isAdmin={isAdmin} />
+          </section>
+
+          <section className="panel">
+            <div className="sec-head">
+              <h3>받은 알림 <span className="sub">최근 50건</span></h3>
+            </div>
+            <InboxList limit={50} />
           </section>
 
           <section className="panel surface">
-            <div className="sec-head"><h3>내 권한 <span className="sub">admin · 전체 영역</span></h3></div>
+            <div className="sec-head">
+              <h3>내 권한 <span className="sub">{isAdmin ? 'admin · 전체 영역' : 'viewer'}</span></h3>
+            </div>
             <div className="row-flex gap-4 wrap">
-              {['홈', '랭킹', '이상탐지', '회사', '브랜드', '상품', '프로모션', '스냅샷', '매거진', '리뷰', '매핑 (admin)', '설정 (admin)'].map((a, i) => (
+              {chips.map((a, i) => (
                 <span key={i} className="chip lg">{a}</span>
               ))}
             </div>

@@ -9,6 +9,7 @@ interface Company {
   corp_name: string;
   business_number: string | null;
   dart_skip: boolean;
+  remark: string | null;
 }
 
 interface DartCandidate {
@@ -44,6 +45,7 @@ interface CompanyListItem {
   id: string;
   corp_name: string;
   business_number: string | null;
+  remark: string | null;
 }
 
 interface LinkedBrand {
@@ -52,6 +54,7 @@ interface LinkedBrand {
   name_eng: string | null;
   company_skip: boolean;
   company_confirmed: boolean;
+  remark: string | null;
 }
 
 interface AddBrandOption {
@@ -76,6 +79,39 @@ function parseCorp(raw: string): string {
   const m = /corp_code=(\d{8})/.exec(raw);
   if (m) return m[1];
   return raw.replace(/\D/g, '').slice(0, 8);
+}
+
+// ─── 리마크 인라인 에디터 ──────────────────────────────────────────────────
+function RemarkEditor({ value, onSave }: { value: string | null; onSave: (v: string) => void }) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft]     = React.useState(value ?? '');
+  React.useEffect(() => { setDraft(value ?? ''); }, [value]);
+
+  const commit = () => {
+    setEditing(false);
+    if (draft !== (value ?? '')) onSave(draft);
+  };
+
+  if (editing) {
+    return (
+      <textarea
+        autoFocus rows={2} value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Escape') { setEditing(false); setDraft(value ?? ''); } }}
+        style={{ fontSize: 11, color: 'var(--f1)', background: 'var(--snk)', border: '1px solid var(--bd)',
+          borderRadius: 4, padding: '3px 6px', width: '100%', resize: 'none', outline: 'none',
+          fontFamily: 'inherit', lineHeight: 1.5, marginTop: 4 }}
+      />
+    );
+  }
+  return (
+    <div onClick={() => setEditing(true)}
+      style={{ fontSize: 11, color: value ? 'var(--f3)' : 'var(--f4)', cursor: 'text',
+        marginTop: 4, minHeight: 16, fontStyle: value ? 'normal' : 'italic', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+      {value || '메모 추가...'}
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -159,6 +195,17 @@ function MappingPanel({ company, onSaved }: { company: Company; onSaved: (id: st
       : 'unknown'
     : null;
 
+  const [companyRemark, setCompanyRemark] = React.useState<string | null>(company.remark);
+  React.useEffect(() => { setCompanyRemark(company.remark); }, [company.id, company.remark]);
+
+  const saveCompanyRemark = async (v: string) => {
+    setCompanyRemark(v || null);
+    await fetch(`/api/companies/${company.id}/remark`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remark: v || null }),
+    });
+  };
+
   const [linkedBrands, setLinkedBrands] = React.useState<{ id: string; name: string }[]>([]);
   React.useEffect(() => {
     supabaseBrowser()
@@ -184,6 +231,7 @@ function MappingPanel({ company, onSaved }: { company: Company; onSaved: (id: st
             ))}
           </div>
         )}
+        <RemarkEditor value={companyRemark} onSave={saveCompanyRemark} />
       </div>
 
       <div className="row-flex gap-6">
@@ -285,11 +333,30 @@ function CompanyBrandPanel({ company }: { company: CompanyListItem }) {
   const [batchBusy, setBatchBusy]   = React.useState(false);
   const [batchError, setBatchError] = React.useState('');
 
+  const [companyRemark, setCompanyRemark] = React.useState<string | null>(company.remark);
+  React.useEffect(() => { setCompanyRemark(company.remark); }, [company.id, company.remark]);
+
+  const saveCompanyRemark = async (v: string) => {
+    setCompanyRemark(v || null);
+    await fetch(`/api/companies/${company.id}/remark`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remark: v || null }),
+    });
+  };
+
+  const saveBrandRemark = async (brandId: string, v: string) => {
+    setBrands(bs => bs.map(b => b.id === brandId ? { ...b, remark: v || null } : b));
+    await fetch(`/api/brands/${brandId}/remark`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remark: v || null }),
+    });
+  };
+
   const fetchBrands = React.useCallback(async () => {
     setLoading(true);
     const { data } = await (supabaseBrowser()
       .from('brands')
-      .select('id, name, name_eng, company_skip, company_confirmed')
+      .select('id, name, name_eng, company_skip, company_confirmed, remark')
       .eq('company_id', company.id)
       .not('detail_fetched_at', 'is', null)
       .order('name') as any);
@@ -427,6 +494,7 @@ function CompanyBrandPanel({ company }: { company: CompanyListItem }) {
             )}
           </div>
         )}
+        <RemarkEditor value={companyRemark} onSave={saveCompanyRemark} />
       </div>
 
       {/* 연결된 브랜드 목록 */}
@@ -456,6 +524,7 @@ function CompanyBrandPanel({ company }: { company: CompanyListItem }) {
                     {b.name_eng && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--f4)' }}>{b.name_eng}</span>}
                     {b.company_confirmed && !b.company_skip && <span style={{ marginLeft: 5, fontSize: 9, color: 'var(--slf)' }}>✓</span>}
                   </div>
+                  <RemarkEditor value={b.remark} onSave={v => saveBrandRemark(b.id, v)} />
                 </div>
                 <div className="row-flex gap-4" style={{ flexShrink: 0 }}>
                   <button className="btn sm" style={{ fontSize: 10, padding: '2px 7px', color: 'var(--slf)', opacity: b.company_confirmed ? 0.3 : 1 }}
@@ -558,7 +627,7 @@ function DartTab() {
     try {
       let q = supabaseBrowser()
         .from('companies')
-        .select('id, corp_name, business_number, dart_skip', { count: 'exact' })
+        .select('id, corp_name, business_number, dart_skip, remark', { count: 'exact' })
         .order('corp_name')
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
       if (!showDone)    q = q.is('corp_code', null);
@@ -766,7 +835,7 @@ function BrandTab() {
 
       let q = (supabaseBrowser()
         .from('companies')
-        .select('id, corp_name, business_number', { count: 'exact' })
+        .select('id, corp_name, business_number, remark', { count: 'exact' })
         .order('corp_name')
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)) as any;
       if (!showSkipped) q = q.eq('dart_skip', false);

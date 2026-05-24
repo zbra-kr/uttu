@@ -187,9 +187,17 @@ class BrandRankingScraper(BaseScraper):
 
 
 async def main() -> None:
+    from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = BrandRankingScraper(client)
-    await scraper.run()
+    tracker = JobTracker(client, script="musinsa_brand_ranking", label="브랜드 랭킹")
+    await tracker.start()
+    try:
+        await scraper.run()
+        await tracker.finish(rows_done=0)
+    except Exception as e:
+        await tracker.error(str(e))
+        raise
 
 
 if __name__ == "__main__":

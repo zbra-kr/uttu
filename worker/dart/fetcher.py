@@ -17,7 +17,7 @@ import httpx
 from loguru import logger
 
 BASE = "https://opendart.fss.or.kr/api"
-RATE_LIMIT_SEC = 1.0
+RATE_LIMIT_SEC = 0.1  # DART 한도 1,000건/분 = 16.7건/초 → 0.1초 = 600건/분으로 안전
 
 
 async def _get_json(client: httpx.AsyncClient, url: str, params: dict[str, Any]) -> dict:

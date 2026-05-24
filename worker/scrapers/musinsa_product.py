@@ -348,9 +348,17 @@ class ProductScraper(BaseScraper):
 
 
 async def main(limit: int = 50, own_only: bool = False, today_ranking: bool = False, ranking_top_n: int = 50, snap_only: bool = False) -> None:
+    from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = ProductScraper(client)
-    await scraper.run(limit=limit, own_only=own_only, today_ranking=today_ranking, ranking_top_n=ranking_top_n, snap_only=snap_only)
+    tracker = JobTracker(client, script="musinsa_product", label="상품 상세")
+    await tracker.start()
+    try:
+        total = await scraper.run(limit=limit, own_only=own_only, today_ranking=today_ranking, ranking_top_n=ranking_top_n, snap_only=snap_only)
+        await tracker.finish(rows_done=total or 0)
+    except Exception as e:
+        await tracker.error(str(e))
+        raise
 
 
 if __name__ == "__main__":

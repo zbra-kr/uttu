@@ -5,6 +5,7 @@ import { Suspense } from 'react';
 import { Line, HorizBars, VertBars } from '@/components/ui/charts';
 import { IcBookmark, IcBrand } from '@/components/ui/icons';
 import Link from 'next/link';
+import { supabaseBrowser } from '@/lib/supabase/client';
 import {
   searchBrands,
   fetchBrandInfo,
@@ -202,7 +203,8 @@ export default function BrandPage() {
 function BrandPageInner() {
   const params = useSearchParams();
   const router = useRouter();
-  const idFromUrl = params.get('id') ?? '';
+  const idFromUrl  = params.get('id')   ?? '';
+  const slugFromUrl = params.get('slug') ?? '';
 
   const [selectedId, setSelectedId] = React.useState(idFromUrl);
   const [info, setInfo] = React.useState<BrandInfo | null>(null);
@@ -225,6 +227,14 @@ function BrandPageInner() {
   React.useEffect(() => { if (idFromUrl) setSelectedId(idFromUrl); }, [idFromUrl]);
 
   React.useEffect(() => {
+    if (!slugFromUrl || idFromUrl) return;
+    supabaseBrowser().from('brands').select('id').eq('slug', slugFromUrl).single()
+      .then(({ data }) => {
+        if (data?.id) router.replace(`/brand?id=${data.id}`);
+      });
+  }, [slugFromUrl, idFromUrl]);
+
+  React.useEffect(() => {
     if (!selectedId) return;
     setLoading(true);
     fetchBrandInfo(selectedId).then(async bi => {
@@ -238,6 +248,12 @@ function BrandPageInner() {
         fetchBrandRankingDistribution(bi.name),
       ]);
       setStats(st); setProducts(prods); setRankHistory(rh); setDistribution(dist);
+      window.dispatchEvent(new CustomEvent('uttu:ai-context', { detail: [
+        `브랜드 · ${bi.name}`,
+        `SKU ${st.skuCount}`,
+        `TOP100 ${st.top100Count}`,
+        ...(st.avgRank > 0 ? [`평균 ${st.avgRank}위`] : []),
+      ] }));
       setLoading(false);
     }).catch(e => { console.error(e); setLoading(false); });
   }, [selectedId]);

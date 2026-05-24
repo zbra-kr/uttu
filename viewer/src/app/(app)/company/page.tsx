@@ -932,7 +932,14 @@ function CompanyPageInner() {
       fetchCompanyDisclosures(idFromUrl),
     ]).then(async ([ci, cb, cf, cd]) => {
       setInfo(ci); setBrands(cb); setFinancials(cf); setDisclosures(cd);
-      if (ci) window.dispatchEvent(new CustomEvent('uttu:crumb', { detail: { brand: ci.corp_name, name: '' } }));
+      if (ci) {
+        window.dispatchEvent(new CustomEvent('uttu:crumb', { detail: { brand: ci.corp_name, name: '' } }));
+        window.dispatchEvent(new CustomEvent('uttu:ai-context', { detail: [
+          `회사 · ${ci.corp_name}`,
+          ci.corp_code ?? (ci.stock_code ?? '비상장'),
+          `${cb.length}개 브랜드`,
+        ] }));
+      }
       setLoading(false);
 
       if (cb.length > 0) {

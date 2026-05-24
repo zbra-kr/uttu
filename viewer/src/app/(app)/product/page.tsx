@@ -294,7 +294,15 @@ function ProductPageInner() {
       fetchProductCategoryRanks(selectedNo),
     ]).then(async ([d, ph, rh, cr]) => {
       setDetail(d);
-      if (d) window.dispatchEvent(new CustomEvent('uttu:crumb', { detail: { brand: d.brand_name, name: d.name } }));
+      if (d) {
+        window.dispatchEvent(new CustomEvent('uttu:crumb', { detail: { brand: d.brand_name, name: d.name } }));
+        window.dispatchEvent(new CustomEvent('uttu:ai-context', { detail: [
+          `상품 · ${d.name}`,
+          `#${d.musinsa_no}`,
+          ...(d.final_price ? [`${d.final_price.toLocaleString()}원`] : []),
+          ...(d.rank_position ? [`현재 ${d.rank_position}위`] : []),
+        ] }));
+      }
       setPriceHistory(ph);
       setRankHistory(rh);
       setCategoryRanks(cr);

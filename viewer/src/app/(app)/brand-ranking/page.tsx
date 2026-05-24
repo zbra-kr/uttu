@@ -26,6 +26,7 @@ function daysAgoStr(n: number) {
   return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 }
 function periodToCompareDate(period: string, fromDate: string): string | undefined {
+  if (period === 'today') return daysAgoStr(1);
   if (period === '7d')  return daysAgoStr(7);
   if (period === '30d') return daysAgoStr(30);
   if (period === '90d') return daysAgoStr(90);
@@ -33,7 +34,7 @@ function periodToCompareDate(period: string, fromDate: string): string | undefin
   return undefined;
 }
 function fmt만(v: number | null) {
-  if (v == null) return '—';
+  if (v == null) return '';
   return (v / 10000).toFixed(1) + '만';
 }
 function downloadCsv(rows: BrandLeaderRow[], hasTrend: boolean) {
@@ -91,6 +92,14 @@ export default function BrandRankingPage() {
     fetchCompanyOptions().then(opts => setCompanyOpts(opts));
   }, []);
 
+  // 필터 변경 시 자동 저장 (페이지 이탈 후 복귀해도 유지)
+  React.useEffect(() => {
+    localStorage.setItem(FILTER_KEY, JSON.stringify({
+      period, fromDate, toDate, categoryCode, genderFilter, ageFilter, ownOnly,
+      companies: [...companies],
+    }));
+  }, [period, fromDate, toDate, categoryCode, genderFilter, ageFilter, ownOnly, companies]);
+
   React.useEffect(() => {
     setLoading(true);
     fetchBrandLeaderboard({ categoryCode, genderFilter, ageFilter, targetDate, compareDate })
@@ -121,10 +130,15 @@ export default function BrandRankingPage() {
     return [...filtered].sort((a, b) => {
       const d = sortDir === 'asc' ? 1 : -1;
       switch (sort) {
-        case 'avg_rank':  return d * (a.avg_rank - b.avg_rank);
-        case 'best_rank': return d * (a.best_rank - b.best_rank);
+        case 'avg_rank':  return d * ((a.avg_rank ?? 99999) - (b.avg_rank ?? 99999));
+        case 'best_rank': return d * ((a.best_rank ?? 99999) - (b.best_rank ?? 99999));
         case 'sku_count': return d * (b.sku_count - a.sku_count);
-        default:          return d * (b.top100_count - a.top100_count) || a.avg_rank - b.avg_rank;
+        default: {
+          // brand_ranking_snapshots 실제 순위 기준 (없으면 맨 뒤)
+          const aRank = a.brand_rank ?? 99999;
+          const bRank = b.brand_rank ?? 99999;
+          return d * (aRank - bRank);
+        }
       }
     });
   }, [rows, sort, sortDir, ownOnly, companies]);
@@ -134,10 +148,8 @@ export default function BrandRankingPage() {
   const genderLabel  = genderFilter !== 'A' ? (genderFilter === 'M' ? '남성' : '여성') : '';
   const ageLabel     = ageFilter !== 'AGE_BAND_ALL' ? (AGE_MAP[ageFilter] ?? ageFilter) : '';
 
-  // 그리드 컬럼 (병합 후: 순위, 할인/가격, 리뷰 각 1열로 합침)
-  const cols = hasTrend
-    ? '36px 1fr 44px 80px 64px 44px 52px 64px 86px 52px'
-    : '36px 1fr 44px 80px 64px 52px 64px 86px 52px';
+  // 그리드 컬럼 — 변동 열은 항상 표시 (brand_ranking_snapshots 기준)
+  const cols = '36px 1fr 44px 80px 64px 44px 52px 64px 86px 52px';
 
   return (
     <>
@@ -228,12 +240,12 @@ export default function BrandRankingPage() {
           <section className="panel" style={{ padding: 0, overflowX: 'auto' }}>
             <div className="tbl" style={{ border: 'none', borderRadius: 0, minWidth: 860 }}>
               <div className="row head" style={{ gridTemplateColumns: cols, lineHeight: 1.3 }}>
-                <span>#</span>
+                <span className="cell-r">순위</span>
                 <span>브랜드</span>
                 <span>국가</span>
                 <span>회사</span>
                 <span className="cell-r">상품최고<br /><span style={{ color: 'var(--f4)', fontWeight: 400 }}>상품평균</span></span>
-                {hasTrend && <span className="cell-r">순위<br />변동</span>}
+                <span className="cell-r">TOP100<br /><span style={{ color: 'var(--f4)', fontWeight: 400 }}>변동</span></span>
                 <span className="cell-r">랭킹<br />상품수</span>
                 <span className="cell-r">할인율<br /><span style={{ color: 'var(--f4)', fontWeight: 400 }}>평균가</span></span>
                 <span className="cell-r">가격범위</span>
@@ -243,7 +255,7 @@ export default function BrandRankingPage() {
               {loading ? (
                 Array.from({ length: 12 }).map((_, i) => (
                   <div key={i} className="row" style={{ gridTemplateColumns: cols }}>
-                    {Array.from({ length: hasTrend ? 10 : 9 }).map((_, j) => (
+                    {Array.from({ length: 10 }).map((_, j) => (
                       <span key={j} style={{ height: 14, background: 'var(--rai)', borderRadius: 3, display: 'block' }} />
                     ))}
                   </div>
@@ -253,45 +265,62 @@ export default function BrandRankingPage() {
                   {rows.length === 0 ? '수집된 랭킹 데이터가 없습니다.' : '조건에 맞는 브랜드가 없습니다. 필터를 완화해 보세요.'}
                 </div>
               ) : sorted.map((r, i) => {
-                const rc = r.avg_rank_change;
-                const rcColor = rc == null ? 'var(--f4)' : rc > 0 ? 'var(--slf)' : rc < 0 ? 'var(--shf)' : 'var(--f3)';
-                const rcLabel = rc == null ? '—' : rc > 0 ? `+${rc}` : String(rc);
+                const brc = r.brand_rank_change;
+                const brcColor = brc != null && brc !== 0 ? (brc > 0 ? 'var(--tu)' : 'var(--td)') : 'var(--f4)';
+                const brcLabel = brc != null && brc !== 0 ? (brc > 0 ? `↑${brc}` : `↓${Math.abs(brc)}`) : '';
+                const t100c = r.top100_change;
+                const t100cColor = t100c != null && t100c !== 0 ? (t100c > 0 ? 'var(--tu)' : 'var(--td)') : 'var(--f4)';
+                const t100cLabel = t100c != null && t100c !== 0 ? (t100c > 0 ? `+${t100c}` : String(t100c)) : '';
                 return (
                   <div key={r.brand_name}
                     className={`row hover ${i % 2 ? 'alt' : ''}`}
                     style={{ gridTemplateColumns: cols, cursor: 'pointer' }}
                     onClick={() => router.push(r.brand_id ? `/brand?id=${r.brand_id}` : '/brand')}
                   >
-                    <span className="mono muted">{i + 1}</span>
+                    {/* 브랜드 랭킹 순위(위) / 전일 변동(아래) */}
+                    <span className="cell-r">
+                      <div className="mono" style={{ fontSize: 11, fontWeight: 500, color: r.brand_rank != null ? (i < 3 ? 'var(--hs)' : 'var(--f1)') : 'var(--f4)' }}>
+                        {r.brand_rank != null ? `${r.brand_rank}위` : `${i + 1}`}
+                      </div>
+                      <div className="mono" style={{ fontSize: 10, color: brcColor }}>{brcLabel}</div>
+                    </span>
                     <span style={{ fontWeight: 500, color: r.is_own ? 'var(--hs)' : 'var(--f1)' }}>{r.brand_name}</span>
-                    <span className="mono dim" style={{ fontSize: 10 }}>{r.nation_name ?? '—'}</span>
-                    <span className="mono dim ellip" style={{ fontSize: 10 }} title={r.company_name ?? ''}>{r.company_name ?? '—'}</span>
+                    <span className="mono dim" style={{ fontSize: 10 }}>{r.nation_name ?? ''}</span>
+                    <span className="mono dim ellip" style={{ fontSize: 10 }} title={r.company_name ?? ''}>{r.company_name ?? ''}</span>
                     {/* 최고순위(위) / 평균순위(아래) 병합 */}
                     <span className="cell-r">
-                      <div className="mono" style={{ fontSize: 11, color: 'var(--f1)' }}>{r.best_rank}위</div>
-                      <div className="mono" style={{ fontSize: 10, color: 'var(--f4)' }}>{r.avg_rank}위</div>
+                      <div className="mono" style={{ fontSize: 11, color: 'var(--f1)' }}>
+                        {r.best_rank != null ? `${r.best_rank}위` : ''}
+                      </div>
+                      <div className="mono" style={{ fontSize: 10, color: 'var(--f4)' }}>
+                        {r.avg_rank != null ? `${r.avg_rank}위` : ''}
+                      </div>
                     </span>
-                    {hasTrend && <span className="mono cell-r" style={{ fontSize: 11, color: rcColor }}>{rcLabel}</span>}
+                    {/* TOP100 수(위) / 전일 변동(아래) */}
+                    <span className="cell-r">
+                      <div className="mono" style={{ fontSize: 11, color: 'var(--f1)' }}>{r.top100_count || ''}</div>
+                      <div className="mono" style={{ fontSize: 10, color: t100cColor }}>{t100cLabel}</div>
+                    </span>
                     <span className="mono cell-r" style={{ color: r.sku_count > 0 ? 'var(--hs)' : 'var(--f4)', fontWeight: r.sku_count > 0 ? 500 : 400 }}>
-                      {r.sku_count > 0 ? r.sku_count : '—'}
+                      {r.sku_count || ''}
                     </span>
                     {/* 할인율(위) / 평균가(아래) 병합 */}
                     <span className="cell-r">
                       <div className="mono" style={{ fontSize: 11, color: 'var(--f2)' }}>
-                        {r.avg_discount != null ? `${r.avg_discount}%` : '—'}
+                        {r.avg_discount ? `${r.avg_discount}%` : ''}
                       </div>
                       <div className="mono" style={{ fontSize: 10, color: 'var(--f4)' }}>{fmt만(r.avg_price)}</div>
                     </span>
                     <span className="mono dim cell-r" style={{ fontSize: 10 }}>
-                      {r.min_price != null && r.max_price != null ? `${fmt만(r.min_price)}~${fmt만(r.max_price)}` : '—'}
+                      {r.min_price != null && r.max_price != null ? `${fmt만(r.min_price)}~${fmt만(r.max_price)}` : ''}
                     </span>
                     {/* 리뷰점수(위) / 리뷰수(아래) 병합 */}
                     <span className="cell-r">
                       <div className="mono" style={{ fontSize: 11, color: 'var(--f2)' }}>
-                        {r.avg_review_score != null ? String(r.avg_review_score) : '—'}
+                        {r.avg_review_score != null ? String(r.avg_review_score) : ''}
                       </div>
                       <div className="mono" style={{ fontSize: 10, color: 'var(--f4)' }}>
-                        {r.total_review_count > 0 ? r.total_review_count.toLocaleString() : '—'}
+                        {r.total_review_count > 0 ? r.total_review_count.toLocaleString() : ''}
                       </div>
                     </span>
                   </div>

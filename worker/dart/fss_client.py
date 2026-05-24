@@ -124,18 +124,22 @@ def fetch_audit_financials(
     end_de = f"{current_year}1231"
 
     try:
+        # pblntf_ty 미지정 = 전체 공시유형 검색 (외감공시 "F"만 하면 일부 유한회사·비상장사 누락)
         filings = corp_obj.search_filings(
-            bgn_de=bgn_de, end_de=end_de, pblntf_ty="F"
+            bgn_de=bgn_de, end_de=end_de, page_count=100
         )
     except Exception as e:
-        logger.warning("dart_fss_search_failed", corp_code=corp_code, error=str(e))
+        # dart-fss는 DART status 010(조회결과없음)을 APIKeyError로 잘못 매핑 → 정상 케이스
+        logger.debug("dart_fss_search_no_result", corp_code=corp_code, error=str(e))
         return []
 
-    # 감사보고서만 필터
+    # 감사보고서만 필터 (연결 제외 — 개별 재무 기준)
     audit_reports = [
         f for f in filings
         if "감사보고서" in (f.report_nm or "") and "연결" not in (f.report_nm or "")
     ]
+    logger.debug("dart_fss_filings_found", corp_code=corp_code,
+                 total=len(filings), audit=len(audit_reports))
 
     results: list[dict[str, Any]] = []
     for report in audit_reports:

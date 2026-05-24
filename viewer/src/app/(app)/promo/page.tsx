@@ -125,7 +125,14 @@ interface JumpPromo { id: string; snapshotDate: string; }
 
 export default function PromoPage() {
   const [tab,       setTab]       = React.useState<'hub' | 'calendar' | 'stats'>('hub');
-  const [jumpPromo, setJumpPromo] = React.useState<JumpPromo | null>(null);
+  const [jumpPromo, setJumpPromo] = React.useState<JumpPromo | null>(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const id = sp.get('id'), date = sp.get('date');
+      if (id && date) return { id, snapshotDate: date };
+    }
+    return null;
+  });
 
   const handleCalSelect = React.useCallback((id: string, snapshotDate: string) => {
     setJumpPromo({ id, snapshotDate });

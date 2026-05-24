@@ -2,9 +2,11 @@
 CS 이상탐지 — reviews 테이블 기반.
 
 탐지 항목:
-  review_rating_drop   — 자사 상품 별점 급락 (최근 7일 평균 < 전체 평균 - 0.3)
+  review_rating_drop    — 자사 상품 별점 급락 (최근 7일 평균 < 전체 평균 - 0.3)
   review_negative_surge — 최근 7일 1~2점 리뷰 비율 ≥ 30%
-  review_count_surge   — 오늘 리뷰 수 > 30일 일평균 × 3
+  review_count_surge    — 오늘 리뷰 수 > 30일 일평균 × 3
+  review_no_activity    — 활발하던 자사 상품 최근 7일 리뷰 0건
+  review_helpful_surge  — 부정 리뷰(1~2점) helpful_count ≥ 10
 """
 
 from __future__ import annotations
@@ -19,9 +21,11 @@ from worker.detectors.base import Anomaly
 
 MODULE = "cs"
 
-RATING_DROP_THRESHOLD  = 0.3  # 전체 평균 대비 하락 폭
-NEGATIVE_RATE_THRESHOLD = 0.30 # 1~2점 비율
-SURGE_MULTIPLIER        = 3.0  # 30일 일평균 × 배수
+RATING_DROP_THRESHOLD      = 0.3   # 전체 평균 대비 하락 폭
+NEGATIVE_RATE_THRESHOLD    = 0.30  # 1~2점 비율
+SURGE_MULTIPLIER           = 3.0   # 30일 일평균 × 배수
+MIN_DAILY_AVG_FOR_ACTIVE   = 1.0   # 활발 상품 판단 기준 일평균 리뷰 수
+NEGATIVE_HELPFUL_MIN       = 10    # 부정 리뷰 helpful_count 임계
 
 
 def _load_own_product_ids(client: Client) -> list[str]:
@@ -46,7 +50,7 @@ def _load_own_product_ids(client: Client) -> list[str]:
 def _load_reviews_for_products(
     client: Client, product_ids: list[str], since: date
 ) -> dict[str, list[dict]]:
-    """product_id → [{rating, review_date}] 매핑."""
+    """product_id → [{rating, review_date, helpful_count}] 매핑."""
     result: dict[str, list[dict]] = defaultdict(list)
     for i in range(0, len(product_ids), 200):
         chunk = product_ids[i:i + 200]
@@ -54,7 +58,7 @@ def _load_reviews_for_products(
         while True:
             batch = (
                 client.table("reviews")
-                .select("product_id, rating, review_date")
+                .select("product_id, rating, review_date, helpful_count")
                 .in_("product_id", chunk)
                 .gte("review_date", since.isoformat())
                 .range(offset, offset + 999)
@@ -180,6 +184,41 @@ def detect_review(client: Client, target_date: date) -> list[Anomaly]:
                     "multiplier": round(count_today / daily_avg_30, 1),
                 },
             ))
+
+        # review_no_activity — 활발하던 자사 상품 최근 7일 리뷰 0건
+        reviews_7d_count = len(reviews_7d) if ratings_7d else len(
+            [r for r in reviews if r["review_date"] and r["review_date"] >= cutoff_7d.isoformat()]
+        )
+        if daily_avg_30 >= MIN_DAILY_AVG_FOR_ACTIVE and reviews_7d_count == 0:
+            anomalies.append(Anomaly(
+                module=MODULE, severity="medium", anomaly_type="review_no_activity",
+                entity_type="product", entity_id=pid, entity_name=name,
+                description=(
+                    f"[자사] {name} — 최근 7일 리뷰 0건 "
+                    f"(30일 일평균 {daily_avg_30:.1f}건이었던 상품)"
+                ),
+                meta={"daily_avg_30": round(daily_avg_30, 1)},
+            ))
+
+        # review_helpful_surge — 부정 리뷰(1~2점) helpful_count 급증
+        for r in reviews:
+            if (
+                r.get("rating") is not None and r["rating"] <= 2
+                and (r.get("helpful_count") or 0) >= NEGATIVE_HELPFUL_MIN
+            ):
+                anomalies.append(Anomaly(
+                    module=MODULE, severity="high", anomaly_type="review_helpful_surge",
+                    entity_type="product", entity_id=pid, entity_name=name,
+                    description=(
+                        f"[자사] {name} — 부정 리뷰 ({r['rating']}점) "
+                        f"공감 {r['helpful_count']}건 (바이럴 가능성)"
+                    ),
+                    meta={
+                        "rating": r["rating"],
+                        "helpful_count": r["helpful_count"],
+                        "review_date": r.get("review_date"),
+                    },
+                ))
 
     logger.info(f"review_detector_done date={target_date} anomalies={len(anomalies)}")
     return anomalies

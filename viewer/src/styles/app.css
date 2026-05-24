@@ -54,6 +54,9 @@ body {
 .sb.collapsed { width: 48px; }
 .sb.peek { box-shadow: 4px 0 24px rgba(0,0,0,0.12); }
 
+/* AiPanel 전체화면일 때 사이드바가 위로 올라와야 peek·고정 모두 작동 */
+.aip-fs .sb { z-index: 200; }
+
 .sb-brand {
   height: var(--tb-h);
   display: flex;
@@ -176,6 +179,12 @@ body {
   color: var(--f2);
   font-weight: 500;
   flex-shrink: 0;
+  overflow: hidden;
+}
+.sb-foot .avatar img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .sb-foot .who { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .sb-foot .who .n { font-size: 12px; color: var(--f1); }
@@ -324,6 +333,7 @@ body {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  position: relative;
   transition: width 180ms cubic-bezier(.2,.7,.3,1);
 }
 .aip.collapsed { width: var(--aip-w-collapsed); }
@@ -347,7 +357,8 @@ body {
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; color: var(--f3);
 }
-.aip-head .toggle:hover { background: var(--hov); color: var(--f1); }
+.aip-head .toggle:hover  { background: var(--hov); color: var(--f1); }
+.aip-head .toggle.active { background: var(--hs-soft); color: var(--hs); border-color: var(--hs); }
 
 .aip-rail {
   width: var(--aip-w-collapsed);
@@ -427,7 +438,7 @@ body {
   flex-shrink: 0;
 }
 .aip-input {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: flex-end; gap: 8px;
   padding: 8px 10px;
   background: var(--rai);
   border: 0.5px solid var(--bd);
@@ -453,6 +464,101 @@ body {
   letter-spacing: -0.012em;
 }
 .aip-quick .q:hover { background: var(--hov); color: var(--f1); }
+
+/* ── 대화 기록 드로어 ────────────────────────────────────────────────────────── */
+.aip-hist {
+  position: absolute;
+  top: calc(var(--tb-h) + 1px);
+  left: 0; right: 0; bottom: 0;
+  background: var(--sur);
+  z-index: 20;
+  display: flex; flex-direction: column;
+  transform: translateY(calc(-100% - var(--tb-h) - 4px));
+  transition: transform 220ms cubic-bezier(.2,.7,.3,1);
+  border-top: 0.5px solid var(--bs);
+  pointer-events: none;
+}
+.aip-hist.open { transform: translateY(0); pointer-events: auto; }
+
+.aip-hist-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 0.5px solid var(--bs);
+  flex-shrink: 0;
+}
+.aip-hist-title {
+  font-family: var(--mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--f3);
+}
+.aip-hist-body {
+  flex: 1; overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.aip-hist-empty {
+  padding: 32px 14px;
+  font-size: 12px; color: var(--f4);
+  text-align: center;
+}
+.aip-hist-item {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 10px 14px;
+  text-align: left;
+  background: transparent; border: none; border-bottom: 0.5px solid var(--bs);
+  cursor: pointer;
+  transition: background 100ms;
+  min-width: 0;
+}
+.aip-hist-item:hover  { background: var(--hov); }
+.aip-hist-item.active { background: var(--hs-soft); }
+.aip-hist-item-title {
+  font-size: 12px; font-weight: 500; color: var(--f1);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.aip-hist-item-meta {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; color: var(--f4); font-family: var(--mono);
+  white-space: nowrap;
+}
+
+/* 전체화면일 때 드로어 내부 패딩 */
+.aip.fullscreen .aip-hist-head {
+  padding: 10px max(24px, calc((100vw - 900px) / 2));
+}
+.aip.fullscreen .aip-hist-item {
+  padding: 10px max(24px, calc((100vw - 900px) / 2));
+}
+
+.aip-hist-body::-webkit-scrollbar { width: 4px; }
+.aip-hist-body::-webkit-scrollbar-thumb { background: var(--bs); border-radius: 99px; }
+
+/* ── 전체화면 모드 ───────────────────────────────────────────────────────────── */
+.aip.fullscreen .aip-head {
+  padding: 0 max(24px, calc((100vw - 900px) / 2));
+  max-width: none;
+}
+.aip.fullscreen .aip-context {
+  padding: 10px max(24px, calc((100vw - 900px) / 2));
+}
+.aip.fullscreen .aip-body {
+  padding: 20px max(24px, calc((100vw - 900px) / 2));
+}
+.aip.fullscreen .aip-foot {
+  padding: 10px max(24px, calc((100vw - 900px) / 2)) 16px;
+}
+
+/* ── 전체화면 콘텐츠 중앙정렬 헬퍼 ─────────────────────────────────────────── */
+/* 일반 모드: 아무 효과 없음. 전체화면에서 aip-body 안의 콘텐츠가 width를 넘지 않도록 */
+.aip:not(.fullscreen) .aip-centered { width: 100%; }
+.aip.fullscreen .aip-centered { width: 100%; max-width: 900px; }
+
+/* ── Markdown 표 테두리 보완 ─────────────────────────────────────────────────── */
+.aip-msg.ai .bubble table {
+  border-top: 0.5px solid var(--bs);
+  border-left: 0.5px solid var(--bs);
+  border-radius: 4px;
+  overflow: hidden;
+}
 
 /* ===========================================================================
    4 · Generic components
@@ -779,14 +885,16 @@ hr.hr-d { border: none; border-top: 1px dashed var(--bs); margin: 0; }
 .master-tile .stat .l { font-family: var(--mono); font-size: 10px; color: var(--f4); }
 .master-tile .checkbox-abs { position: absolute; top: 12px; right: 12px; }
 
-.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; overflow: hidden; }
 .cal-day {
   min-height: 80px;
+  min-width: 0;
   border: 0.5px solid var(--bs);
   border-radius: var(--r-1);
   background: var(--rai);
-  padding: 6px 8px;
+  padding: 6px 6px;
   display: flex; flex-direction: column; gap: 3px;
+  overflow: hidden;
 }
 .cal-day.out { opacity: 0.4; background: var(--snk); }
 .cal-day.today { border-color: var(--f1); border-width: 1px; }
@@ -803,7 +911,7 @@ hr.hr-d { border: none; border-top: 1px dashed var(--bs); margin: 0; }
 .cal-evt.h { background: var(--shb); border-left-color: var(--shf); color: var(--shf); }
 .cal-evt.m { background: var(--smb); border-left-color: var(--smf); color: var(--smf); }
 .cal-evt.l { background: var(--slb); border-left-color: var(--slf); color: var(--slf); }
-.cal-head { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+.cal-head { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-bottom: 4px; overflow: hidden; }
 .cal-head .h {
   font-family: var(--mono); font-size: 10px; color: var(--f4);
   text-transform: uppercase; letter-spacing: 0.08em;

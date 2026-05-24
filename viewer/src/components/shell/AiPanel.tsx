@@ -1,79 +1,336 @@
 'use client';
 import React from 'react';
-import { IcSpark, IcChevL, IcChevR } from '../ui/icons';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { useRouter } from 'next/navigation';
+import { IcSpark, IcChevL, IcChevR, IcExpand, IcContract, IcClock } from '../ui/icons';
 
 const QUICK_PROMPTS_BY_ROUTE: Record<string, string[]> = {
-  '/':          ['오늘의 핵심 변화 요약', '자사 영향이 큰 이상탐지', '수집 작업 점검'],
-  '/ranking':   ['오늘 TOP10 핵심 변화', '여 20대에서 급등한 상품', '자사 매칭 자동 추천'],
-  '/anomaly':   ['우선순위 HIGH 요약', '미해소 항목 처리 권장 순서', '유사 과거 사례'],
-  '/company':   ['이 회사 핵심 신호', '산하 브랜드별 성과 정리', '자사에 미칠 영향'],
-  '/brand':     ['이 브랜드 강점·약점', '자사 동종 SKU와 비교', '주력 상품 가설'],
-  '/product':   ['왜 이 변화가 생겼지?', '자사 유사 SKU 매칭', '직전 90일 가격 패턴'],
-  '/promo':     ['선택된 프로모션 합집합 요약', '경쟁 압박이 큰 카테고리', '자사 대응 권장안'],
-  '/snap':      ['이번 스냅의 트렌드 키워드', '자사 매칭 우선순위', '재해석 가능한 룩'],
-  '/magazine':  ['이 매거진의 메시지', '등장 상품 중 자사 인접', '향후 캠페인 활용'],
-  '/reviews':   ['최근 부정 리뷰 패턴', '품질 이슈 클러스터', '응답 우선순위'],
-  '/matching':  ['매칭 신뢰도 검토', '유사도 낮은 후보 이유', '자동 매칭 제안'],
-  '/settings':  ['알림 최적화 권장', '수집 실패 작업 진단'],
-  '/me':        ['이번 주 활동 패턴', '저장 필터 재사용 추천'],
+  '/':         ['오늘의 핵심 변화 요약', '자사 영향이 큰 이상탐지', '수집 작업 현황'],
+  '/ranking':  ['오늘 TOP10 핵심 변화', '여성 20대 급등 상품', '자사 상위 랭킹 현황'],
+  '/anomaly':  ['HIGH 이상탐지 요약', '미처리 항목 우선순위', '오늘 신규 탐지 건수'],
+  '/company':  ['이 회사 핵심 지표', '산하 브랜드 성과', '자사 대비 경쟁 분석'],
+  '/brand':    ['이 브랜드 강점·약점', '자사 동종 SKU 비교', '최근 랭킹 추이'],
+  '/product':  ['이 상품 변화 원인', '자사 유사 SKU 비교', '최근 가격 패턴'],
+  '/promo':    ['현재 진행 프로모션 요약', '경쟁 압박 카테고리', '자사 대응 권장안'],
+  '/snap':     ['이번 스냅 트렌드 키워드', '자사 매칭 우선순위', '인기 스타일 분석'],
+  '/magazine': ['최근 기사 트렌드', '자사 브랜드 언급 현황', '캠페인 활용 아이디어'],
+  '/reviews':  ['최근 부정 리뷰 패턴', '품질 이슈 클러스터', '응답 우선 순위'],
+  '/companies':['자사 보유 법인 목록', '재무 데이터 있는 경쟁사', '매출 TOP5 회사'],
 };
 
-interface Message { role: 'user' | 'ai'; text: string; error?: boolean; }
+const ROUTE_LABEL: Record<string, string> = {
+  '/': '홈', '/ranking': '랭킹', '/brand': '브랜드', '/product': '상품',
+  '/company': '회사', '/promo': '프로모션', '/snap': '스냅', '/magazine': '매거진',
+  '/reviews': '리뷰', '/anomaly': '이상탐지', '/companies': '회사목록',
+};
 
-interface AiPanelProps {
-  open: boolean;
-  onToggle: () => void;
-  context: string[];
-  route: string;
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+  if (diff < 3600000)    return `${Math.floor(diff / 60000)}분 전`;
+  if (diff < 86400000)   return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  if (diff < 7 * 86400000) return `${Math.floor(diff / 86400000)}일 전`;
+  return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
 }
 
-function formatAiMessage(text: string) {
-  const parts = text.split(/(`[^`]+`)/g);
-  return parts.map((p, i) => {
-    if (p.startsWith('`') && p.endsWith('`')) {
-      return <span key={i} className="mono tnum" style={{ color: 'var(--hs)', fontWeight: 500 }}>{p.slice(1, -1)}</span>;
-    }
-    return <span key={i}>{p}</span>;
-  });
+// ── SSE 이벤트 타입 ───────────────────────────────────────────────────────────
+type SseEvent =
+  | { type: 'delta';     text: string }
+  | { type: 'tool_call'; name: string; label: string }
+  | { type: 'navigate';  path: string; reason: string }
+  | { type: 'error';     message: string }
+  | { type: 'done' };
+
+interface ToolCall   { name: string; label: string }
+interface Message    { role: 'user' | 'ai'; text: string; error?: boolean; toolCalls?: ToolCall[] }
+interface AiSession  { id: string; title: string | null; route: string; started_at: string; message_count: number | null }
+
+// ── Markdown 렌더링 ───────────────────────────────────────────────────────────
+
+const BlockCodeCtx = React.createContext(false);
+
+function MdCode({ children, className }: { children?: React.ReactNode; className?: string }) {
+  const inPre = React.useContext(BlockCodeCtx);
+  if (inPre) {
+    return (
+      <code className={className} style={{ fontFamily: 'var(--mono)', fontSize: 12, lineHeight: 1.6 }}>
+        {children}
+      </code>
+    );
+  }
+  return (
+    <code style={{
+      fontFamily: 'var(--mono)', fontSize: 11,
+      color: 'var(--hs)', background: 'var(--hs-soft)',
+      padding: '1px 4px', borderRadius: 3,
+    }}>
+      {children}
+    </code>
+  );
 }
+
+const PRE_S: React.CSSProperties = {
+  background: 'var(--snk)', border: '0.5px solid var(--bs)',
+  borderRadius: 6, padding: '10px 12px',
+  overflowX: 'auto', margin: '6px 0',
+  fontFamily: 'var(--mono)', fontSize: 12, lineHeight: 1.6,
+  color: 'var(--f1)', whiteSpace: 'pre',
+};
+
+const MD_COMPONENTS = {
+  table: ({ children }: any) => (
+    <div style={{ overflowX: 'auto', margin: '8px 0' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }: any) => <thead style={{ background: 'var(--snk)', borderBottom: '1.5px solid var(--bd)' }}>{children}</thead>,
+  tbody: ({ children }: any) => <tbody>{children}</tbody>,
+  tr:    ({ children }: any) => <tr style={{ borderBottom: '0.5px solid var(--bs)' }}>{children}</tr>,
+  th:    ({ children }: any) => (
+    <th style={{
+      padding: '5px 12px', textAlign: 'left', fontWeight: 600,
+      color: 'var(--f3)', fontFamily: 'var(--mono)', fontSize: 10,
+      letterSpacing: '0.04em', whiteSpace: 'nowrap',
+      borderRight: '0.5px solid var(--bs)',
+    }}>
+      {children}
+    </th>
+  ),
+  td: ({ children }: any) => (
+    <td style={{
+      padding: '6px 12px', color: 'var(--f1)',
+      verticalAlign: 'top', lineHeight: '18px',
+      borderRight: '0.5px solid var(--bs)',
+    }}>
+      {children}
+    </td>
+  ),
+  pre: ({ children }: any) => (
+    <BlockCodeCtx.Provider value={true}>
+      <pre style={PRE_S}>{children}</pre>
+    </BlockCodeCtx.Provider>
+  ),
+  code: MdCode,
+  h1: ({ children }: any) => <div style={{ fontWeight: 700, fontSize: 15, margin: '12px 0 5px', color: 'var(--f1)', lineHeight: 1.3 }}>{children}</div>,
+  h2: ({ children }: any) => <div style={{ fontWeight: 600, fontSize: 13, margin: '10px 0 4px', color: 'var(--f1)', borderBottom: '0.5px solid var(--bs)', paddingBottom: 4 }}>{children}</div>,
+  h3: ({ children }: any) => <div style={{ fontWeight: 600, fontSize: 12, margin: '8px 0 2px', color: 'var(--f2)' }}>{children}</div>,
+  ul: ({ children }: any) => <ul style={{ paddingLeft: 18, margin: '4px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>{children}</ul>,
+  ol: ({ children }: any) => <ol style={{ paddingLeft: 18, margin: '4px 0', display: 'flex', flexDirection: 'column', gap: 2 }}>{children}</ol>,
+  li: ({ children }: any) => <li style={{ lineHeight: '20px', color: 'var(--f1)' }}>{children}</li>,
+  p:  ({ children }: any) => <p style={{ margin: '4px 0', lineHeight: '20px' }}>{children}</p>,
+  blockquote: ({ children }: any) => (
+    <blockquote style={{
+      borderLeft: '3px solid var(--hs)', paddingLeft: 12,
+      margin: '6px 0', color: 'var(--f2)', fontStyle: 'italic',
+    }}>
+      {children}
+    </blockquote>
+  ),
+  hr:     () => <hr style={{ border: 'none', borderTop: '0.5px solid var(--bs)', margin: '10px 0' }} />,
+  strong: ({ children }: any) => <strong style={{ fontWeight: 600, color: 'var(--f1)' }}>{children}</strong>,
+  em:     ({ children }: any) => <em style={{ fontStyle: 'italic', color: 'var(--f2)' }}>{children}</em>,
+  del:    ({ children }: any) => <del style={{ opacity: 0.5 }}>{children}</del>,
+  a:      ({ children, href }: any) => (
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      style={{ color: 'var(--hs)', textDecoration: 'underline', textUnderlineOffset: 2 }}>
+      {children}
+    </a>
+  ),
+};
+
+const TOOL_ICON: Record<string, string> = { query_db: '🔍', web_search: '🌐', navigate: '📍' };
+
+const BETA_S: React.CSSProperties = {
+  fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
+  padding: '1px 5px', borderRadius: 3,
+  background: 'var(--hs-soft)', color: 'var(--hs)',
+  border: '0.5px solid var(--hs)', lineHeight: 1.6,
+};
+
+// ── AiPanel ───────────────────────────────────────────────────────────────────
+interface AiPanelProps { open: boolean; onToggle: () => void; context: string[]; route: string }
 
 export default function AiPanel({ open, onToggle, context, route }: AiPanelProps) {
-  const [messages, setMessages] = React.useState<Message[]>([]);
-  const [input, setInput] = React.useState('');
-  const [thinking, setThinking] = React.useState(false);
-  const bodyRef = React.useRef<HTMLDivElement>(null);
+  const [messages,     setMessages]     = React.useState<Message[]>([]);
+  const [input,        setInput]        = React.useState('');
+  const [thinking,     setThinking]     = React.useState(false);
+  const [fullscreen,   setFullscreen]   = React.useState(false);
+  const [sessionId,    setSessionId]    = React.useState<string>(() => crypto.randomUUID());
+  const [showHistory,  setShowHistory]  = React.useState(false);
+  const [sessions,     setSessions]     = React.useState<AiSession[]>([]);
+  const [histLoading,  setHistLoading]  = React.useState(false);
+  const bodyRef     = React.useRef<HTMLDivElement>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const abortRef    = React.useRef<AbortController | null>(null);
+  const router   = useRouter();
 
   React.useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [messages, thinking]);
 
-  React.useEffect(() => { setMessages([]); }, [route]);
+  // textarea 자동 높이 — 최대 8줄
+  React.useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const maxH = 19 * 8;
+    el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+    el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+  }, [input]);
+
+  // 라우트 변경 시 히스토리 드로어만 닫기 (대화는 유지)
+  React.useEffect(() => {
+    setShowHistory(false);
+  }, [route]);
+
+  // Escape 키 → 히스토리 먼저 닫고, 그 다음 전체화면
+  React.useEffect(() => {
+    document.documentElement.classList.toggle('aip-fs', fullscreen);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (showHistory) { setShowHistory(false); return; }
+      if (fullscreen)  { setFullscreen(false); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (!fullscreen) document.documentElement.classList.remove('aip-fs');
+    };
+  }, [fullscreen, showHistory]);
+
+  // ── 히스토리 드로어 ───────────────────────────────────────────────────────
+  const openHistory = async () => {
+    if (showHistory) { setShowHistory(false); return; }
+    setShowHistory(true);
+    setHistLoading(true);
+    try {
+      const res = await fetch('/api/ai/sessions');
+      const data = await res.json() as { sessions: AiSession[] };
+      setSessions(data.sessions ?? []);
+    } catch {
+      setSessions([]);
+    } finally {
+      setHistLoading(false);
+    }
+  };
+
+  const loadSession = async (session: AiSession) => {
+    if (thinking) return;
+    setShowHistory(false);
+    try {
+      const res = await fetch(`/api/ai/messages?sessionId=${session.id}`);
+      const data = await res.json() as { messages: Array<{ role: string; content: string; tool_calls?: ToolCall[] }> };
+      const msgs: Message[] = (data.messages ?? []).map(m => ({
+        role:      m.role === 'assistant' ? 'ai' : 'user',
+        text:      m.content ?? '',
+        toolCalls: m.tool_calls ?? undefined,
+      }));
+      setMessages(msgs);
+      setSessionId(session.id);
+    } catch {}
+  };
+
+  const newSession = () => {
+    setMessages([]);
+    setSessionId(crypto.randomUUID());
+    setShowHistory(false);
+  };
+
+  // ── 메시지 스트리밍 ───────────────────────────────────────────────────────
+  const appendAiDelta = (text: string) =>
+    setMessages(prev => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'ai') next[next.length - 1] = { ...last, text: last.text + text };
+      return next;
+    });
+
+  const appendToolCall = (tc: ToolCall) =>
+    setMessages(prev => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'ai') {
+        next[next.length - 1] = { ...last, toolCalls: [...(last.toolCalls ?? []), tc] };
+      }
+      return next;
+    });
 
   const send = async (text: string) => {
     const t = text.trim();
     if (!t || thinking) return;
-    const next: Message[] = [...messages, { role: 'user', text: t }];
-    setMessages(next);
+
+    const userMsg: Message = { role: 'user', text: t };
+    const history = [...messages, userMsg];
+    setMessages([...history, { role: 'ai', text: '' }]);
     setInput('');
     setThinking(true);
+
+    abortRef.current = new AbortController();
+
     try {
-      const contextLine = `현재 화면: ${context[0]} (route=${route})\n컨텍스트: ${context.slice(1).join(' · ')}`;
-      const conversation = next.map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text }));
-      // @ts-expect-error – window.claude injected by Claude.ai design sandbox
-      const reply = await window.claude?.complete?.({
-        messages: [
-          { role: 'user', content: `당신은 b.cave의 UTTU — 무신사 데이터 분석 AI 어시스턴트입니다. 응답은 한국어로 간결하게 (2-4문장).\n\n${contextLine}\n\n${t}` },
-          ...conversation.slice(1),
-        ],
-      }) ?? '(AI 패널은 실제 API 연동 후 동작합니다.)';
-      setMessages(m => [...m, { role: 'ai', text: reply }]);
-    } catch {
-      setMessages(m => [...m, { role: 'ai', text: '응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.', error: true }]);
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: abortRef.current.signal,
+        body: JSON.stringify({
+          messages: history.map(m => ({ role: m.role, text: m.text })),
+          context,
+          route,
+          sessionId,
+        }),
+      });
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue;
+          const ev: SseEvent = JSON.parse(part.slice(6));
+          if (ev.type === 'delta')     { appendAiDelta(ev.text); }
+          if (ev.type === 'tool_call') { appendToolCall({ name: ev.name, label: ev.label }); }
+          if (ev.type === 'navigate')  { router.push(ev.path); }
+          if (ev.type === 'error') {
+            setMessages(prev => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (last?.role === 'ai') next[next.length - 1] = { ...last, text: last.text || `오류: ${ev.message}`, error: true };
+              return next;
+            });
+          }
+          if (ev.type === 'done') break;
+        }
+      }
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return;
+      setMessages(prev => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last?.role === 'ai' && !last.text) {
+          next[next.length - 1] = { ...last, text: '응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.', error: true };
+        }
+        return next;
+      });
     } finally {
       setThinking(false);
+      abortRef.current = null;
     }
   };
 
+  // ── 닫힌 상태 ────────────────────────────────────────────────────────────────
   if (!open) {
     return (
       <aside className="aip collapsed" onClick={onToggle} title="UTTU AI 열기" style={{ cursor: 'pointer' }}>
@@ -88,19 +345,82 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
     );
   }
 
-  const quickPrompts = QUICK_PROMPTS_BY_ROUTE[route] || QUICK_PROMPTS_BY_ROUTE['/'];
+  const quickPrompts = QUICK_PROMPTS_BY_ROUTE[route] ?? QUICK_PROMPTS_BY_ROUTE['/'];
+
+  const fsStyle: React.CSSProperties = fullscreen ? {
+    position: 'fixed',
+    top: 0, bottom: 0,
+    left: 'var(--sb-w)', right: 0,
+    zIndex: 100,
+    width: 'auto', maxWidth: 'none', borderLeft: '0.5px solid var(--bs)',
+  } : {};
 
   return (
-    <aside className="aip">
+    <aside className={`aip${fullscreen ? ' fullscreen' : ''}`} style={fsStyle}>
+
+      {/* 헤더 */}
       <div className="aip-head">
         <div className="title">
           <span style={{ color: 'var(--hs)' }}><IcSpark /></span>
           <span className="name">UTTU AI</span>
-          <span className="sub">· claude · live</span>
+          <span style={BETA_S}>BETA</span>
+          <span className="sub">with claude</span>
         </div>
-        <button className="toggle" onClick={onToggle} title="닫기"><IcChevR /></button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button
+            className={`toggle${showHistory ? ' active' : ''}`}
+            onClick={openHistory}
+            title="이전 대화"
+          >
+            <IcClock />
+          </button>
+          <button
+            className="toggle"
+            onClick={() => setFullscreen(f => !f)}
+            title={fullscreen ? '기본 보기 (Esc)' : '전체화면'}
+          >
+            {fullscreen ? <IcContract /> : <IcExpand />}
+          </button>
+          <button className="toggle" onClick={() => { setFullscreen(false); onToggle(); }} title="닫기">
+            <IcChevR />
+          </button>
+        </div>
       </div>
 
+      {/* 대화 기록 드로어 */}
+      <div className={`aip-hist${showHistory ? ' open' : ''}`}>
+        <div className="aip-hist-head">
+          <span className="aip-hist-title">이전 대화</span>
+          <button className="btn sm" onClick={newSession}>+ 새 대화</button>
+        </div>
+        <div className="aip-hist-body">
+          {histLoading ? (
+            <div className="aip-hist-empty">불러오는 중…</div>
+          ) : sessions.length === 0 ? (
+            <div className="aip-hist-empty">저장된 대화가 없어요</div>
+          ) : sessions.map(s => {
+            const routePath  = s.route.split('?')[0];
+            const routeLabel = ROUTE_LABEL[routePath] ?? routePath;
+            const turnCount  = s.message_count ? Math.floor(s.message_count / 2) : 0;
+            return (
+              <button
+                key={s.id}
+                className={`aip-hist-item${s.id === sessionId ? ' active' : ''}`}
+                onClick={() => loadSession(s)}
+              >
+                <div className="aip-hist-item-title">{s.title ?? '(제목 없음)'}</div>
+                <div className="aip-hist-item-meta">
+                  <span className="chip">{routeLabel}</span>
+                  {turnCount > 0 && <span>{turnCount}번 대화</span>}
+                  <span style={{ marginLeft: 'auto' }}>{fmtDate(s.started_at)}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 컨텍스트 칩 */}
       <div className="aip-context">
         <span className="lbl">context</span>
         <div className="ctx">
@@ -108,16 +428,17 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
         </div>
       </div>
 
+      {/* 메시지 영역 */}
       <div className="aip-body" ref={bodyRef}>
         {messages.length === 0 && (
           <>
-            <div className="aip-msg ai">
+            <div className="aip-msg ai aip-centered">
               <span className="role">UTTU</span>
               <div className="bubble">
-                안녕하세요. 지금 보시는 화면(<span className="hs" style={{ fontWeight: 500 }}>{context[0]}</span>)에 대해 도와드릴게요. 아래 질문 중 하나를 누르거나, 자연어로 물어보세요.
+                안녕하세요. <span className="hs" style={{ fontWeight: 500 }}>{context[0]}</span> 화면에서 무엇이든 물어보세요. 데이터 조회, 분석, 페이지 이동 모두 가능합니다.
               </div>
             </div>
-            <div className="aip-quick">
+            <div className="aip-quick aip-centered">
               {quickPrompts.map((q, i) => (
                 <button key={i} className="q" onClick={() => send(q)}>{q}</button>
               ))}
@@ -126,42 +447,73 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
         )}
 
         {messages.map((m, i) => (
-          <div key={i} className={`aip-msg ${m.role}`}>
-            <span className="role">{m.role === 'user' ? '정호철' : 'UTTU'}</span>
+          <div key={i} className={`aip-msg ${m.role} aip-centered`}>
+            <span className="role">{m.role === 'user' ? '나' : 'UTTU'}</span>
             <div className="bubble" style={m.error ? { color: 'var(--shf)' } : {}}>
-              {formatAiMessage(m.text)}
+              {m.toolCalls && m.toolCalls.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  {m.toolCalls.map((tc, j) => (
+                    <div key={j} style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      fontSize: 11, color: 'var(--f3)', marginBottom: 3,
+                    }}>
+                      <span>{TOOL_ICON[tc.name] ?? '⚡'}</span>
+                      <span className="mono">{tc.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {m.role === 'user' ? (
+                m.text
+              ) : (
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS as any}>
+                  {m.text}
+                </ReactMarkdown>
+              )}
             </div>
           </div>
         ))}
 
         {thinking && (
-          <div className="aip-think">
+          <div className="aip-think aip-centered">
             <span className="dot" />
-            <span>thinking · {context[0]}</span>
+            <span>생각하는 중…</span>
           </div>
         )}
       </div>
 
+      {/* 입력창 */}
       <div className="aip-foot">
-        <form onSubmit={(e) => { e.preventDefault(); send(input); }} style={{ margin: 0 }}>
-          <div className="aip-input">
-            <span className="arrow">↑</span>
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="이어서 질문하세요"
-              style={{
-                flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--f1)',
-                letterSpacing: '-0.012em',
-              }}
-              disabled={thinking}
-            />
-            <span className="kbd">⌘ ↵</span>
-          </div>
-        </form>
+        <div className="aip-centered">
+          <form onSubmit={e => { e.preventDefault(); send(input); }} style={{ margin: 0 }}>
+            <div className="aip-input">
+              <span className="arrow">↑</span>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                rows={1}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    send(input);
+                  }
+                }}
+                placeholder="질문하세요 (데이터 조회, 분석, 페이지 이동)"
+                style={{
+                  flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                  fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--f1)',
+                  letterSpacing: '-0.012em', resize: 'none', lineHeight: '19px',
+                  padding: 0, margin: 0, overflowY: 'hidden',
+                }}
+                disabled={thinking}
+              />
+              <span className="kbd" style={{ alignSelf: 'flex-end' }}>⌘ ↵</span>
+            </div>
+          </form>
+        </div>
       </div>
+
     </aside>
   );
 }

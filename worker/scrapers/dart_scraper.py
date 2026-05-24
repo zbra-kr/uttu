@@ -115,11 +115,23 @@ async def resolve_corp_codes(client: Client, api_key: str, company_ids: list[str
 
         if resolved_code:
             is_listed = bool(detail.get("stock_code", "").strip())
-            client.table("companies").update({
+            payload: dict = {
                 "corp_code":       resolved_code,
                 "is_listed":       is_listed,
                 "dart_fetched_at": datetime.now(KST).isoformat(),
-            }).eq("id", row["id"]).execute()
+            }
+            # DART company.json에서 가져올 수 있는 기본정보 저장
+            if detail.get("ceo_nm"):
+                payload["ceo_name"] = detail["ceo_nm"]
+            if detail.get("adres"):
+                payload["address"] = detail["adres"]
+            if detail.get("phn_no"):
+                payload["phone"] = detail["phn_no"]
+            if detail.get("stock_code", "").strip():
+                payload["stock_code"] = detail["stock_code"].strip()
+            if detail.get("hm_url"):
+                payload["website"] = detail["hm_url"]
+            client.table("companies").update(payload).eq("id", row["id"]).execute()
             logger.info("corp_code_resolved",
                         corp_name=raw_name, corp_code=resolved_code, listed=is_listed)
             updated += 1
@@ -130,6 +142,54 @@ async def resolve_corp_codes(client: Client, api_key: str, company_ids: list[str
             ).eq("id", row["id"]).execute()
 
     logger.info("corp_code_done", updated=updated, total=len(rows))
+    return updated
+
+
+# ── Step 1-B: 기본정보 백필 (corp_code 있지만 ceo_name 비어있는 기존 레코드) ──────
+
+async def refresh_company_details(client: Client, api_key: str, company_ids: list[str]) -> int:
+    """
+    corp_code가 있지만 ceo_name이 NULL인 companies에 DART company.json으로 기본정보 채우기.
+    resolve_corp_codes() 이전에 매핑된 레코드 백필용.
+    """
+    rows: list[dict] = []
+    for i in range(0, len(company_ids), 200):
+        chunk = company_ids[i:i + 200]
+        rows += (
+            client.table("companies")
+            .select("id, corp_name, corp_code")
+            .in_("id", chunk)
+            .not_.is_("corp_code", "null")
+            .filter("ceo_name", "is", "null")
+            .execute()
+            .data or []
+        )
+    if not rows:
+        return 0
+
+    logger.info("refresh_company_details_start", count=len(rows))
+    updated = 0
+    for row in rows:
+        detail = await fetch_company(api_key, row["corp_code"])
+        if not detail:
+            continue
+        payload: dict = {}
+        if detail.get("ceo_nm"):
+            payload["ceo_name"] = detail["ceo_nm"]
+        if detail.get("adres"):
+            payload["address"] = detail["adres"]
+        if detail.get("phn_no"):
+            payload["phone"] = detail["phn_no"]
+        if detail.get("stock_code", "").strip():
+            payload["stock_code"] = detail["stock_code"].strip()
+        if detail.get("hm_url"):
+            payload["website"] = detail["hm_url"]
+        if payload:
+            client.table("companies").update(payload).eq("id", row["id"]).execute()
+            logger.info("company_detail_refreshed", corp_name=row["corp_name"])
+            updated += 1
+
+    logger.info("refresh_company_details_done", updated=updated)
     return updated
 
 
@@ -192,51 +252,61 @@ async def collect_financials(
 ) -> int:
     """
     재무 수치 수집 → dart_financials upsert.
-    상장사: fnlttSinglAcnt API / 비상장사: dart-fss 감사보고서 HTML.
+    ① 모든 회사: fnlttSinglAcnt API 먼저 시도 (상장사 + 외감 비상장사 모두 가능)
+    ② API 데이터 없으면: dart-fss 감사보고서 HTML 파싱 (유한회사 등)
     """
+    from worker.dart.fetcher import fetch_financials as _fetch_fin
+    from worker.dart.parser import parse_financial_api as _parse_fin
+
+    cutoff = (datetime.now(KST) - timedelta(days=7)).isoformat()
     rows: list[dict] = []
     for i in range(0, len(company_ids), 200):
         chunk = company_ids[i:i + 200]
         rows += (
             client.table("companies")
-            .select("id, corp_name, corp_code, is_listed")
+            .select("id, corp_name, corp_code")
             .in_("id", chunk)
             .not_.is_("corp_code", "null")
+            .or_(f"dart_fin_checked_at.is.null,dart_fin_checked_at.lt.{cutoff}")
             .execute()
             .data or []
         )
     if not rows:
+        logger.info("financials_all_recent_skip", total_with_corp_code=len(company_ids))
         return 0
 
+    logger.info("financials_checking", count=len(rows))
     inserted = 0
     current_year = datetime.now(KST).year
 
     for row in rows:
         corp_code = row["corp_code"]
         company_id = row["id"]
-        is_listed: bool = row.get("is_listed") or False
 
         financials_list: list[dict] = []
 
-        if is_listed:
-            # ① 상장사: fnlttSinglAcnt API (구조화된 XBRL 데이터)
-            from worker.dart.fetcher import fetch_financials as _fetch_fin
-            from worker.dart.parser import parse_financial_api as _parse_fin
-            for year in range(current_year - years, current_year + 1):
-                api_rows = await _fetch_fin(api_key, corp_code, year, fs_div="CFS")
-                if not api_rows:
-                    api_rows = await _fetch_fin(api_key, corp_code, year, fs_div="OFS")
-                if api_rows:
-                    fin = _parse_fin(api_rows)
-                    if fin:
-                        fin["fiscal_year"] = year
-                        fin["data_source"] = "finstate_api"
-                        financials_list.append(fin)
-                        logger.info("financials_api_ok",
-                                    corp_name=row["corp_name"], year=year)
-        else:
-            # ② 비상장사: dart-fss 감사보고서 HTML 파싱
+        # ① fnlttSinglAcnt API (상장사 + 외감 비상장사 모두 지원)
+        for year in range(current_year - years, current_year):  # 당해년도 제외 (연간보고서 미공시)
+            api_rows = await _fetch_fin(api_key, corp_code, year, fs_div="CFS")
+            if not api_rows:
+                api_rows = await _fetch_fin(api_key, corp_code, year, fs_div="OFS")
+            if api_rows:
+                fin = _parse_fin(api_rows)
+                if fin:
+                    fin["fiscal_year"] = year
+                    fin["data_source"] = "finstate_api"
+                    financials_list.append(fin)
+                    logger.info("financials_api_ok",
+                                corp_name=row["corp_name"], year=year)
+
+        # ② API 결과 없으면 dart-fss 감사보고서 HTML 시도
+        if not financials_list:
             financials_list = fetch_audit_financials(api_key, corp_code, years=years)
+
+        # dart_fin_checked_at 갱신 (성공·실패 무관)
+        client.table("companies").update(
+            {"dart_fin_checked_at": datetime.now(KST).isoformat()}
+        ).eq("id", company_id).execute()
 
         if not financials_list:
             logger.info("financials_no_data", corp_name=row["corp_name"])
@@ -268,7 +338,7 @@ async def collect_financials(
 
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
-async def run(target: str = "bcave", years: int = 3, ids: list[str] | None = None) -> None:
+async def run(target: str = "bcave", disc_years: int = 10, fin_years: int = 3, ids: list[str] | None = None) -> int:
     client = _supabase_client()
     api_key = os.environ["DART_API_KEY"]
 
@@ -318,13 +388,37 @@ async def run(target: str = "bcave", years: int = 3, ids: list[str] | None = Non
         logger.warning("no_corp_code_resolved")
         return
 
+    # 1-B. 기존 매핑 회사 기본정보 백필 (ceo_name NULL인 레코드)
+    await refresh_company_details(client, api_key, resolved_ids)
+
     # 2. 공시 수집
-    disc_count = await collect_disclosures(client, api_key, resolved_ids, years=years)
+    disc_count = await collect_disclosures(client, api_key, resolved_ids, years=disc_years)
     logger.info("disclosures_total", count=disc_count)
 
     # 3. 재무 수집
-    fin_count = await collect_financials(client, api_key, resolved_ids, years=years)
+    fin_count = await collect_financials(client, api_key, resolved_ids, years=fin_years)
     logger.info("financials_total", count=fin_count)
+
+    return disc_count + fin_count
+
+
+async def main(
+    target: str = "bcave",
+    disc_years: int = 10,
+    fin_years: int = 3,
+    ids: list[str] | None = None,
+) -> None:
+    from worker.utils.job_tracker import JobTracker
+    client = _supabase_client()
+    label = "DART 공시·재무 (B.CAVE)" if target == "bcave" else "DART 공시·재무 (전체)"
+    tracker = JobTracker(client, script="dart_scraper", label=label)
+    await tracker.start()
+    try:
+        rows_done = await run(target=target, disc_years=disc_years, fin_years=fin_years, ids=ids)
+        await tracker.finish(rows_done=rows_done or 0)
+    except Exception as e:
+        await tracker.error(str(e))
+        raise
 
 
 if __name__ == "__main__":
@@ -333,10 +427,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", choices=["bcave", "all"], default="bcave",
                         help="bcave=B.CAVE만, all=전체 companies")
-    parser.add_argument("--years", type=int, default=3, help="수집 연도 수 (기본 3)")
+    parser.add_argument("--disc-years", type=int, default=10, help="공시 수집 연도 수 (기본 10)")
+    parser.add_argument("--fin-years",  type=int, default=3,  help="재무제표 수집 연도 수 (기본 3)")
     parser.add_argument("--ids", type=str, default="",
                         help="company UUID 콤마 구분 (예: uuid1,uuid2)")
     args = parser.parse_args()
 
     id_list = [i.strip() for i in args.ids.split(",") if i.strip()] if args.ids else None
-    asyncio.run(run(target=args.target, years=args.years, ids=id_list))
+    asyncio.run(main(target=args.target, disc_years=args.disc_years, fin_years=args.fin_years, ids=id_list))
