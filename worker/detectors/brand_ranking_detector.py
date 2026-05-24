@@ -31,6 +31,26 @@ BRAND_EXIT_TOP           = 50   # 이탈 감지 순위 기준
 BRAND_GENDER_DIVERGE     = 20   # 성별 순위 편차 임계
 
 
+def _load_slug_to_uuid(client: Client) -> dict[str, str]:
+    """brands.slug → brands.id (UUID) 매핑."""
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        batch = (
+            client.table("brands")
+            .select("id, slug")
+            .not_.is_("slug", "null")
+            .range(offset, offset + 999)
+            .execute()
+            .data or []
+        )
+        rows.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += 1000
+    return {r["slug"]: r["id"] for r in rows if r.get("slug") and r.get("id")}
+
+
 def _load_own_brand_slugs(client: Client) -> set[str]:
     """brands.is_own = True 인 슬러그 집합 반환."""
     rows: list[dict] = []
@@ -117,7 +137,8 @@ def _load_brand_ranking_with_name(
 
 def detect_brand_ranking(client: Client, target_date: date) -> list[Anomaly]:
     yesterday = target_date - timedelta(days=1)
-    own_slugs = _load_own_brand_slugs(client)
+    own_slugs  = _load_own_brand_slugs(client)
+    slug_to_id = _load_slug_to_uuid(client)
 
     today_map  = _load_brand_ranking_with_name(client, target_date, "A")
     prev_map   = _load_brand_ranking(client, yesterday, "A")
@@ -141,7 +162,7 @@ def detect_brand_ranking(client: Client, target_date: date) -> list[Anomaly]:
             severity = "high" if delta >= 15 else "medium"
             anomalies.append(Anomaly(
                 module=MODULE, severity=severity, anomaly_type="brand_rank_drop_own",
-                entity_type="brand", entity_id=slug, entity_name=name,
+                entity_type="brand", entity_id=slug_to_id.get(slug), entity_name=name,
                 description=f"[자사] {name} — 브랜드 순위 {rank_prev}위 → {rank_today}위 ({delta}계단 하락)",
                 meta={"rank_today": rank_today, "rank_prev": rank_prev, "delta": delta},
             ))
@@ -156,7 +177,7 @@ def detect_brand_ranking(client: Client, target_date: date) -> list[Anomaly]:
             delta = rank_prev - rank_today
             anomalies.append(Anomaly(
                 module=MODULE, severity="medium", anomaly_type="brand_rank_spike_competitor",
-                entity_type="brand", entity_id=slug, entity_name=name,
+                entity_type="brand", entity_id=slug_to_id.get(slug), entity_name=name,
                 description=f"[경쟁] {name} — 브랜드 순위 {rank_prev}위 → {rank_today}위 ({delta}계단 급등)",
                 meta={"rank_today": rank_today, "rank_prev": rank_prev, "delta": delta},
             ))
@@ -170,7 +191,7 @@ def detect_brand_ranking(client: Client, target_date: date) -> list[Anomaly]:
             prev_str = f"{rank_prev}위" if rank_prev else "미진입"
             anomalies.append(Anomaly(
                 module=MODULE, severity="medium", anomaly_type="brand_new_entrant_top10",
-                entity_type="brand", entity_id=slug, entity_name=name,
+                entity_type="brand", entity_id=slug_to_id.get(slug), entity_name=name,
                 description=f"[경쟁] {name} — 브랜드 TOP10 신규 진입 (어제: {prev_str} → 오늘: {rank_today}위)",
                 meta={"rank_today": rank_today, "rank_prev": rank_prev},
             ))
@@ -184,7 +205,7 @@ def detect_brand_ranking(client: Client, target_date: date) -> list[Anomaly]:
         ):
             anomalies.append(Anomaly(
                 module=MODULE, severity="high", anomaly_type="brand_exit_top50_own",
-                entity_type="brand", entity_id=slug, entity_name=name,
+                entity_type="brand", entity_id=slug_to_id.get(slug), entity_name=name,
                 description=f"[자사] {name} — 브랜드 TOP50 이탈 ({rank_prev}위 → {rank_today}위)",
                 meta={"rank_today": rank_today, "rank_prev": rank_prev},
             ))
@@ -194,7 +215,7 @@ def detect_brand_ranking(client: Client, target_date: date) -> list[Anomaly]:
         if slug not in today_map and slug in own_slugs and rank_prev <= BRAND_EXIT_TOP:
             anomalies.append(Anomaly(
                 module=MODULE, severity="high", anomaly_type="brand_exit_top50_own",
-                entity_type="brand", entity_id=slug, entity_name=slug,
+                entity_type="brand", entity_id=slug_to_id.get(slug), entity_name=slug,
                 description=f"[자사] {slug} — 브랜드 랭킹에서 완전 이탈 (어제 {rank_prev}위)",
                 meta={"rank_today": None, "rank_prev": rank_prev},
             ))
@@ -216,7 +237,7 @@ def detect_brand_ranking(client: Client, target_date: date) -> list[Anomaly]:
             weak_gender = "남성" if rank_m > rank_f else "여성"
             anomalies.append(Anomaly(
                 module=MODULE, severity="low", anomaly_type="brand_rank_gender_diverge",
-                entity_type="brand", entity_id=slug, entity_name=name,
+                entity_type="brand", entity_id=slug_to_id.get(slug), entity_name=name,
                 description=(
                     f"[자사] {name} — 성별 순위 편차 {diverge}위 "
                     f"(남성 {rank_m}위 / 여성 {rank_f}위, {weak_gender} 약세)"

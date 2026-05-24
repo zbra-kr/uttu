@@ -3,9 +3,8 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcSettings, IcMore, IcChevL, IcChevR, IcChevD } from '../ui/icons';
+import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcSettings, IcMore, IcChevL, IcChevR, IcChevD, IcShield, IcUsers, IcSpark, IcBell, IcCalendar } from '../ui/icons';
 
-const ADMIN_ONLY    = new Set(['magazine', 'matching', 'reviews']);
 
 const ROUTES = [
   { id: 'home',         path: '/',             label: '홈',        Icon: IcHome,        section: 'main' },
@@ -21,8 +20,18 @@ const ROUTES = [
   { id: 'magazine',     path: '/magazine',     label: '매거진',     Icon: IcBook,        section: 'main' },
   { id: 'reviews',      path: '/reviews',      label: '리뷰',      Icon: IcReview,      section: 'main' },
   { id: 'matching',     path: '/matching',     label: '자사 매칭',  Icon: IcLink,        section: 'main' },
-  { id: 'mapping',      path: '/admin/mapping',label: '매핑',      Icon: IcMapping,     section: 'admin' },
-  { id: 'settings',     path: '/settings',     label: '설정',      Icon: IcSettings,    section: 'admin' },
+  { id: 'settings',     path: '/settings',     label: '설정',      Icon: IcSettings,    section: 'system' },
+];
+
+const MANAGE_ROUTES = [
+  { id: 'admin',               path: '/admin',                label: '관리 대시보드', Icon: IcShield   },
+  { id: 'admin-users',         path: '/admin/users',          label: '사용자 관리',   Icon: IcUsers    },
+  { id: 'admin-llm',           path: '/admin/llm',            label: 'LLM 관리',      Icon: IcSpark    },
+  { id: 'admin-jobs',          path: '/admin/jobs',           label: '수집 모니터링', Icon: IcCalendar },
+  { id: 'admin-notifications', path: '/admin/notifications',  label: '알림 모니터링', Icon: IcBell     },
+  { id: 'admin-mapping',       path: '/admin/mapping',        label: 'DART 매핑',     Icon: IcMapping  },
+  { id: 'admin-anomalies',     path: '/admin/anomalies',      label: '이상탐지 룰',   Icon: IcFlag     },
+  { id: 'admin-audit',         path: '/admin/audit',          label: '감사 로그',     Icon: IcBook     },
 ];
 
 interface SidebarProps {
@@ -105,8 +114,8 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
     setOpen(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
 
-  const main  = ROUTES.filter(r => r.section === 'main');
-  const admin = ROUTES.filter(r => r.section === 'admin');
+  const main   = ROUTES.filter(r => r.section === 'main');
+  const system = ROUTES.filter(r => r.section === 'system');
 
   return (
     <aside
@@ -144,20 +153,6 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
           const isOpen   = open.has(r.id);
           if (isSub && !open.has(r.parent!)) return null;
 
-          const locked = ADMIN_ONLY.has(r.id) && !isAdmin;
-          if (locked) {
-            return (
-              <div key={r.id}
-                className={`sb-item${isSub ? ' sub' : ''}`}
-                title="준비 중 (개발 진행 중)"
-                style={{ cursor: 'not-allowed', userSelect: 'none', filter: 'blur(0.5px)', opacity: 0.35, pointerEvents: 'none' }}
-              >
-                <r.Icon size={isSub ? 13 : 16} />
-                {show && <span>{r.label}</span>}
-              </div>
-            );
-          }
-
           return (
             <div key={r.id} style={{ position: 'relative' }}>
               <Link
@@ -183,16 +178,35 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
         })}
       </nav>
 
-      {show && <div className="sb-section">admin</div>}
+      {isAdmin && (
+        <>
+          {show && <div className="sb-section">관리</div>}
+          <nav className="sb-nav">
+            {MANAGE_ROUTES.map(r => (
+              <Link
+                key={r.id}
+                href={r.path}
+                className={`sb-item ${isActive(r.path) ? 'active' : ''}`}
+                title={!show ? r.label : undefined}
+              >
+                <r.Icon size={16} />
+                {show && <span>{r.label}</span>}
+              </Link>
+            ))}
+          </nav>
+        </>
+      )}
+
+      {show && <div className="sb-section">system</div>}
       <nav className="sb-nav">
-        {admin.map(r => (
+        {system.map(r => (
           <Link
             key={r.id}
             href={r.path}
             className={`sb-item ${isActive(r.path) ? 'active' : ''}`}
             title={!show ? r.label : undefined}
           >
-            <r.Icon />
+            <r.Icon size={16} />
             {show && <span>{r.label}</span>}
           </Link>
         ))}

@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useRouter } from 'next/navigation';
 import { IcSpark, IcChevL, IcChevR, IcExpand, IcContract, IcClock } from '../ui/icons';
+import { fetchAllowedModels, updatePreferredModel, type AllowedModel } from '@/lib/queries-me';
 
 const QUICK_PROMPTS_BY_ROUTE: Record<string, string[]> = {
   '/':         ['오늘의 핵심 변화 요약', '자사 영향이 큰 이상탐지', '수집 작업 현황'],
@@ -150,6 +151,16 @@ const BETA_S: React.CSSProperties = {
   border: '0.5px solid var(--hs)', lineHeight: 1.6,
 };
 
+// ── Quota 상태 타입 ───────────────────────────────────────────────────────────
+interface QuotaState {
+  is_blocked:    boolean;
+  limit_monthly: number | null;
+  limit_daily:   number | null;
+  used_monthly:  number;
+  used_today:    number;
+  note:          string | null;
+}
+
 // ── AiPanel ───────────────────────────────────────────────────────────────────
 interface AiPanelProps { open: boolean; onToggle: () => void; context: string[]; route: string }
 
@@ -162,10 +173,34 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
   const [showHistory,  setShowHistory]  = React.useState(false);
   const [sessions,     setSessions]     = React.useState<AiSession[]>([]);
   const [histLoading,  setHistLoading]  = React.useState(false);
+  const [quota,        setQuota]        = React.useState<QuotaState | null>(null);
+  const [models,       setModels]       = React.useState<AllowedModel[]>([]);
+  const [currentModel, setCurrentModel] = React.useState<string | null>(null);
   const bodyRef     = React.useRef<HTMLDivElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const abortRef    = React.useRef<AbortController | null>(null);
   const router   = useRouter();
+
+  const fetchQuota = React.useCallback(async () => {
+    try {
+      const res  = await fetch('/api/ai/quota');
+      if (!res.ok) return;
+      const data = await res.json() as {
+        quota: { monthly_token_limit: number | null; daily_token_limit: number | null; is_blocked: boolean; note: string | null };
+        usage: { used_today: number; used_monthly: number };
+      };
+      setQuota({
+        is_blocked:    data.quota.is_blocked,
+        limit_monthly: data.quota.monthly_token_limit,
+        limit_daily:   data.quota.daily_token_limit,
+        used_monthly:  data.usage.used_monthly,
+        used_today:    data.usage.used_today,
+        note:          data.quota.note,
+      });
+    } catch {
+      // quota 조회 실패는 무시 — AI 사용은 계속 허용
+    }
+  }, []);
 
   React.useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
@@ -180,6 +215,16 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
     el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
     el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
   }, [input]);
+
+  // 패널 열릴 때 quota + 모델 목록 조회
+  React.useEffect(() => {
+    if (!open) return;
+    fetchQuota();
+    fetchAllowedModels().then(({ models: ms, current }) => {
+      setModels(ms);
+      setCurrentModel(current);
+    });
+  }, [open, fetchQuota]);
 
   // 라우트 변경 시 히스토리 드로어만 닫기 (대화는 유지)
   React.useEffect(() => {
@@ -237,6 +282,11 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
     setMessages([]);
     setSessionId(crypto.randomUUID());
     setShowHistory(false);
+  };
+
+  const handleModelChange = async (model_id: string) => {
+    setCurrentModel(model_id);
+    await updatePreferredModel(model_id);
   };
 
   // ── 메시지 스트리밍 ───────────────────────────────────────────────────────
@@ -327,6 +377,7 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
     } finally {
       setThinking(false);
       abortRef.current = null;
+      fetchQuota();
     }
   };
 
@@ -364,7 +415,25 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
           <span style={{ color: 'var(--hs)' }}><IcSpark /></span>
           <span className="name">UTTU AI</span>
           <span style={BETA_S}>BETA</span>
-          <span className="sub">with claude</span>
+          {models.length > 1 ? (
+            <select
+              value={currentModel ?? ''}
+              onChange={e => handleModelChange(e.target.value)}
+              disabled={thinking}
+              style={{
+                fontSize: 10, padding: '2px 5px',
+                background: 'var(--snk)', border: '0.5px solid var(--bd)',
+                borderRadius: 3, color: 'var(--f3)', fontFamily: 'var(--mono)',
+                cursor: thinking ? 'not-allowed' : 'pointer', maxWidth: 120,
+              }}
+            >
+              {models.map(m => (
+                <option key={m.id} value={m.model_id}>{m.display_name}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="sub">with {models[0]?.display_name ?? 'claude'}</span>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
@@ -446,35 +515,41 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
           </>
         )}
 
-        {messages.map((m, i) => (
-          <div key={i} className={`aip-msg ${m.role} aip-centered`}>
-            <span className="role">{m.role === 'user' ? '나' : 'UTTU'}</span>
-            <div className="bubble" style={m.error ? { color: 'var(--shf)' } : {}}>
-              {m.toolCalls && m.toolCalls.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  {m.toolCalls.map((tc, j) => (
-                    <div key={j} style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      fontSize: 11, color: 'var(--f3)', marginBottom: 3,
-                    }}>
-                      <span>{TOOL_ICON[tc.name] ?? '⚡'}</span>
-                      <span className="mono">{tc.label}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {m.role === 'user' ? (
-                m.text
-              ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS as any}>
-                  {m.text}
-                </ReactMarkdown>
-              )}
+        {messages.map((m, i) => {
+          const isLastAi = thinking && i === messages.length - 1 && m.role === 'ai' && m.text !== '';
+          return (
+            <div key={i} className={`aip-msg ${m.role} aip-centered`}>
+              <span className="role">{m.role === 'user' ? '나' : 'UTTU'}</span>
+              <div className="bubble" style={m.error ? { color: 'var(--shf)' } : {}}>
+                {m.toolCalls && m.toolCalls.length > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    {m.toolCalls.map((tc, j) => (
+                      <div key={j} style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        fontSize: 11, color: 'var(--f3)', marginBottom: 3,
+                      }}>
+                        <span>{TOOL_ICON[tc.name] ?? '⚡'}</span>
+                        <span className="mono">{tc.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {m.role === 'user' ? (
+                  m.text
+                ) : (
+                  <>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS as any}>
+                      {m.text}
+                    </ReactMarkdown>
+                    {isLastAi && <span className="aip-cursor" />}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
-        {thinking && (
+        {thinking && messages[messages.length - 1]?.text === '' && (
           <div className="aip-think aip-centered">
             <span className="dot" />
             <span>생각하는 중…</span>
@@ -484,33 +559,86 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
 
       {/* 입력창 */}
       <div className="aip-foot">
-        <div className="aip-centered">
-          <form onSubmit={e => { e.preventDefault(); send(input); }} style={{ margin: 0 }}>
-            <div className="aip-input">
-              <span className="arrow">↑</span>
-              <textarea
-                ref={textareaRef}
-                value={input}
-                rows={1}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    send(input);
-                  }
-                }}
-                placeholder="질문하세요 (데이터 조회, 분석, 페이지 이동)"
-                style={{
-                  flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                  fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--f1)',
-                  letterSpacing: '-0.012em', resize: 'none', lineHeight: '19px',
-                  padding: 0, margin: 0, overflowY: 'hidden',
-                }}
-                disabled={thinking}
-              />
-              <span className="kbd" style={{ alignSelf: 'flex-end' }}>⌘ ↵</span>
+        {thinking && <div className="aip-progress"><div className="aip-progress-bar" /></div>}
+        <div className="aip-centered" style={{ paddingTop: 10 }}>
+          {/* quota 바 */}
+          {quota && quota.limit_monthly != null && (
+            <div style={{ marginBottom: 6 }}>
+              {(() => {
+                const pct = Math.min(100, (quota.used_monthly / quota.limit_monthly) * 100);
+                const bar = pct >= 95 ? 'var(--shf)' : pct >= 80 ? 'var(--smf)' : 'var(--hs)';
+                const fmtK = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : String(n);
+                return (
+                  <>
+                    <div className="row-flex between" style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 3 }}>
+                      <span>이번달 {fmtK(quota.used_monthly)} / {fmtK(quota.limit_monthly)}</span>
+                      <span>{pct.toFixed(0)}%</span>
+                    </div>
+                    <div style={{ height: 2, background: 'var(--snk)', borderRadius: 1, overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: bar, transition: 'width 0.4s' }} />
+                    </div>
+                  </>
+                );
+              })()}
             </div>
-          </form>
+          )}
+
+          {/* 차단 / 한도 초과 상태 */}
+          {quota?.is_blocked ? (
+            <div style={{
+              padding: '10px 12px', borderRadius: 4, fontSize: 12,
+              background: 'var(--shb)', color: 'var(--shf)',
+              fontFamily: 'var(--mono)', textAlign: 'center',
+            }}>
+              AI 접근이 차단된 계정입니다{quota.note ? ` — ${quota.note}` : '.'}
+            </div>
+          ) : quota?.limit_monthly != null && quota.used_monthly >= quota.limit_monthly ? (
+            <div style={{
+              padding: '10px 12px', borderRadius: 4, fontSize: 12,
+              background: 'var(--shb)', color: 'var(--shf)',
+              fontFamily: 'var(--mono)', textAlign: 'center',
+            }}>
+              이번달 AI 사용 한도에 도달했습니다.
+            </div>
+          ) : (
+            <form onSubmit={e => { e.preventDefault(); send(input); }} style={{ margin: 0 }}>
+              <div className="aip-input">
+                <span className="arrow">↑</span>
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  rows={1}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      send(input);
+                    }
+                  }}
+                  placeholder="질문하세요 (데이터 조회, 분석, 페이지 이동)"
+                  style={{
+                    flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                    fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--f1)',
+                    letterSpacing: '-0.012em', resize: 'none', lineHeight: '19px',
+                    padding: 0, margin: 0, overflowY: 'hidden',
+                  }}
+                  disabled={thinking}
+                />
+                {thinking ? (
+                  <button
+                    type="button"
+                    className="aip-stop"
+                    title="중단 (Esc)"
+                    onClick={() => abortRef.current?.abort()}
+                  >
+                    ■
+                  </button>
+                ) : (
+                  <span className="kbd" style={{ alignSelf: 'flex-end' }}>⌘ ↵</span>
+                )}
+              </div>
+            </form>
+          )}
         </div>
       </div>
 

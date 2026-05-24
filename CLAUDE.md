@@ -41,13 +41,12 @@
 - `.secret/` 폴더 `.gitignore` 누락 금지
 - `service_role` 키는 worker 전용 — viewer/frontend 코드에 포함 금지
 - 리뷰 닉네임·사용자ID 수집 금지 — 개인정보
+- 사용자 데이터 테이블은 `user_` 접두어 + 반드시 RLS 정책 적용 (`user_id = auth.uid()`)
+- `profiles` 민감 컬럼(`teams_webhook_url`, `telegram_chat_id`)은 본인만 SELECT. 멘션 자동완성·작성자 표시 등 다른 사용자 프로필 조회는 **반드시 `profiles_public` view 경유** — `profiles` 직접 조회 금지
 
 ---
 
 ## DB / 마이그레이션 규칙
-
-- **마이그레이션 자동 적용 금지** — SQL 파일만 작성, 정호철이 Supabase SQL Editor에서 수동 적용
-- `cron` 자동 등록 금지 — 스케줄 제안만, 정호철이 직접 등록
 - Supabase 환경변수: `.env`는 `SUPABASE_SERVICE_KEY` (ROLE 없음) — 코드에서 fallback 패턴 사용:
   ```python
   service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_SERVICE_KEY"]

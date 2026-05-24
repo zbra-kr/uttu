@@ -161,7 +161,7 @@ export default function NoteDrawer({
     if (error) { setSaveError(error); return; }
     if (data) {
       const { data: profiles } = await supabaseBrowser()
-        .from('profiles').select('id, display_name, full_name').eq('id', data.user_id).single();
+        .from('profiles_public').select('id, display_name, full_name').eq('id', data.user_id).single();
       const next = [{ ...data, author: profiles ?? null }, ...notes];
       setNotes(next);
       onCountChange?.(next.length);

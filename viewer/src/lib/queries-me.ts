@@ -180,19 +180,27 @@ export interface MyNote {
   author?: { id: string; display_name: string | null; full_name: string | null } | null;
 }
 
+function escapePostgRESTPattern(s: string): string {
+  // PostgREST DSL meta chars that could break .or() / .ilike() syntax
+  return s.replace(/[\\,()"%]/g, '\\$&');
+}
+
 export async function searchMentionCandidates(query: string, limit = 8): Promise<MentionCandidate[]> {
   if (!query) return [];
 
+  const safe = escapePostgRESTPattern(query);
+  const pattern = `%${safe}%`;
+
   const [{ data: users }, { data: teamRows }] = await Promise.all([
     supabase
-      .from('profiles')
+      .from('profiles_public')
       .select('id, display_name, full_name, team')
-      .or(`display_name.ilike.%${query}%,full_name.ilike.%${query}%`)
+      .or(`display_name.ilike.${pattern},full_name.ilike.${pattern}`)
       .limit(limit),
     supabase
-      .from('profiles')
+      .from('profiles_public')
       .select('id, team')
-      .ilike('team', `%${query}%`)
+      .ilike('team', pattern)
       .not('team', 'is', null),
   ]);
 
@@ -237,7 +245,7 @@ export async function fetchNotesForEntity(
 
   const authorIds = [...new Set(notes.map(n => n.user_id))];
   const { data: profiles } = await supabase
-    .from('profiles')
+    .from('profiles_public')
     .select('id, display_name, full_name')
     .in('id', authorIds);
   const profileMap = new Map((profiles ?? []).map(p => [p.id, p]));
@@ -324,7 +332,7 @@ export async function fetchMentionsForMe(limit = 20): Promise<MyNote[]> {
 
   const authorIds = [...new Set(notes.map(n => n.user_id))];
   const { data: profiles } = await supabase
-    .from('profiles')
+    .from('profiles_public')
     .select('id, display_name, full_name')
     .in('id', authorIds);
   const profileMap = new Map((profiles ?? []).map(p => [p.id, p]));
@@ -511,6 +519,31 @@ export async function fetchViewHistory(limit = 8): Promise<ViewHistoryRow[]> {
   return (data ?? []) as ViewHistoryRow[];
 }
 
+// ── My AI Quota ───────────────────────────────────────────────────────────────
+
+export interface MyAiQuota {
+  quota: {
+    monthly_token_limit: number | null;
+    daily_token_limit:   number | null;
+    is_blocked:          boolean;
+    note:                string | null;
+  };
+  usage: {
+    used_today:   number;
+    used_monthly: number;
+  };
+}
+
+export async function fetchMyAiQuota(): Promise<MyAiQuota | null> {
+  try {
+    const res = await fetch('/api/ai/quota');
+    if (!res.ok) return null;
+    return await res.json() as MyAiQuota;
+  } catch {
+    return null;
+  }
+}
+
 // ── My Stats ──────────────────────────────────────────────────────────────────
 
 export interface MyStats {
@@ -534,5 +567,42 @@ export async function fetchMyStats(): Promise<MyStats | null> {
   } catch (e) {
     console.error('[fetchMyStats]', e);
     return null;
+  }
+}
+
+// ── AI 모델 picker ────────────────────────────────────────────────────────────
+
+export interface AllowedModel {
+  id: string;
+  provider: 'anthropic' | 'openai' | 'google';
+  model_id: string;
+  display_name: string;
+  is_default: boolean;
+}
+
+export async function fetchAllowedModels(): Promise<{ models: AllowedModel[]; current: string | null }> {
+  try {
+    const res = await fetch('/api/ai/models');
+    if (!res.ok) return { models: [], current: null };
+    return await res.json();
+  } catch {
+    return { models: [], current: null };
+  }
+}
+
+export async function updatePreferredModel(model_id: string | null): Promise<{ error: string | null }> {
+  try {
+    const res = await fetch('/api/me/preferred-model', {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ model_id }),
+    });
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: '요청 실패' }));
+      return { error };
+    }
+    return { error: null };
+  } catch {
+    return { error: '네트워크 오류' };
   }
 }

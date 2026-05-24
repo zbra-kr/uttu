@@ -1,41 +1,34 @@
 'use client';
 import React from 'react';
 import { Spark, Line } from '@/components/ui/charts';
-import { IcSearch, IcShield, IcPlus, IcMore } from '@/components/ui/icons';
+import { IcShield, IcMore } from '@/components/ui/icons';
 
 export default function SettingsPage() {
   const [section, setSection] = React.useState('profile');
 
   const nav = [
-    ['profile', '개인정보', 'main'],
-    ['notif', '알림', 'main'],
-    ['conn', '연결 (DB·API)', 'main'],
-    ['jobs', '수집 작업', 'main'],
-    ['div', '─', null],
-    ['users', '유저 관리', 'admin'],
-    ['audit', '감사 로그', 'admin'],
-  ] as [string, string, string | null][];
+    ['profile', '개인정보'],
+    ['notif', '알림'],
+    ['conn', '연결 (DB·API)'],
+    ['jobs', '수집 작업'],
+  ] as [string, string][];
 
   return (
     <div className="grid" style={{ gridTemplateColumns: '220px 1fr', gap: 14 }}>
       <aside className="panel" style={{ padding: 12, height: 'fit-content' }}>
         <span className="sec-tag" style={{ display: 'block', marginBottom: 8 }}>설정</span>
-        {nav.map(([id, t, kind], i) =>
-          id === 'div' ? <hr key={i} className="hr-d" style={{ margin: '8px 0' }} /> : (
-            <div key={i} onClick={() => setSection(id)}
-              style={{ padding: '8px 10px', background: section === id ? 'var(--snk)' : 'transparent', border: '0.5px solid ' + (section === id ? 'var(--bs)' : 'transparent'), borderRadius: 5, marginBottom: 2, cursor: 'pointer', fontSize: 12, fontWeight: section === id ? 500 : 400, color: section === id ? 'var(--f1)' : 'var(--f2)' }}>
-              {t}
-              {kind === 'admin' && <span className="mono dim" style={{ fontSize: 9, marginLeft: 6 }}>admin</span>}
-            </div>
-          )
-        )}
+        {nav.map(([id, t], i) => (
+          <div key={i} onClick={() => setSection(id)}
+            style={{ padding: '8px 10px', background: section === id ? 'var(--snk)' : 'transparent', border: '0.5px solid ' + (section === id ? 'var(--bs)' : 'transparent'), borderRadius: 5, marginBottom: 2, cursor: 'pointer', fontSize: 12, fontWeight: section === id ? 500 : 400, color: section === id ? 'var(--f1)' : 'var(--f2)' }}>
+            {t}
+          </div>
+        ))}
       </aside>
 
       <div className="col-flex gap-14">
         {section === 'profile' && <SettingsProfile />}
-        {section === 'users' && <SettingsUsers />}
         {section === 'jobs' && <PageJobs />}
-        {section !== 'profile' && section !== 'users' && section !== 'jobs' && (
+        {section !== 'profile' && section !== 'jobs' && (
           <section className="panel" style={{ minHeight: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 6 }}>
             <span className="sec-tag">section</span>
             <div style={{ fontSize: 16, fontWeight: 500 }}>{section}</div>
@@ -95,66 +88,6 @@ function SettingsProfile() {
             <div className={`toggle ${n[2] ? 'on' : ''}`}><div className="thumb" /></div>
           </div>
         ))}
-      </section>
-    </>
-  );
-}
-
-function SettingsUsers() {
-  return (
-    <>
-      <div className="row-flex between baseline">
-        <h2 style={{ fontSize: 20, fontWeight: 500, margin: 0 }}>유저 관리</h2>
-        <span className="mono dim" style={{ fontSize: 12 }}>활성 12 · 초대 대기 2</span>
-      </div>
-
-      <div className="row-flex gap-6 center">
-        <button className="btn sm active">전체 (14)</button>
-        <button className="btn sm">활성 (12)</button>
-        <button className="btn sm">대기 (2)</button>
-        <button className="btn sm">비활성</button>
-        <div className="flex-1" />
-        <div className="input row-flex center gap-6" style={{ width: 220 }}>
-          <IcSearch style={{ color: 'var(--f4)' }} />
-          <span style={{ color: 'var(--f4)', fontSize: 12 }}>이름 / 이메일</span>
-        </div>
-        <button className="btn brand"><IcPlus /> 유저 초대</button>
-      </div>
-
-      <section className="panel" style={{ padding: 0 }}>
-        <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
-          <div className="row head" style={{ gridTemplateColumns: '1.4fr 110px 1.5fr 130px 80px 50px' }}>
-            <span>유저</span><span>역할</span><span>권한 영역</span><span>마지막 접속</span><span>상태</span><span></span>
-          </div>
-          {[
-            ['정호철', 'zbra@zbra.co.kr', 'admin', '전체', '오늘 09:14', 'active'],
-            ['김기획', 'planner1@bcave.co.kr', 'planner', '회사·브랜드·상품·프로모션', '오늘 08:42', 'active'],
-            ['이기획', 'planner2@bcave.co.kr', 'planner', '회사·브랜드·상품·프로모션', '어제 18:20', 'active'],
-            ['박재무', 'finance1@bcave.co.kr', 'finance', '회사·공시·매핑', '어제 17:08', 'active'],
-            ['최회계', 'finance2@bcave.co.kr', 'finance', '회사·공시', '2일 전', 'active'],
-            ['조CS', 'cs1@bcave.co.kr', 'cs', '리뷰·자사 상품', '오늘 11:02', 'active'],
-            ['윤CS', 'cs2@bcave.co.kr', 'cs', '리뷰·자사 상품', '오늘 10:48', 'active'],
-            ['임원1', 'exec1@bcave.co.kr', 'viewer', '홈·요약만', '오늘 07:30', 'active'],
-            ['(초대중)', 'newhire@bcave.co.kr', 'cs', '리뷰', '—', 'pending'],
-            ['(초대중)', 'finance3@bcave.co.kr', 'finance', '회사·공시', '—', 'pending'],
-          ].map((u, i) => (
-            <div key={i} className={`row hover ${i % 2 ? 'alt' : ''}`} style={{ gridTemplateColumns: '1.4fr 110px 1.5fr 130px 80px 50px' }}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 500 }}>{u[0]}</div>
-                <div className="mono dim" style={{ fontSize: 10 }}>{u[1]}</div>
-              </div>
-              <span>
-                {u[2] === 'admin' ?
-                  <span className="chip lg" style={{ background: 'var(--shb)', color: 'var(--shf)', borderColor: 'var(--shf)' }}>{u[2]}</span> :
-                  <span className="chip lg">{u[2]}</span>}
-              </span>
-              <span style={{ fontSize: 11, color: 'var(--f2)' }}>{u[3]}</span>
-              <span className="mono dim">{u[4]}</span>
-              <span><span className={`sev ${u[5] === 'active' ? 'lo' : 'md'}`}><span className="pip" />{u[5]}</span></span>
-              <span><button className="btn sm icon"><IcMore /></button></span>
-            </div>
-          ))}
-        </div>
       </section>
     </>
   );

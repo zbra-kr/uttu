@@ -30,7 +30,7 @@ export async function GET() {
     ss.from('user_view_history').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
     ss.from('user_view_history').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('viewed_at', d7),
     ss.from('user_saved_filters').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-    ss.from('user_notification_subscriptions').select('id, event_type', { count: 'exact' }).eq('user_id', user.id).eq('enabled', true),
+    ss.from('user_notification_subscriptions').select('event_type', { count: 'exact' }).eq('user_id', user.id).eq('enabled', true),
     ss.from('user_notes').select('id', { count: 'exact', head: true }).contains('mentioned_user_ids', [user.id]).neq('user_id', user.id).gte('created_at', d30),
   ]);
 

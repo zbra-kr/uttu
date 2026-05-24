@@ -1,4 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
@@ -126,6 +128,12 @@ function todayKST(): string {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 }
 
+// KST 기준 이번달 1일 (ai_usage_daily gte 필터용)
+function monthStartKST(): string {
+  const kst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  return `${kst.getFullYear()}-${String(kst.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
 // 첫 번째 대화 교환 후 Haiku로 세션 제목 자동 생성 (fire-and-forget)
 async function generateSessionTitle(userMsg: string, assistantMsg: string): Promise<string> {
   const res = await anthropic.messages.create({
@@ -184,14 +192,45 @@ export async function POST(req: NextRequest) {
       });
       const system = buildSystem(context ?? [], route ?? '/', today);
 
+      // ── 모델 선택: preferred_model → default → hardcoded fallback ──
+      let aiProvider = 'anthropic';
+      let aiModelId  = 'claude-sonnet-4-6';
+      try {
+        const { data: prof } = await supabase
+          .from('profiles').select('preferred_model').eq('id', userId ?? '').maybeSingle();
+        const pref = prof?.preferred_model ?? null;
+        if (pref) {
+          const { data: m } = await supabase
+            .from('ai_allowed_models').select('provider, model_id')
+            .eq('model_id', pref).eq('is_active', true).maybeSingle();
+          if (m) { aiProvider = m.provider; aiModelId = m.model_id; }
+          else {
+            // preferred inactive — fall back to default
+            const { data: def } = await supabase
+              .from('ai_allowed_models').select('provider, model_id')
+              .eq('is_default', true).eq('is_active', true).maybeSingle();
+            if (def) { aiProvider = def.provider; aiModelId = def.model_id; }
+          }
+        } else {
+          const { data: def } = await supabase
+            .from('ai_allowed_models').select('provider, model_id')
+            .eq('is_default', true).eq('is_active', true).maybeSingle();
+          if (def) { aiProvider = def.provider; aiModelId = def.model_id; }
+        }
+      } catch {
+        // DB 조회 실패 — hardcoded fallback 유지
+      }
+
       // ── 세션 upsert (await — user 메시지 FK 제약 충족 보장) ────────
       if (sessionId) {
         const { error: sessErr } = await supabase.from('ai_sessions').upsert({
-          id:         sessionId,
-          user_id:    userId,
-          route:      route ?? '/',
-          context:    context ?? [],
-          started_at: new Date().toISOString(),
+          id:          sessionId,
+          user_id:     userId,
+          route:       route ?? '/',
+          context:     context ?? [],
+          started_at:  new Date().toISOString(),
+          ai_provider: aiProvider,
+          ai_model:    aiModelId,
         }, { onConflict: 'id', ignoreDuplicates: true });
         if (sessErr) console.error('[ai_sessions upsert]', sessErr.message, sessErr.details);
       }
@@ -201,7 +240,7 @@ export async function POST(req: NextRequest) {
         try {
           const { data: quota } = await supabase
             .from('ai_user_quotas')
-            .select('is_blocked, daily_token_limit')
+            .select('is_blocked, daily_token_limit, monthly_token_limit')
             .eq('user_id', userId)
             .maybeSingle();
 
@@ -210,6 +249,25 @@ export async function POST(req: NextRequest) {
             emit({ type: 'done' });
             controller.close();
             return;
+          }
+
+          if (quota?.monthly_token_limit != null) {
+            const { data: monthlyRows } = await supabase
+              .from('ai_usage_daily')
+              .select('input_tokens, output_tokens')
+              .eq('user_id', userId)
+              .gte('usage_date', monthStartKST());
+
+            const usedMonthly = (monthlyRows ?? []).reduce(
+              (s: number, r: { input_tokens: number; output_tokens: number }) =>
+                s + (r.input_tokens ?? 0) + (r.output_tokens ?? 0), 0,
+            );
+            if (usedMonthly >= quota.monthly_token_limit) {
+              emit({ type: 'error', message: `이번달 AI 사용 한도(${quota.monthly_token_limit.toLocaleString()} 토큰)에 도달했습니다.` });
+              emit({ type: 'done' });
+              controller.close();
+              return;
+            }
           }
 
           if (quota?.daily_token_limit != null) {
@@ -246,8 +304,8 @@ export async function POST(req: NextRequest) {
         if (umErr) console.error('[ai_messages user insert]', umErr.message, umErr.details);
       }
 
-      let msgs: Anthropic.MessageParam[] = (messages ?? []).map(m => ({
-        role: (m.role === 'ai' ? 'assistant' : 'user') as 'user' | 'assistant',
+      const rawMsgs = (messages ?? []).map(m => ({
+        role:    (m.role === 'ai' ? 'assistant' : 'user') as 'user' | 'assistant',
         content: (m.content ?? m.text ?? '') as string,
       }));
 
@@ -257,61 +315,163 @@ export async function POST(req: NextRequest) {
       let accumulatedText   = '';
       const collectedToolCalls: { name: string; label: string }[] = [];
 
+      // ── 공통 tool 실행 헬퍼 ───────────────────────────────────────
+      async function execTool(name: string, inp: Record<string, string>): Promise<string> {
+        if (name === 'query_db') {
+          return execQueryDb(supabase, inp.sql);
+        } else if (name === 'navigate') {
+          emit({ type: 'navigate', path: inp.path, reason: inp.reason });
+          return `페이지 이동 요청: ${inp.path}`;
+        } else if (name === 'web_search') {
+          return execWebSearch(inp.query);
+        }
+        return '알 수 없는 도구';
+      }
+
       try {
-        for (let iter = 0; iter < 15; iter++) {
-          const stream = anthropic.messages.stream({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 8192,
-            system,
-            tools: TOOLS,
-            messages: msgs,
-          });
+        // ── Anthropic (Claude) ───────────────────────────────────────
+        if (aiProvider === 'anthropic') {
+          let msgs: Anthropic.MessageParam[] = rawMsgs;
 
-          stream.on('text', text => {
-            accumulatedText += text;
-            emit({ type: 'delta', text });
-          });
+          for (let iter = 0; iter < 15; iter++) {
+            const stream = anthropic.messages.stream({
+              model: aiModelId,
+              max_tokens: 8192,
+              system,
+              tools: TOOLS,
+              messages: msgs,
+            });
 
-          const finalMsg = await stream.finalMessage();
-          totalInputTokens  += finalMsg.usage?.input_tokens  ?? 0;
-          totalOutputTokens += finalMsg.usage?.output_tokens ?? 0;
+            stream.on('text', text => {
+              accumulatedText += text;
+              emit({ type: 'delta', text });
+            });
 
-          if (finalMsg.stop_reason === 'end_turn') break;
+            const finalMsg = await stream.finalMessage();
+            totalInputTokens  += finalMsg.usage?.input_tokens  ?? 0;
+            totalOutputTokens += finalMsg.usage?.output_tokens ?? 0;
 
-          const toolCalls = finalMsg.content.filter(
-            (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-          );
-          if (toolCalls.length === 0) break;
+            if (finalMsg.stop_reason === 'end_turn') break;
 
-          const toolResults: Anthropic.ToolResultBlockParam[] = [];
+            const toolCalls = finalMsg.content.filter(
+              (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+            );
+            if (toolCalls.length === 0) break;
 
-          for (const tc of toolCalls) {
-            const inp = tc.input as Record<string, string>;
-            const label = inp.label ?? inp.query ?? tc.name;
-            emit({ type: 'tool_call', name: tc.name, label });
-            collectedToolCalls.push({ name: tc.name, label });
-            totalToolCalls++;
-
-            let result: string;
-            if (tc.name === 'query_db') {
-              result = await execQueryDb(supabase, inp.sql);
-            } else if (tc.name === 'navigate') {
-              emit({ type: 'navigate', path: inp.path, reason: inp.reason });
-              result = `페이지 이동 요청: ${inp.path}`;
-            } else if (tc.name === 'web_search') {
-              result = await execWebSearch(inp.query);
-            } else {
-              result = '알 수 없는 도구';
+            const toolResults: Anthropic.ToolResultBlockParam[] = [];
+            for (const tc of toolCalls) {
+              const inp = tc.input as Record<string, string>;
+              const label = inp.label ?? inp.query ?? tc.name;
+              emit({ type: 'tool_call', name: tc.name, label });
+              collectedToolCalls.push({ name: tc.name, label });
+              totalToolCalls++;
+              const result = await execTool(tc.name, inp);
+              toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: result });
             }
 
-            toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: result });
+            msgs = [
+              ...msgs,
+              { role: 'assistant', content: finalMsg.content },
+              { role: 'user',      content: toolResults },
+            ];
           }
 
-          msgs = [
-            ...msgs,
-            { role: 'assistant', content: finalMsg.content },
-            { role: 'user',      content: toolResults },
+        // ── OpenAI ────────────────────────────────────────────────────
+        } else if (aiProvider === 'openai') {
+          if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY 환경변수 미설정');
+          const oai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+          const openaiTools: OpenAI.ChatCompletionTool[] = TOOLS.map(t => ({
+            type:     'function' as const,
+            function: { name: t.name, description: t.description, parameters: t.input_schema as Record<string, unknown> },
+          }));
+
+          const apiMsgs: OpenAI.ChatCompletionMessageParam[] = [
+            { role: 'system', content: system },
+            ...rawMsgs.map(m => ({ role: m.role, content: m.content } as OpenAI.ChatCompletionMessageParam)),
           ];
+
+          for (let iter = 0; iter < 15; iter++) {
+            const resp = await oai.chat.completions.create({
+              model:       aiModelId,
+              messages:    apiMsgs,
+              tools:       openaiTools,
+              max_tokens:  8192,
+              tool_choice: 'auto',
+            });
+
+            totalInputTokens  += resp.usage?.prompt_tokens     ?? 0;
+            totalOutputTokens += resp.usage?.completion_tokens ?? 0;
+            const msg = resp.choices[0].message;
+
+            if (!msg.tool_calls || msg.tool_calls.length === 0) {
+              const text = msg.content ?? '';
+              accumulatedText += text;
+              emit({ type: 'delta', text });
+              break;
+            }
+
+            apiMsgs.push({ role: 'assistant', content: msg.content, tool_calls: msg.tool_calls });
+
+            for (const tc of msg.tool_calls) {
+              if (tc.type !== 'function') continue;
+              let inp: Record<string, string> = {};
+              try { inp = JSON.parse(tc.function.arguments); } catch {}
+              const label = inp.label ?? inp.query ?? tc.function.name;
+              emit({ type: 'tool_call', name: tc.function.name, label });
+              collectedToolCalls.push({ name: tc.function.name, label });
+              totalToolCalls++;
+              const result = await execTool(tc.function.name, inp);
+              apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: result });
+            }
+          }
+
+        // ── Google Gemini ─────────────────────────────────────────────
+        } else if (aiProvider === 'google') {
+          if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY 환경변수 미설정');
+          const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+          const gemModel = genAI.getGenerativeModel({
+            model: aiModelId,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            tools: [{ functionDeclarations: TOOLS.map(t => ({ name: t.name, description: t.description, parameters: t.input_schema as any })) }],
+            systemInstruction: system,
+          });
+
+          const gemHistory = rawMsgs.slice(0, -1).map(m => ({
+            role:  m.role === 'assistant' ? 'model' as const : 'user' as const,
+            parts: [{ text: m.content }],
+          }));
+          const lastUserContent = rawMsgs[rawMsgs.length - 1]?.content ?? '';
+          const chat = gemModel.startChat({ history: gemHistory });
+
+          let gemResult = await chat.sendMessage(lastUserContent);
+          totalInputTokens  += gemResult.response.usageMetadata?.promptTokenCount     ?? 0;
+          totalOutputTokens += gemResult.response.usageMetadata?.candidatesTokenCount ?? 0;
+
+          for (let iter = 0; iter < 15; iter++) {
+            const calls = gemResult.response.functionCalls?.() ?? [];
+            if (!calls || calls.length === 0) {
+              const text = gemResult.response.text();
+              accumulatedText += text;
+              emit({ type: 'delta', text });
+              break;
+            }
+
+            const responseParts: Array<{ functionResponse: { name: string; response: { content: string } } }> = [];
+            for (const fc of calls) {
+              const inp = (fc.args ?? {}) as Record<string, string>;
+              const label = inp.label ?? inp.query ?? fc.name;
+              emit({ type: 'tool_call', name: fc.name, label });
+              collectedToolCalls.push({ name: fc.name, label });
+              totalToolCalls++;
+              const result = await execTool(fc.name, inp);
+              responseParts.push({ functionResponse: { name: fc.name, response: { content: result } } });
+            }
+
+            gemResult = await chat.sendMessage(responseParts as Parameters<typeof chat.sendMessage>[0]);
+            totalInputTokens  += gemResult.response.usageMetadata?.promptTokenCount     ?? 0;
+            totalOutputTokens += gemResult.response.usageMetadata?.candidatesTokenCount ?? 0;
+          }
         }
       } catch (e) {
         emit({ type: 'error', message: e instanceof Error ? e.message : '알 수 없는 오류' });

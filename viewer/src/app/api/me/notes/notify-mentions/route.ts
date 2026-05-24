@@ -63,43 +63,5 @@ export async function POST(req: NextRequest) {
   const { error } = await admin.from('user_notifications').insert(rows);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Teams webhook dispatch (fire-and-forget per target)
-  const { data: targetProfiles } = await admin
-    .from('profiles')
-    .select('id, teams_webhook_url')
-    .in('id', targets);
-
-  for (const profile of (targetProfiles ?? [])) {
-    if (!profile.teams_webhook_url) continue;
-    const body_text = note.body.slice(0, 200);
-    const payload = {
-      type: 'message',
-      attachments: [{
-        contentType: 'application/vnd.microsoft.card.adaptive',
-        content: {
-          type: 'AdaptiveCard',
-          version: '1.4',
-          body: [
-            { type: 'TextBlock', text: `${authorLabel}님이 회원님을 멘션했습니다`, weight: 'Bolder', size: 'Medium' },
-            { type: 'TextBlock', text: body_text, wrap: true, color: 'Default' },
-          ],
-          actions: link ? [{ type: 'Action.OpenUrl', title: '바로 가기', url: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}${link}` }] : [],
-        },
-      }],
-    };
-    fetch(profile.teams_webhook_url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).then(async (r) => {
-      if (r.ok) {
-        await admin.from('user_notifications')
-          .update({ sent_to_teams_at: new Date().toISOString() })
-          .eq('user_id', profile.id)
-          .eq('payload->>note_id', note.id);
-      }
-    }).catch(e => console.error('[teams-dispatch]', e));
-  }
-
   return NextResponse.json({ inserted: rows.length });
 }

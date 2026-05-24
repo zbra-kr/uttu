@@ -432,8 +432,29 @@ body {
 .aip-think .dot { width: 5px; height: 5px; border-radius: 99px; background: var(--f3); animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 0.3 } 50% { opacity: 1 } }
 
+/* 스트리밍 진행률 표시 */
+.aip-progress { height: 2px; background: var(--snk); overflow: hidden; }
+.aip-progress-bar { height: 100%; width: 38%; background: var(--hs); border-radius: 1px; animation: aip-sweep 1.5s ease-in-out infinite; }
+@keyframes aip-sweep { 0% { transform: translateX(-200%); } 100% { transform: translateX(380%); } }
+
+.aip-cursor {
+  display: inline-block; width: 2px; height: 13px;
+  background: var(--hs); border-radius: 1px;
+  vertical-align: text-bottom; margin-left: 2px;
+  animation: aip-blink 0.75s step-end infinite;
+}
+@keyframes aip-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+.aip-stop {
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 3px; flex-shrink: 0;
+  border: 0.5px solid var(--bd); background: var(--snk); color: var(--f3);
+  cursor: pointer; align-self: flex-end; transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.aip-stop:hover { background: color-mix(in srgb, var(--shf) 12%, transparent); color: var(--shf); border-color: var(--shf); }
+
 .aip-foot {
-  padding: 10px 14px 14px;
+  padding: 0 14px 14px;
   border-top: 0.5px solid var(--bs);
   flex-shrink: 0;
 }

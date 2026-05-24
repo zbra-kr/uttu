@@ -3,7 +3,7 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { IcEdit, IcBell, IcShield } from '@/components/ui/icons';
 import Link from 'next/link';
-import { fetchMyProfile, uploadAvatar, MyProfile, fetchMyRecentNotes, fetchMentionsForMe, MyNote, fetchBookmarks, removeBookmark, Bookmark, EntityType, fetchViewHistory, ViewHistoryRow, fetchAllSavedFilters, deleteSavedFilter, SavedFilter, fetchMyStats, MyStats } from '@/lib/queries-me';
+import { fetchMyProfile, uploadAvatar, MyProfile, fetchMyRecentNotes, fetchMentionsForMe, MyNote, fetchBookmarks, removeBookmark, Bookmark, EntityType, fetchViewHistory, ViewHistoryRow, fetchAllSavedFilters, deleteSavedFilter, SavedFilter, fetchMyStats, MyStats, fetchMyAiQuota, MyAiQuota } from '@/lib/queries-me';
 import ProfileEditModal from '@/components/me/ProfileEditModal';
 import SubscriptionMatrix from '@/components/me/SubscriptionMatrix';
 import InboxList from '@/components/me/InboxList';
@@ -46,6 +46,12 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
 function formatJoined(iso: string): string {
   const d = new Date(iso);
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
@@ -80,6 +86,7 @@ export default function MePage() {
   const [savedFilters, setSavedFilters] = React.useState<SavedFilter[]>([]);
   const [stats, setStats] = React.useState<MyStats | null>(null);
   const [statsLoading, setStatsLoading] = React.useState(true);
+  const [aiQuota, setAiQuota] = React.useState<MyAiQuota | null>(null);
   const [uploading, setUploading] = React.useState(false);
   const [avatarTs, setAvatarTs] = React.useState(Date.now());
   const [avatarError, setAvatarError] = React.useState<string | null>(null);
@@ -93,6 +100,7 @@ export default function MePage() {
     fetchViewHistory(8).then(setViewHistory);
     fetchAllSavedFilters().then(setSavedFilters);
     fetchMyStats().then(s => { setStats(s); setStatsLoading(false); });
+    fetchMyAiQuota().then(setAiQuota);
   }, []);
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -202,6 +210,39 @@ export default function MePage() {
           </div>
         ))}
       </div>
+
+      {/* AI 토큰 사용 현황 */}
+      {aiQuota && (
+        <div className="kpi" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="row-flex between center">
+            <span className="label">AI 토큰 · 이번달</span>
+            {aiQuota.quota.is_blocked && (
+              <span className="sev hi" style={{ fontSize: 9 }}><span className="pip" />차단</span>
+            )}
+          </div>
+          <div className="val" style={{ fontSize: 18 }}>
+            {fmtTokens(aiQuota.usage.used_monthly)}
+            {aiQuota.quota.monthly_token_limit != null && (
+              <span className="unit"> / {fmtTokens(aiQuota.quota.monthly_token_limit)}</span>
+            )}
+            {aiQuota.quota.monthly_token_limit == null && (
+              <span className="unit"> tok</span>
+            )}
+          </div>
+          {aiQuota.quota.monthly_token_limit != null && (() => {
+            const pct = Math.min(100, (aiQuota.usage.used_monthly / aiQuota.quota.monthly_token_limit) * 100);
+            const color = pct >= 95 ? 'var(--shf)' : pct >= 80 ? 'var(--smf)' : 'var(--hs)';
+            return (
+              <div style={{ height: 3, background: 'var(--snk)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} />
+              </div>
+            );
+          })()}
+          <div className="dlt">
+            <span className="muted">오늘 {fmtTokens(aiQuota.usage.used_today)} tok</span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-2 gap-14">
         <div className="col-flex gap-12">
