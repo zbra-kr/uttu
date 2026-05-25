@@ -1404,6 +1404,18 @@ function PromoStats() {
     }));
   }, [itemRows]);
 
+  // 브랜드명 → brand ID (링크용)
+  const brandNameToId = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const item of itemRows) {
+      if (item.musinsa_brand_name && item.musinsa_brand_slug) {
+        const id = brandIdMap.get(item.musinsa_brand_slug);
+        if (id) m.set(item.musinsa_brand_name, id);
+      }
+    }
+    return m;
+  }, [itemRows, brandIdMap]);
+
   // 브랜드별 평균 할인율 TOP 8
   const brandAvgDrTop = React.useMemo((): { name: string; avg: number }[] => {
     const m: Record<string, number[]> = {};
@@ -1673,14 +1685,21 @@ function PromoStats() {
           <div className="sec-head"><h3>브랜드 TOP 8 <span className="sub">노출 상품 수</span></h3></div>
           {brandCounts.length === 0 ? (
             <span className="dim" style={{ fontSize: 12 }}>데이터 없음</span>
-          ) : brandCounts.map(([name, count], i) => (
-            <div key={i} className="row-flex center gap-8" style={{ padding: '3px 0' }}>
-              <span style={{ width: 14, fontSize: 10, color: 'var(--f4)', textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
-              <span style={{ flex: 1, fontSize: 11, color: 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-              <HBar value={count} max={maxBrandCnt} accent={i === 0} w={70} />
-              <span className="mono dim" style={{ fontSize: 10, width: 28, textAlign: 'right' }}>{count}</span>
-            </div>
-          ))}
+          ) : brandCounts.map(([name, count], i) => {
+            const bId = brandNameToId.get(name as string);
+            return (
+              <div key={i} className="row-flex center gap-8" style={{ padding: '3px 0' }}>
+                <span style={{ width: 14, fontSize: 10, color: 'var(--f4)', textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                <span
+                  style={{ flex: 1, fontSize: 11, color: bId ? 'var(--hs)' : 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: bId ? 'pointer' : 'default' }}
+                  onClick={() => bId && router.push(`/brand?id=${bId}`)}>
+                  {name}
+                </span>
+                <HBar value={count as number} max={maxBrandCnt} accent={i === 0} w={70} />
+                <span className="mono dim" style={{ fontSize: 10, width: 28, textAlign: 'right' }}>{count}</span>
+              </div>
+            );
+          })}
         </section>
 
         {/* 타입별 평균 할인율 */}
@@ -1896,14 +1915,21 @@ function PromoStats() {
           </div>
           {brandAvgDrTop.length === 0 ? (
             <span className="dim" style={{ fontSize: 12 }}>데이터 없음</span>
-          ) : brandAvgDrTop.map(({ name, avg }, i) => (
-            <div key={i} className="row-flex center gap-8" style={{ padding: '3px 0' }}>
-              <span style={{ width: 14, fontSize: 10, color: 'var(--f4)', textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
-              <span style={{ flex: 1, fontSize: 11, color: 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-              <HBar value={avg} max={brandAvgDrTop[0]?.avg ?? 1} accent={i === 0} w={60} />
-              <span className="mono dim" style={{ fontSize: 10, width: 32, textAlign: 'right' }}>−{avg}%</span>
-            </div>
-          ))}
+          ) : brandAvgDrTop.map(({ name, avg }, i) => {
+            const bId = brandNameToId.get(name);
+            return (
+              <div key={i} className="row-flex center gap-8" style={{ padding: '3px 0' }}>
+                <span style={{ width: 14, fontSize: 10, color: 'var(--f4)', textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                <span
+                  style={{ flex: 1, fontSize: 11, color: bId ? 'var(--hs)' : 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: bId ? 'pointer' : 'default' }}
+                  onClick={() => bId && router.push(`/brand?id=${bId}`)}>
+                  {name}
+                </span>
+                <HBar value={avg} max={brandAvgDrTop[0]?.avg ?? 1} accent={i === 0} w={60} />
+                <span className="mono dim" style={{ fontSize: 10, width: 32, textAlign: 'right' }}>−{avg}%</span>
+              </div>
+            );
+          })}
         </section>
 
         <section className="panel">
@@ -1912,14 +1938,21 @@ function PromoStats() {
           </div>
           {brandSoldOutPct.length === 0 ? (
             <span className="dim" style={{ fontSize: 12 }}>데이터 없음</span>
-          ) : brandSoldOutPct.map(({ name, pct, total }, i) => (
-            <div key={i} className="row-flex center gap-8" style={{ padding: '3px 0' }}>
-              <span style={{ width: 14, fontSize: 10, color: 'var(--f4)', textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
-              <span style={{ flex: 1, fontSize: 11, color: 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-              <HBar value={pct} max={brandSoldOutPct[0]?.pct ?? 1} accent={i === 0} w={60} />
-              <span className="mono dim" style={{ fontSize: 10, width: 44, textAlign: 'right' }}>{pct}% · {total}</span>
-            </div>
-          ))}
+          ) : brandSoldOutPct.map(({ name, pct, total }, i) => {
+            const bId = brandNameToId.get(name);
+            return (
+              <div key={i} className="row-flex center gap-8" style={{ padding: '3px 0' }}>
+                <span style={{ width: 14, fontSize: 10, color: 'var(--f4)', textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                <span
+                  style={{ flex: 1, fontSize: 11, color: bId ? 'var(--hs)' : 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: bId ? 'pointer' : 'default' }}
+                  onClick={() => bId && router.push(`/brand?id=${bId}`)}>
+                  {name}
+                </span>
+                <HBar value={pct} max={brandSoldOutPct[0]?.pct ?? 1} accent={i === 0} w={60} />
+                <span className="mono dim" style={{ fontSize: 10, width: 44, textAlign: 'right' }}>{pct}% · {total}</span>
+              </div>
+            );
+          })}
         </section>
 
         <section className="panel">
