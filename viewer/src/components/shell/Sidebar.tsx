@@ -3,24 +3,23 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcSettings, IcMore, IcChevL, IcChevR, IcChevD, IcShield, IcUsers, IcSpark, IcBell, IcCalendar } from '../ui/icons';
+import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcMore, IcChevL, IcChevR, IcChevD, IcShield, IcUsers, IcSpark, IcBell, IcCalendar } from '../ui/icons';
 
 
 const ROUTES = [
-  { id: 'home',         path: '/',             label: '홈',        Icon: IcHome,        section: 'main' },
-  { id: 'ranking',      path: '/ranking',      label: '상품 랭킹',  Icon: IcRanking,     section: 'main' },
-  { id: 'product',      path: '/product',      label: '상품',      Icon: IcProduct,     section: 'main', parent: 'ranking' },
-  { id: 'brand-ranking',path: '/brand-ranking',label: '브랜드 랭킹',Icon: IcBrandRanking,section: 'main' },
-  { id: 'brand',        path: '/brand',        label: '브랜드',     Icon: IcBrand,       section: 'main', parent: 'brand-ranking' },
-  { id: 'anomaly',      path: '/anomaly',      label: '이상탐지',   Icon: IcFlag,        section: 'main' },
-  { id: 'companies',    path: '/companies',    label: '회사 목록',  Icon: IcCompany,     section: 'main' },
-  { id: 'company',      path: '/company',      label: '회사 상세',  Icon: IcCompany,     section: 'main', parent: 'companies' },
-  { id: 'promo',        path: '/promo',        label: '프로모션',   Icon: IcPromo,       section: 'main' },
-  { id: 'snap',         path: '/snap',         label: '스냅샷',     Icon: IcSnap,        section: 'main' },
-  { id: 'magazine',     path: '/magazine',     label: '매거진',     Icon: IcBook,        section: 'main' },
-  { id: 'reviews',      path: '/reviews',      label: '리뷰',      Icon: IcReview,      section: 'main' },
-  { id: 'matching',     path: '/matching',     label: '자사 매칭',  Icon: IcLink,        section: 'main' },
-  { id: 'settings',     path: '/settings',     label: '설정',      Icon: IcSettings,    section: 'system' },
+  { id: 'home',         path: '/',             label: '홈',        Icon: IcHome         },
+  { id: 'ranking',      path: '/ranking',      label: '상품 랭킹',  Icon: IcRanking      },
+  { id: 'product',      path: '/product',      label: '상품',      Icon: IcProduct,     parent: 'ranking' },
+  { id: 'brand-ranking',path: '/brand-ranking',label: '브랜드 랭킹',Icon: IcBrandRanking },
+  { id: 'brand',        path: '/brand',        label: '브랜드',     Icon: IcBrand,       parent: 'brand-ranking' },
+  { id: 'anomaly',      path: '/anomaly',      label: '이상탐지',   Icon: IcFlag         },
+  { id: 'companies',    path: '/companies',    label: '회사 목록',  Icon: IcCompany      },
+  { id: 'company',      path: '/company',      label: '회사 상세',  Icon: IcCompany,     parent: 'companies' },
+  { id: 'promo',        path: '/promo',        label: '프로모션',   Icon: IcPromo        },
+  { id: 'snap',         path: '/snap',         label: '스냅샷',     Icon: IcSnap         },
+  { id: 'magazine',     path: '/magazine',     label: '매거진',     Icon: IcBook         },
+  { id: 'reviews',      path: '/reviews',      label: '리뷰',      Icon: IcReview       },
+  { id: 'matching',     path: '/matching',     label: '자사 매칭',  Icon: IcLink         },
 ];
 
 const MANAGE_ROUTES = [
@@ -114,8 +113,13 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
     setOpen(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
 
-  const main   = ROUTES.filter(r => r.section === 'main');
-  const system = ROUTES.filter(r => r.section === 'system');
+  const [adminOpen, setAdminOpen] = React.useState(() => pathname.startsWith('/admin'));
+
+  // admin 페이지 진입 시 자동 펼침
+  React.useEffect(() => {
+    if (pathname.startsWith('/admin')) setAdminOpen(true);
+  }, [pathname]);
+
 
   return (
     <aside
@@ -147,7 +151,7 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
 
       {show && <div className="sb-section">workspace</div>}
       <nav className="sb-nav">
-        {main.map(r => {
+        {ROUTES.map(r => {
           const isSub    = !!r.parent;
           const isParent = GROUP_PARENTS.has(r.id);
           const isOpen   = open.has(r.id);
@@ -180,37 +184,47 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
 
       {isAdmin && (
         <>
-          {show && <div className="sb-section">관리</div>}
-          <nav className="sb-nav">
-            {MANAGE_ROUTES.map(r => (
-              <Link
-                key={r.id}
-                href={r.path}
-                className={`sb-item ${isActive(r.path) ? 'active' : ''}`}
-                title={!show ? r.label : undefined}
-              >
-                <r.Icon size={16} />
-                {show && <span>{r.label}</span>}
-              </Link>
-            ))}
-          </nav>
+          {show ? (
+            <button
+              className="sb-section"
+              onClick={() => setAdminOpen(o => !o)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+                padding: 0, textAlign: 'left',
+              }}
+            >
+              <span>관리</span>
+              <IcChevD
+                size={11}
+                style={{
+                  color: 'var(--f4)',
+                  transform: adminOpen ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 150ms ease',
+                  marginRight: 2,
+                }}
+              />
+            </button>
+          ) : (
+            <div className="sb-section" />
+          )}
+          {(adminOpen || !show) && (
+            <nav className="sb-nav">
+              {MANAGE_ROUTES.map(r => (
+                <Link
+                  key={r.id}
+                  href={r.path}
+                  className={`sb-item ${isActive(r.path) ? 'active' : ''}`}
+                  title={!show ? r.label : undefined}
+                >
+                  <r.Icon size={16} />
+                  {show && <span>{r.label}</span>}
+                </Link>
+              ))}
+            </nav>
+          )}
         </>
       )}
-
-      {show && <div className="sb-section">system</div>}
-      <nav className="sb-nav">
-        {system.map(r => (
-          <Link
-            key={r.id}
-            href={r.path}
-            className={`sb-item ${isActive(r.path) ? 'active' : ''}`}
-            title={!show ? r.label : undefined}
-          >
-            <r.Icon size={16} />
-            {show && <span>{r.label}</span>}
-          </Link>
-        ))}
-      </nav>
 
       {/* 하단 유저 영역 */}
       <div ref={menuRef} style={{ position: 'relative', marginTop: 'auto' }}>

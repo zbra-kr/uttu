@@ -20,10 +20,16 @@ export class OpenAIAdapter implements LLMAdapter {
       messages.push({ role: m.role as 'user' | 'assistant', content: m.content });
     }
 
+    // o1/o3/o4 reasoning 모델은 max_completion_tokens, 나머지는 max_tokens
+    const isReasoning = /^o[0-9]/.test(this.modelId);
+    const tokenParam  = isReasoning
+      ? { max_completion_tokens: params.max_tokens }
+      : { max_tokens: params.max_tokens };
+
     const stream = await client.chat.completions.create({
       model:          this.modelId,
       messages,
-      max_tokens:     params.max_tokens,
+      ...tokenParam,
       stream:         true,
       stream_options: { include_usage: true },
     });

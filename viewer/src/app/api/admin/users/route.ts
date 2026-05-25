@@ -29,10 +29,10 @@ export async function GET(req: NextRequest) {
     (authList?.users ?? []).map(u => [u.id, { email: u.email ?? '', last_sign_in_at: u.last_sign_in_at ?? null }])
   );
 
-  // 2. profiles + quotas
+  // 2. profiles (quotas는 FK 없어서 별도 조회)
   let profileQuery = adminClient
     .from('profiles')
-    .select('id, full_name, display_name, role, team, avatar_url, created_at, ai_user_quotas(monthly_token_limit, daily_token_limit, is_blocked, note)', { count: 'exact' });
+    .select('id, full_name, display_name, role, team, avatar_url, created_at', { count: 'exact' });
 
   if (role && role !== 'all') profileQuery = profileQuery.eq('role', role);
   if (q) profileQuery = profileQuery.or(`full_name.ilike.%${q}%,display_name.ilike.%${q}%`);
@@ -41,6 +41,17 @@ export async function GET(req: NextRequest) {
 
   const { data: profiles, count, error: profErr } = await profileQuery;
   if (profErr) return NextResponse.json({ error: profErr.message }, { status: 500 });
+
+  // 2-b. ai_user_quotas 별도 조회 후 Map
+  const { data: quotaRows } = await adminClient
+    .from('ai_user_quotas')
+    .select('user_id, monthly_token_limit, daily_token_limit, is_blocked, note');
+  const quotaMap = new Map(
+    (quotaRows ?? []).map((q: {
+      user_id: string; monthly_token_limit: number | null; daily_token_limit: number | null;
+      is_blocked: boolean; note: string | null;
+    }) => [q.user_id, q]),
+  );
 
   // 3. 이번달 사용량 집계
   const monthStart = kstMonthStart();
@@ -76,7 +87,7 @@ export async function GET(req: NextRequest) {
 
   const users = filteredProfiles.map((p: any) => {
     const auth  = authMap.get(p.id) ?? { email: '', last_sign_in_at: null };
-    const quota = Array.isArray(p.ai_user_quotas) ? p.ai_user_quotas[0] : p.ai_user_quotas;
+    const quota = quotaMap.get(p.id) ?? null;
     const usage = usageMap.get(p.id) ?? { input_tokens: 0, output_tokens: 0, session_count: 0 };
     return {
       id:              p.id,
