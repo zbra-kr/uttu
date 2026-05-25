@@ -16,20 +16,55 @@ function fmtDate(iso: string | null | undefined): string {
   return kst.toISOString().slice(0, 10).replace(/-/g, '.');
 }
 
-function UsageBar({ used, limit }: { used: number; limit: number | null }) {
-  if (!limit) {
+function UsageBar({ used, limit, usedToday, dailyLimit }: {
+  used: number; limit: number | null;
+  usedToday?: number; dailyLimit?: number | null;
+}) {
+  const fmtK = fmtTokens;
+  const monthColor = (p: number) => p >= 95 ? 'var(--shf)' : p >= 80 ? 'var(--smf)' : 'var(--hs)';
+  const dayColor   = (p: number) => p >= 95 ? 'var(--shf)' : p >= 80 ? 'var(--smf)' : 'var(--slf)';
+
+  const hasMonth = limit != null;
+  const hasDay   = dailyLimit != null && usedToday !== undefined;
+
+  if (!hasMonth && !hasDay) {
     return <span className="chip" style={{ fontSize: 9 }}>무제한</span>;
   }
-  const pct = Math.min(100, (used / limit) * 100);
-  const color = pct >= 95 ? 'var(--shf)' : pct >= 80 ? 'var(--smf)' : 'var(--hs)';
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-      <span className="mono" style={{ fontSize: 10, color: 'var(--f2)' }}>
-        {fmtTokens(used)} / {fmtTokens(limit)}
-      </span>
-      <div style={{ height: 3, background: 'var(--snk)', borderRadius: 2, overflow: 'hidden', width: '100%' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} />
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+      {hasDay && (() => {
+        const pct = Math.min(100, ((usedToday ?? 0) / dailyLimit!) * 100);
+        return (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+              <span className="mono" style={{ fontSize: 9, color: 'var(--slf)' }}>오늘</span>
+              <span className="mono" style={{ fontSize: 9, color: 'var(--f3)' }}>
+                {fmtK(usedToday ?? 0)} / {fmtK(dailyLimit!)}
+              </span>
+            </div>
+            <div style={{ height: 2, background: 'var(--snk)', borderRadius: 1, overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: dayColor(pct), borderRadius: 1 }} />
+            </div>
+          </div>
+        );
+      })()}
+      {hasMonth && (() => {
+        const pct = Math.min(100, (used / limit!) * 100);
+        return (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+              <span className="mono" style={{ fontSize: 9, color: 'var(--f4)' }}>이번달</span>
+              <span className="mono" style={{ fontSize: 9, color: 'var(--f2)' }}>
+                {fmtK(used)} / {fmtK(limit!)}
+              </span>
+            </div>
+            <div style={{ height: 2, background: 'var(--snk)', borderRadius: 1, overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: monthColor(pct), borderRadius: 1 }} />
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -172,7 +207,12 @@ export default function AdminUsersPage() {
 
               {/* 이번달 사용 */}
               <div style={{ minWidth: 0 }}>
-                <UsageBar used={u.usage_this_month.total_tokens} limit={u.quota.monthly_token_limit} />
+                <UsageBar
+                  used={u.usage_this_month.total_tokens}
+                  limit={u.quota.monthly_token_limit}
+                  usedToday={u.usage_today}
+                  dailyLimit={u.quota.daily_token_limit}
+                />
               </div>
 
               {/* 한도 */}

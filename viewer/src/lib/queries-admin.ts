@@ -22,6 +22,7 @@ export interface AdminUser {
     total_tokens: number;
     session_count: number;
   };
+  usage_today: number;
 }
 
 export async function fetchAdminUsers(opts: {
@@ -335,4 +336,74 @@ export async function fetchDashboardActivity(): Promise<DashboardActivity[]> {
   if (!res.ok) return [];
   const { activity } = await res.json();
   return activity ?? [];
+}
+
+// ── 이상탐지 룰 관리 ──────────────────────────────────────────────────────────
+
+export type RuleModule   = 'product_planning' | 'brand_planning' | 'cs' | 'custom';
+export type RuleSeverity = 'high' | 'medium' | 'low';
+
+export interface DetectorRule {
+  id: string;
+  detector_key: string;
+  label: string;
+  module: RuleModule;
+  severity: RuleSeverity;
+  enabled: boolean;
+  params: Record<string, unknown>;
+  description: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+export async function fetchDetectorRules(): Promise<DetectorRule[]> {
+  const res = await fetch('/api/admin/anomalies/rules');
+  if (!res.ok) return [];
+  const { rules } = await res.json();
+  return rules ?? [];
+}
+
+export async function updateDetectorRule(
+  id: string,
+  patch: Partial<Pick<DetectorRule, 'enabled' | 'severity' | 'label' | 'description' | 'params'>>,
+): Promise<{ error: string | null }> {
+  const res = await fetch(`/api/admin/anomalies/rules/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const { error } = await res.json().catch(() => ({ error: '요청 실패' }));
+    return { error };
+  }
+  return { error: null };
+}
+
+export async function createDetectorRule(input: {
+  detector_key: string;
+  label: string;
+  severity: RuleSeverity;
+  params: Record<string, unknown>;
+  description?: string;
+}): Promise<{ rule: DetectorRule | null; error: string | null }> {
+  const res = await fetch('/api/admin/anomalies/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, module: 'custom' }),
+  });
+  if (!res.ok) {
+    const { error } = await res.json().catch(() => ({ error: '요청 실패' }));
+    return { rule: null, error };
+  }
+  const { rule } = await res.json();
+  return { rule, error: null };
+}
+
+export async function deleteDetectorRule(id: string): Promise<{ error: string | null }> {
+  const res = await fetch(`/api/admin/anomalies/rules/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const { error } = await res.json().catch(() => ({ error: '요청 실패' }));
+    return { error };
+  }
+  return { error: null };
 }

@@ -56,7 +56,7 @@ export async function GET() {
     admin.from('companies').select('id', { count: 'exact', head: true }).is('corp_code', null),
     admin.from('brands').select('id', { count: 'exact', head: true }),
     admin.from('products').select('id', { count: 'exact', head: true }),
-    admin.from('anomalies').select('id', { count: 'exact', head: true }).eq('severity', 'high').eq('is_read', false),
+    admin.from('anomalies').select('id', { count: 'exact', head: true }).eq('severity', 'high'),
     admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ]);
 

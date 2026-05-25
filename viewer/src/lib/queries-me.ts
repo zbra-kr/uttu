@@ -156,7 +156,7 @@ export async function markAllRead(): Promise<void> {
 
 // ── Notes + @mention ──────────────────────────────────────────────────────────
 
-export type EntityType = 'company' | 'brand' | 'product' | 'ranking_filter';
+export type EntityType = 'company' | 'brand' | 'product' | 'ranking_filter' | 'anomaly' | 'magazine' | 'review';
 
 export interface MentionCandidate {
   id: string;

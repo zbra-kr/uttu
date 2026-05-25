@@ -415,25 +415,6 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
           <span style={{ color: 'var(--hs)' }}><IcSpark /></span>
           <span className="name">UTTU AI</span>
           <span style={BETA_S}>BETA</span>
-          {models.length > 1 ? (
-            <select
-              value={currentModel ?? ''}
-              onChange={e => handleModelChange(e.target.value)}
-              disabled={thinking}
-              style={{
-                fontSize: 10, padding: '2px 5px',
-                background: 'var(--snk)', border: '0.5px solid var(--bd)',
-                borderRadius: 3, color: 'var(--f3)', fontFamily: 'var(--mono)',
-                cursor: thinking ? 'not-allowed' : 'pointer', maxWidth: 120,
-              }}
-            >
-              {models.map(m => (
-                <option key={m.id} value={m.model_id}>{m.display_name}</option>
-              ))}
-            </select>
-          ) : (
-            <span className="sub">with {models[0]?.display_name ?? 'claude'}</span>
-          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
@@ -562,26 +543,55 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
         {thinking && <div className="aip-progress"><div className="aip-progress-bar" /></div>}
         <div className="aip-centered" style={{ paddingTop: 10 }}>
           {/* quota 바 */}
-          {quota && quota.limit_monthly != null && (
-            <div style={{ marginBottom: 6 }}>
-              {(() => {
-                const pct = Math.min(100, (quota.used_monthly / quota.limit_monthly) * 100);
-                const bar = pct >= 95 ? 'var(--shf)' : pct >= 80 ? 'var(--smf)' : 'var(--hs)';
-                const fmtK = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : String(n);
-                return (
-                  <>
-                    <div className="row-flex between" style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 3 }}>
-                      <span>이번달 {fmtK(quota.used_monthly)} / {fmtK(quota.limit_monthly)}</span>
-                      <span>{pct.toFixed(0)}%</span>
+          {quota && (quota.limit_monthly != null || quota.limit_daily != null) && (() => {
+            const fmtK = (n: number) =>
+              n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
+              : n >= 1_000   ? `${(n / 1_000).toFixed(1)}K`
+              : String(n);
+
+            const monthPct = quota.limit_monthly != null
+              ? Math.min(100, (quota.used_monthly / quota.limit_monthly) * 100) : null;
+            const dayPct   = quota.limit_daily != null
+              ? Math.min(100, (quota.used_today  / quota.limit_daily)   * 100) : null;
+
+            const monthColor = (p: number) =>
+              p >= 95 ? 'var(--shf)' : p >= 80 ? 'var(--smf)' : 'var(--hs)';
+            const dayColor   = (p: number) =>
+              p >= 95 ? 'var(--shf)' : p >= 80 ? 'var(--smf)' : 'var(--slf)';
+
+            return (
+              <div style={{ marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {/* 오늘 사용량 — 위 */}
+                {dayPct != null && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'var(--mono)', marginBottom: 3 }}>
+                      <span style={{ color: 'var(--slf)' }}>오늘 사용량</span>
+                      <span style={{ color: dayPct >= 80 ? dayColor(dayPct) : 'var(--f4)' }}>
+                        {fmtK(quota.used_today)} / {fmtK(quota.limit_daily!)} &nbsp;{dayPct.toFixed(0)}%
+                      </span>
                     </div>
-                    <div style={{ height: 2, background: 'var(--snk)', borderRadius: 1, overflow: 'hidden' }}>
-                      <div style={{ width: `${pct}%`, height: '100%', background: bar, transition: 'width 0.4s' }} />
+                    <div style={{ height: 3, background: 'var(--snk)', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ width: `${dayPct}%`, height: '100%', background: dayColor(dayPct), transition: 'width 0.4s', borderRadius: 2 }} />
                     </div>
-                  </>
-                );
-              })()}
-            </div>
-          )}
+                  </div>
+                )}
+                {/* 이번달 사용량 — 아래 */}
+                {monthPct != null && (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'var(--mono)', marginBottom: 3 }}>
+                      <span style={{ color: 'var(--f4)' }}>이번달 사용량</span>
+                      <span style={{ color: monthPct >= 80 ? monthColor(monthPct) : 'var(--f4)' }}>
+                        {fmtK(quota.used_monthly)} / {fmtK(quota.limit_monthly!)} &nbsp;{monthPct.toFixed(0)}%
+                      </span>
+                    </div>
+                    <div style={{ height: 3, background: 'var(--snk)', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ width: `${monthPct}%`, height: '100%', background: monthColor(monthPct), transition: 'width 0.4s', borderRadius: 2 }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* 차단 / 한도 초과 상태 */}
           {quota?.is_blocked ? (
@@ -637,6 +647,33 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
                   <span className="kbd" style={{ alignSelf: 'flex-end' }}>⌘ ↵</span>
                 )}
               </div>
+              {/* 모델 선택기 — 입력란 하단 */}
+              {models.length > 0 && (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {models.length > 1 ? (
+                    <select
+                      value={currentModel ?? ''}
+                      onChange={e => handleModelChange(e.target.value)}
+                      disabled={thinking}
+                      style={{
+                        fontSize: 10, padding: '2px 6px',
+                        background: 'transparent', border: 'none',
+                        color: 'var(--f4)', fontFamily: 'var(--mono)',
+                        cursor: thinking ? 'default' : 'pointer',
+                        outline: 'none', appearance: 'none', WebkitAppearance: 'none',
+                      }}
+                    >
+                      {models.map(m => (
+                        <option key={m.id} value={m.model_id}>{m.display_name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>
+                      {models[0]?.display_name}
+                    </span>
+                  )}
+                </div>
+              )}
             </form>
           )}
         </div>

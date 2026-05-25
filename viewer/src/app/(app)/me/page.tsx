@@ -19,7 +19,7 @@ function relTime(iso: string): string {
 }
 
 const ENTITY_LABEL: Record<string, string> = {
-  company: '회사', brand: '브랜드', product: '상품', ranking_filter: '랭킹',
+  company: '회사', brand: '브랜드', product: '상품', ranking_filter: '랭킹', anomaly: '이상탐지', magazine: '매거진',
 };
 
 function noteLink(note: MyNote): string | null {

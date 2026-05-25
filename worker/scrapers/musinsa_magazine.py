@@ -127,10 +127,14 @@ class MagazineScraper(BaseScraper):
             "cms_index": item.get("cmsIndex"),
             "title": item.get("title") or "",
             "category": item.get("contentsType1DepthLabel"),
+            "sub_category": item.get("contentsType2DepthLabel"),
             "brand_names": item.get("brandNameList") or [],
             "view_count": item.get("viewCount") or 0,
             "comment_count": item.get("commentCount") or 0,
             "published_at": item.get("displayStartDate"),
+            "thumbnail_url": item.get("thumbnailUrl"),
+            "summary": item.get("summary") or None,
+            "landing_url": item.get("landingUrl"),
         }
 
     # ── 수집 루프 ────────────────────────────────────────────────────────────

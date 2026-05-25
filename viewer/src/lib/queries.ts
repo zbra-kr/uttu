@@ -250,27 +250,46 @@ export interface MagazineRow {
   cms_index: string | null;
   title: string;
   category: string | null;
+  sub_category: string | null;
   brand_names: string[];
   view_count: number;
   comment_count: number;
   published_at: string;
   collected_at: string;
+  thumbnail_url: string | null;
+  summary: string | null;
+  landing_url: string | null;
+}
+
+export interface MagazineArticleProduct {
+  musinsa_no: string;
+  product_id: string;
+  name: string;
+  is_own: boolean;
+  brand_name: string | null;
 }
 
 export async function fetchMagazineArticles(opts: {
   category?: string;
+  keyword?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  sort?: 'published_at' | 'view_count' | 'comment_count';
   limit?: number;
   offset?: number;
 }): Promise<{ rows: MagazineRow[]; total: number }> {
-  const { category, limit = 50, offset = 0 } = opts;
+  const { category, keyword, dateFrom, dateTo, sort = 'published_at', limit = 50, offset = 0 } = opts;
 
   let q = supabase
     .from('magazine_articles')
-    .select('id, article_id, cms_index, title, category, brand_names, view_count, comment_count, published_at, collected_at', { count: 'exact' })
-    .order('published_at', { ascending: false })
+    .select('id, article_id, cms_index, title, category, sub_category, brand_names, view_count, comment_count, published_at, collected_at, thumbnail_url, summary, landing_url', { count: 'exact' })
+    .order(sort, { ascending: false })
     .range(offset, offset + limit - 1);
 
   if (category && category !== 'all') q = q.eq('category', category);
+  if (keyword) q = q.ilike('title', `%${keyword}%`);
+  if (dateFrom) q = q.gte('published_at', dateFrom);
+  if (dateTo) q = q.lte('published_at', dateTo + 'T23:59:59');
 
   const { data, error, count } = await q;
   if (error) throw error;
@@ -287,15 +306,150 @@ export async function fetchMagazineCategories(): Promise<string[]> {
   return cats;
 }
 
+export async function fetchMagazineProducts(articleId: string): Promise<MagazineArticleProduct[]> {
+  const { data } = await supabase
+    .from('magazine_article_products')
+    .select('musinsa_no, product_id, products(name, is_own, brands(name))')
+    .eq('article_id', articleId)
+    .limit(30);
+  return ((data ?? []) as any[]).map(r => ({
+    musinsa_no: r.musinsa_no,
+    product_id: r.product_id,
+    name: r.products?.name ?? '(stub)',
+    is_own: r.products?.is_own ?? false,
+    brand_name: r.products?.brands?.name ?? null,
+  })).filter(r => r.name !== '(stub)');
+}
+
+export interface MagazineArticleProductExport {
+  article_id: string;
+  article_title: string;
+  published_at: string;
+  view_count: number;
+  musinsa_no: string;
+  product_name: string;
+  brand_name: string | null;
+  is_own: boolean;
+  rank_position: number | null;
+}
+
+export async function fetchMagazineArticleProductsForExport(
+  articleIds: string[]
+): Promise<MagazineArticleProductExport[]> {
+  if (!articleIds.length) return [];
+
+  const rows: MagazineArticleProductExport[] = [];
+  for (let i = 0; i < articleIds.length; i += 50) {
+    const chunk = articleIds.slice(i, i + 50);
+    const { data } = await supabase
+      .from('magazine_article_products')
+      .select(`
+        article_id, musinsa_no,
+        products(name, is_own, brands(name), ranking_snapshots(rank_position, snapshot_date)),
+        magazine_articles(title, published_at, view_count)
+      `)
+      .in('article_id', chunk)
+      .limit(2000);
+
+    for (const r of (data ?? []) as any[]) {
+      const p  = r.products ?? {};
+      const ma = r.magazine_articles ?? {};
+      if (!p.name || p.name === '(stub)') continue;
+
+      // 가장 최근 ranking snapshot
+      const snaps: Array<{ rank_position: number; snapshot_date: string }> =
+        p.ranking_snapshots ?? [];
+      const latestSnap = snaps.sort((a, b) =>
+        b.snapshot_date.localeCompare(a.snapshot_date)
+      )[0] ?? null;
+
+      rows.push({
+        article_id:    r.article_id,
+        article_title: ma.title ?? '',
+        published_at:  (ma.published_at ?? '').slice(0, 10),
+        view_count:    ma.view_count ?? 0,
+        musinsa_no:    r.musinsa_no,
+        product_name:  p.name,
+        brand_name:    p.brands?.name ?? null,
+        is_own:        p.is_own ?? false,
+        rank_position: latestSnap?.rank_position ?? null,
+      });
+    }
+  }
+  return rows;
+}
+
+export async function fetchBrandIdsByNames(names: string[]): Promise<Record<string, string>> {
+  if (!names.length) return {};
+  const { data } = await supabase
+    .from('brands')
+    .select('id, name')
+    .in('name', names);
+  return Object.fromEntries((data ?? []).map((r: any) => [r.name, r.id]));
+}
+
+export interface MagazineBoostAnomaly {
+  id: string;
+  detection_date: string;
+  severity: string;
+  anomaly_type: string;
+  entity_name: string | null;
+  entity_id: string | null;
+  description: string | null;
+  meta: {
+    article_id?: string;
+    magazine_article_uuid?: string;
+    article_title?: string;
+    pub_date?: string;
+    musinsa_no?: string;
+    rank_before?: number | null;
+    rank_after?: number;
+    rank_delta?: number | null;
+    article_views?: number;
+    is_own?: boolean;
+  };
+}
+
+export async function fetchMagazineBoostAnomalies(opts: {
+  limit?: number;
+  offset?: number;
+  severity?: string;
+  ownOnly?: boolean;
+  articleIds?: string[];
+}): Promise<{ rows: MagazineBoostAnomaly[]; total: number }> {
+  const { limit = 50, offset = 0, severity, ownOnly, articleIds } = opts;
+  let q = supabase
+    .from('anomalies')
+    .select('id, detection_date, severity, anomaly_type, entity_name, entity_id, description, meta', { count: 'exact' })
+    .eq('module', 'magazine')
+    .in('anomaly_type', ['magazine_rank_boost', 'magazine_rank_new_entry'])
+    .order('detection_date', { ascending: false })
+    .order('severity', { ascending: true })
+    .range(offset, offset + limit - 1);
+  if (severity) q = q.eq('severity', severity);
+  const { data, error, count } = await q;
+  if (error) throw error;
+  let rows = (data ?? []) as MagazineBoostAnomaly[];
+  if (ownOnly) rows = rows.filter(r => r.meta?.is_own === true);
+  if (articleIds && articleIds.length > 0) {
+    const idSet = new Set(articleIds);
+    rows = rows.filter(r => r.meta?.article_id != null && idSet.has(r.meta.article_id));
+  }
+  return { rows, total: count ?? 0 };
+}
+
 // ── 리뷰 ─────────────────────────────────────────────────────────
 export interface ReviewRow {
   id: string;
   product_id: string;
+  musinsa_review_id: string;
+  musinsa_no: string;
   rating: number;
   review_text: string | null;
   review_date: string;
   helpful_count: number;
   has_image: boolean;
+  image_urls: string[];
   product_name: string;
   brand_name: string;
 }
@@ -308,22 +462,26 @@ export async function fetchReviews(opts: {
   keyword?: string;
   ownOnly?: boolean;
   productId?: string;
+  brandIds?: string[];
+  categoryCodes?: string[];
   sort?: 'recent' | 'rating_asc' | 'rating_desc' | 'helpful';
   limit?: number;
   offset?: number;
 }): Promise<{ rows: ReviewRow[]; total: number }> {
-  const { ratingMin = 1, ratingMax = 5, dateFrom, dateTo, keyword, ownOnly = true, productId, sort = 'recent', limit = 30, offset = 0 } = opts;
+  const { ratingMin = 1, ratingMax = 5, dateFrom, dateTo, keyword, ownOnly = true, productId, brandIds, categoryCodes, sort = 'recent', limit = 30, offset = 0 } = opts;
 
   let q = supabase
     .from('reviews')
-    .select(`id, product_id, rating, review_text, review_date, helpful_count, has_image,
-      products!inner(name, is_own, brands(name))`, { count: 'exact' })
+    .select(`id, product_id, musinsa_review_id, rating, review_text, review_date, helpful_count, has_image, image_urls,
+      products!inner(name, musinsa_no, is_own, brand_id, category_code, brands(name))`, { count: 'exact' })
     .gte('rating', ratingMin)
     .lte('rating', ratingMax)
     .range(offset, offset + limit - 1);
 
   if (productId) q = q.eq('product_id', productId);
   else if (ownOnly) q = (q as any).eq('products.is_own', true);
+  if (brandIds && brandIds.length > 0) q = (q as any).in('products.brand_id', brandIds);
+  if (categoryCodes && categoryCodes.length > 0) q = (q as any).in('products.category_code', categoryCodes);
   if (dateFrom) q = q.gte('review_date', dateFrom);
   if (dateTo) q = q.lte('review_date', dateTo);
   if (keyword) q = q.ilike('review_text', `%${keyword}%`);
@@ -340,11 +498,14 @@ export async function fetchReviews(opts: {
     rows: (data ?? []).map((r: any) => ({
       id: r.id,
       product_id: r.product_id,
+      musinsa_review_id: r.musinsa_review_id ?? '',
+      musinsa_no: String(r.products?.musinsa_no ?? ''),
       rating: r.rating,
       review_text: r.review_text,
       review_date: r.review_date,
       helpful_count: r.helpful_count ?? 0,
       has_image: r.has_image ?? false,
+      image_urls: r.image_urls ?? [],
       product_name: r.products?.name ?? '—',
       brand_name: r.products?.brands?.name ?? '—',
     })),
@@ -353,20 +514,71 @@ export async function fetchReviews(opts: {
 }
 
 export async function fetchReviewStats(days = 30): Promise<{
-  total: number; avgRating: number; lowCount: number; ratingDist: number[];
+  total: number; avgRating: number; lowCount: number; ratingDist: number[]; imageCount: number;
 }> {
-  const from = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
-  const { data } = await (supabase as any)
-    .from('reviews')
-    .select('rating, products!inner(is_own)')
-    .gte('review_date', from)
-    .eq('products.is_own', true);
+  let q = supabase.from('reviews').select('rating, has_image').limit(10000);
+  if (days !== 999) {
+    q = q.gte('review_date', new Date(Date.now() - days * 86400000).toISOString().split('T')[0]);
+  }
+  const { data, error } = await q;
+  if (error) throw error;
   const rows = (data ?? []) as any[];
   const total = rows.length;
-  const avgRating = total > 0 ? rows.reduce((s, r) => s + r.rating, 0) / total : 0;
-  const lowCount = rows.filter(r => r.rating <= 2).length;
-  const ratingDist = [5, 4, 3, 2, 1].map(star => rows.filter(r => r.rating === star).length);
-  return { total, avgRating: Math.round(avgRating * 100) / 100, lowCount, ratingDist };
+  const avgRating = total > 0 ? rows.reduce((s: number, r: any) => s + r.rating, 0) / total : 0;
+  const lowCount = rows.filter((r: any) => r.rating <= 2).length;
+  const ratingDist = [5, 4, 3, 2, 1].map(star => rows.filter((r: any) => r.rating === star).length);
+  const imageCount = rows.filter((r: any) => r.has_image).length;
+  return { total, avgRating: Math.round(avgRating * 100) / 100, lowCount, ratingDist, imageCount };
+}
+
+export async function fetchOwnBrands(): Promise<{ id: string; name: string }[]> {
+  const { data, error } = await supabase
+    .from('brands')
+    .select('id, name')
+    .eq('is_own', true)
+    .order('name');
+  if (error) throw error;
+  return (data ?? []) as { id: string; name: string }[];
+}
+
+export interface CsAnomaly {
+  id: string;
+  detection_date: string;
+  severity: string;
+  anomaly_type: string;
+  entity_id: string;
+  entity_name: string;
+  description: string;
+  meta: Record<string, unknown>;
+}
+
+export async function fetchCsAnomalies(opts?: { severity?: string; limit?: number }): Promise<CsAnomaly[]> {
+  const { severity, limit = 200 } = opts ?? {};
+  let q = supabase
+    .from('anomalies')
+    .select('id, detection_date, severity, anomaly_type, entity_id, entity_name, description, meta')
+    .eq('module', 'cs')
+    .order('detection_date', { ascending: false })
+    .order('severity', { ascending: true })
+    .limit(limit);
+  if (severity) q = q.eq('severity', severity);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as CsAnomaly[];
+}
+
+export async function fetchProductBrief(id: string): Promise<{ name: string; musinsa_no: string; brand_name: string } | null> {
+  const { data, error } = await supabase
+    .from('products')
+    .select('name, musinsa_no, brands(name)')
+    .eq('id', id)
+    .single();
+  if (error) return null;
+  return {
+    name: (data as any).name ?? '—',
+    musinsa_no: String((data as any).musinsa_no ?? ''),
+    brand_name: (data as any).brands?.name ?? '—',
+  };
 }
 
 // ── 자사 상품 ────────────────────────────────────────────────────
@@ -910,7 +1122,7 @@ export async function fetchAnomalySignals(days = 7): Promise<AnomalyRow[]> {
 
   const { data, error } = await supabase
     .from('anomalies')
-    .select('id, detection_date, severity, anomaly_type, entity_name, description, meta, is_read')
+    .select('id, detection_date, severity, anomaly_type, entity_name, description, meta')
     .gte('detection_date', fromDate)
     .order('detected_at', { ascending: false })
     .limit(200);
@@ -940,7 +1152,7 @@ export async function fetchAnomalySignals(days = 7): Promise<AnomalyRow[]> {
       areaKey(r.anomaly_type),
       event,
       r.entity_name ?? '—',
-      r.is_read ? 'closed' : 'open',
+      '',
       r.id,
     ];
   });
@@ -1896,8 +2108,7 @@ export async function fetchShellStats(): Promise<ShellStats> {
     supabase
       .from('anomalies')
       .select('*', { count: 'exact', head: true })
-      .gte('detection_date', d7)
-      .eq('is_read', false),
+      .gte('detection_date', d7),
     fetchReviewStats(30),
     supabase.from('snaps').select('*', { count: 'exact', head: true }).gte('published_at', d7),
     supabase.from('magazine_articles').select('*', { count: 'exact', head: true }).gte('published_at', d7),
@@ -1930,4 +2141,97 @@ export async function fetchActiveJobs(): Promise<CollectionJob[]> {
     return [];
   }
   return (data ?? []) as CollectionJob[];
+}
+
+// ── 자사 상품 (가격 포함) ──────────────────────────────────────────
+export interface OwnProductWithPrice {
+  id: string;
+  musinsa_no: string;
+  name: string;
+  brand_name: string;
+  brand_id: string;
+  thumbnail_url: string | null;
+  category_code: string | null;
+  category_d2_name: string | null;
+  gender: string | null;
+  season_year: string | null;
+  review_count: number;
+  satisfaction_score: number | null;
+  list_price: number | null;
+  final_price: number | null;
+  discount_rate: number | null;
+  is_sold_out: boolean;
+}
+
+export async function fetchOwnProductsWithPrices(opts: {
+  brandIds?: string[];
+  categoryCodes?: string[];
+  keyword?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ rows: OwnProductWithPrice[]; total: number }> {
+  const { brandIds, categoryCodes, keyword, limit = 50, offset = 0 } = opts;
+
+  let q = supabase
+    .from('products')
+    .select(
+      'id, musinsa_no, name, thumbnail_url, category_code, category_d2_name, gender, season_year, review_count, satisfaction_score, brands(id, name)',
+      { count: 'exact' }
+    )
+    .eq('is_own', true)
+    .order('review_count', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (brandIds && brandIds.length > 0) q = (q as any).in('brand_id', brandIds);
+  if (categoryCodes && categoryCodes.length > 0) q = (q as any).in('category_code', categoryCodes);
+  if (keyword) q = q.ilike('name', `%${keyword}%`);
+
+  const { data, error, count } = await q;
+  if (error) throw error;
+  const products = (data ?? []) as any[];
+
+  if (!products.length) return { rows: [], total: count ?? 0 };
+
+  // 최신 가격 정보: ranking_snapshots 에서 per-product latest
+  const musinsa_nos = products.map((p: any) => String(p.musinsa_no));
+  const { data: snapData, error: snapError } = await supabase
+    .from('ranking_snapshots')
+    .select('musinsa_no, list_price, final_price, discount_rate, is_sold_out')
+    .in('musinsa_no', musinsa_nos)
+    .eq('category_code', '000')
+    .eq('gender_filter', 'A')
+    .eq('store_code', 'musinsa')
+    .order('snapshot_date', { ascending: false })
+    .limit(musinsa_nos.length * 5);
+  if (snapError) console.warn('[fetchOwnProductsWithPrices] snapshot query failed', snapError);
+
+  const snapMap = new Map<string, any>();
+  for (const s of (snapData ?? []) as any[]) {
+    const key = String(s.musinsa_no);
+    if (!snapMap.has(key)) snapMap.set(key, s);
+  }
+
+  const rows: OwnProductWithPrice[] = products.map((p: any) => {
+    const snap = snapMap.get(String(p.musinsa_no));
+    return {
+      id: p.id,
+      musinsa_no: String(p.musinsa_no),
+      name: p.name ?? '—',
+      brand_name: (p.brands as any)?.name ?? '—',
+      brand_id: (p.brands as any)?.id ?? '',
+      thumbnail_url: p.thumbnail_url ?? null,
+      category_code: p.category_code ?? null,
+      category_d2_name: p.category_d2_name ?? null,
+      gender: p.gender ?? null,
+      season_year: p.season_year ?? null,
+      review_count: p.review_count ?? 0,
+      satisfaction_score: p.satisfaction_score ?? null,
+      list_price: snap?.list_price ?? null,
+      final_price: snap?.final_price ?? null,
+      discount_rate: snap?.discount_rate ?? null,
+      is_sold_out: snap?.is_sold_out ?? false,
+    };
+  });
+
+  return { rows, total: count ?? 0 };
 }

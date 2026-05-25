@@ -1,93 +1,227 @@
 'use client';
 import React from 'react';
-import { Spark, Line } from '@/components/ui/charts';
-import { FilterBlock, PillGroup, PeriodFilter, DismissChip, SegGroup, CheckRow, SearchSelect } from '@/components/ui/filters';
-import { IcSearch, IcArrowUR, IcDownload } from '@/components/ui/icons';
-import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
+import NoteDrawer from '@/components/me/NoteDrawer';
+import { IcArrowUR, IcX } from '@/components/ui/icons';
+import { PeriodFilter, FilterBlock, CheckRow } from '@/components/ui/filters';
 import {
-  fetchReviews, fetchReviewStats, fetchOwnProducts, fetchBrandOptions, fetchCompanyOptions,
+  fetchReviews, fetchReviewStats, fetchOwnProducts, fetchOwnBrands,
+  fetchCsAnomalies, fetchProductBrief, fetchOwnProductsWithPrices,
   CATEGORY_MAP,
-  type ReviewRow, type OwnProduct,
+  type ReviewRow, type OwnProduct, type CsAnomaly, type OwnProductWithPrice,
 } from '@/lib/queries';
 
-const CATEGORY_LABELS = Object.entries(CATEGORY_MAP)
-  .filter(([code]) => code !== '000')
-  .map(([, label]) => label);
+const CATEGORY_ENTRIES = Object.entries(CATEGORY_MAP).filter(([code]) => code !== '000');
+const ALL_CATEGORY_CODES = new Set(CATEGORY_ENTRIES.map(([code]) => code));
 
+const CS_LABELS: Record<string, string> = {
+  review_rating_drop:    '별점 급락',
+  review_negative_surge: '부정 리뷰 급증',
+  review_count_surge:    '리뷰 수 급증',
+  review_no_activity:    '리뷰 활동 중단',
+  review_helpful_surge:  '부정 리뷰 도움됨 급증',
+};
+
+const SEV_COLOR = (s: string) =>
+  s === 'high' ? 'var(--dn)' : s === 'medium' ? 'var(--warn, #f0a500)' : 'var(--f3)';
+
+// ── 리뷰 카드 ──────────────────────────────────────────────────────────────────
+function ReviewCard({
+  r, onNote,
+}: {
+  r: ReviewRow;
+  onNote?: (id: string) => void;
+}) {
+  const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
+  const thumb = r.image_urls?.[0];
+  const starColor = r.rating <= 2 ? 'var(--dn)' : r.rating === 3 ? 'var(--warn, #f0a500)' : 'var(--slf, #00a651)';
+
+  return (
+    <>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '44px 1fr',
+        gap: '0 10px',
+        padding: '10px 14px',
+        borderBottom: '0.5px solid var(--bs)',
+      }}>
+        {/* 썸네일 */}
+        <div style={{ gridRow: '1 / 3', width: 44, height: 44 }}>
+          {thumb ? (
+            <img src={thumb} alt="" onClick={() => setLightboxUrl(thumb)}
+              style={{
+                width: 44, height: 44, borderRadius: 4, objectFit: 'cover',
+                display: 'block', border: '0.5px solid var(--bs)', cursor: 'zoom-in',
+              }} />
+          ) : (
+            <div style={{
+              width: 44, height: 44, borderRadius: 4,
+              background: 'var(--snk)', border: '0.5px solid var(--bs)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 16, color: 'var(--f4)',
+            }}>
+              {r.has_image ? '📷' : ''}
+            </div>
+          )}
+        </div>
+
+        {/* 메타 행 */}
+        <div className="row-flex center gap-8" style={{ flexWrap: 'wrap', minWidth: 0 }}>
+          <span style={{ fontWeight: 600, color: starColor, fontSize: 13 }}>
+            {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
+          </span>
+          <span className="mono dim" style={{ fontSize: 11 }}>{r.review_date}</span>
+          {r.helpful_count > 0 && (
+            <span className="mono dim" style={{ fontSize: 11 }}>♥ {r.helpful_count}</span>
+          )}
+          {r.has_image && r.image_urls.length > 0 && (
+            <span style={{ fontSize: 10, background: 'var(--snk)', padding: '1px 5px', borderRadius: 3, color: 'var(--f3)' }}>
+              📷 {r.image_urls.length}장
+            </span>
+          )}
+          <span className="mono" style={{ fontSize: 9, color: 'var(--f4)' }}>#{r.musinsa_review_id}</span>
+          <div className="row-flex gap-4" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+            {r.musinsa_no && (
+              <a href={`https://www.musinsa.com/products/${r.musinsa_no}`}
+                target="_blank" rel="noopener noreferrer"
+                className="btn sm icon" title="무신사에서 보기"
+                onClick={e => e.stopPropagation()}>
+                <IcArrowUR size={12} />
+              </a>
+            )}
+            {onNote && (
+              <button className="btn sm icon" onClick={() => onNote(r.id)} title="메모">
+                ✎
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 리뷰 텍스트 */}
+        <div style={{ fontSize: 12, color: 'var(--f2)', lineHeight: 1.55, marginTop: 4, minWidth: 0 }}>
+          {r.review_text ?? <span className="dim">(리뷰 내용 없음)</span>}
+        </div>
+      </div>
+
+      {/* 이미지 라이트박스 */}
+      {lightboxUrl && (
+        <div
+          onClick={() => setLightboxUrl(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9000,
+            background: 'rgba(0,0,0,0.88)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'zoom-out',
+          }}>
+          <img
+            src={lightboxUrl} alt=""
+            onClick={e => e.stopPropagation()}
+            style={{ maxWidth: '88vw', maxHeight: '88vh', objectFit: 'contain', borderRadius: 6, cursor: 'default' }} />
+          <button
+            onClick={() => setLightboxUrl(null)}
+            style={{
+              position: 'absolute', top: 20, right: 20,
+              background: 'rgba(255,255,255,0.15)', border: 'none',
+              color: '#fff', fontSize: 20, width: 36, height: 36,
+              borderRadius: '50%', cursor: 'pointer', lineHeight: 1,
+            }}>
+            ✕
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── 페이지 ────────────────────────────────────────────────────────────────────
 export default function ReviewsPage() {
-  const [tab, setTab] = React.useState<'dash' | 'browse' | 'product'>('dash');
+  const [tab, setTab] = React.useState<'dash' | 'browse' | 'product-browse' | 'anomaly'>('dash');
   return (
     <>
       <div className="page-title">
         <h1>리뷰</h1>
-        <span className="sub">자사 리뷰 모니터링 · 조회 · 특이점</span>
+        <span className="sub">자사 리뷰 모니터링 · 조회 · 이상탐지</span>
       </div>
       <div className="tabs">
         <div className={`tab ${tab === 'dash' ? 'active' : ''}`} onClick={() => setTab('dash')}>대시보드</div>
-        <div className={`tab ${tab === 'browse' ? 'active' : ''}`} onClick={() => setTab('browse')}>조회 (필터 + Excel)</div>
-        <div className={`tab ${tab === 'product' ? 'active' : ''}`} onClick={() => setTab('product')}>특이점 상품 리뷰</div>
+        <div className={`tab ${tab === 'browse' ? 'active' : ''}`} onClick={() => setTab('browse')}>조회</div>
+        <div className={`tab ${tab === 'product-browse' ? 'active' : ''}`} onClick={() => setTab('product-browse')}>상품별 조회</div>
+        <div className={`tab ${tab === 'anomaly' ? 'active' : ''}`} onClick={() => setTab('anomaly')}>특이점 리뷰</div>
       </div>
-      {tab === 'dash' && <RvDashboard onRoute={() => setTab('product')} />}
-      {tab === 'browse' && <RvBrowse />}
-      {tab === 'product' && <RvProductReviews />}
+      {tab === 'dash'           && <RvDashboard onAnomalyRoute={() => setTab('anomaly')} />}
+      {tab === 'browse'         && <RvBrowse />}
+      {tab === 'product-browse' && <RvProductBrowse />}
+      {tab === 'anomaly'        && <RvAnomalyReviews />}
     </>
   );
 }
 
 // ===========================================================================
-// A · Dashboard
+// A · 대시보드
 // ===========================================================================
-
-function RvDashboard({ onRoute }: { onRoute: () => void }) {
+function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
   const [days, setDays] = React.useState(30);
-  const [stats, setStats] = React.useState<{ total: number; avgRating: number; lowCount: number; ratingDist: number[] } | null>(null);
+  const [stats, setStats] = React.useState<{
+    total: number; avgRating: number; lowCount: number; ratingDist: number[]; imageCount: number;
+  } | null>(null);
   const [ownProducts, setOwnProducts] = React.useState<OwnProduct[]>([]);
+  const [csAnomalies, setCsAnomalies] = React.useState<CsAnomaly[]>([]);
 
   React.useEffect(() => {
     fetchReviewStats(days).then(setStats).catch(console.error);
   }, [days]);
 
   React.useEffect(() => {
-    fetchOwnProducts(20).then(setOwnProducts).catch(console.error);
+    fetchOwnProducts(10).then(setOwnProducts).catch(console.error);
+    fetchCsAnomalies({ limit: 10 }).then(setCsAnomalies).catch(console.error);
   }, []);
 
-  const total = stats?.total ?? 0;
-  const avgRating = stats?.avgRating ?? 0;
-  const lowCount = stats?.lowCount ?? 0;
+  const total      = stats?.total ?? 0;
+  const avgRating  = stats?.avgRating ?? 0;
+  const lowCount   = stats?.lowCount ?? 0;
+  const imageCount = stats?.imageCount ?? 0;
   const ratingDist = stats?.ratingDist ?? [0, 0, 0, 0, 0];
-  const distTotal = ratingDist.reduce((s, n) => s + n, 0) || 1;
+  const distTotal  = ratingDist.reduce((s, n) => s + n, 0) || 1;
+
+  const highAnomaly = csAnomalies.filter(a => a.severity === 'high').length;
+  const medAnomaly  = csAnomalies.filter(a => a.severity === 'medium').length;
 
   return (
     <>
       <div className="row-flex between center">
-        <h2 style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>자사 리뷰 — 전체 현황</h2>
+        <h2 style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>
+          자사 리뷰 현황
+          <span className="mono dim" style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>
+            B.CAVE · 커버낫/리/와키윌리
+          </span>
+        </h2>
         <div className="row-flex gap-4">
           {[7, 30].map(d => (
             <button key={d} className={`btn sm ${days === d ? 'active' : ''}`} onClick={() => setDays(d)}>{d}D</button>
           ))}
           <button className={`btn sm ${days === 999 ? 'active' : ''}`} onClick={() => setDays(999)}>전체</button>
-          <span style={{ width: 8 }} />
-          <button className="btn sm" onClick={onRoute}><IcSearch /> 조회로</button>
         </div>
       </div>
 
+      {/* KPIs */}
       <div className="grid grid-5 gap-8">
-        {[
-          ['신규 리뷰',   stats ? total.toLocaleString() : '…',  `최근 ${days === 999 ? '전체' : days + '일'}`, ''],
-          ['평균 평점',   stats ? avgRating.toFixed(2) : '…',    '자사 상품', ''],
-          ['저점 (≤2)',   stats ? String(lowCount) : '…',        `${days === 999 ? '전체' : days + '일'} 내`, ''],
-          ['특이점 상품', '—',                                    '', ''],
-          ['응답률',      '—',                                    '', ''],
-        ].map(([l, v, d], i) => (
-          <div key={i} className="kpi">
+        {([
+          ['신규 리뷰',    stats ? total.toLocaleString() : '…',    days === 999 ? '전체 기간' : `최근 ${days}일`],
+          ['평균 평점',    stats ? `★ ${avgRating.toFixed(2)}` : '…', '자사 전체'],
+          ['저점 (★1~2)', stats ? lowCount.toLocaleString() : '…',   `${days === 999 ? '전체' : days + '일'} 내`],
+          ['이미지 리뷰',  stats ? imageCount.toLocaleString() : '…', '이미지 첨부'],
+          ['CS 이상탐지',  stats ? `H:${highAnomaly} M:${medAnomaly}` : '…', '최근 탐지'],
+        ] as [string, string, string][]).map(([l, v, d], i) => (
+          <div key={i} className="kpi" onClick={i === 4 ? onAnomalyRoute : undefined}
+            style={{ cursor: i === 4 ? 'pointer' : 'default' }}>
             <span className="label">{l}</span>
-            <div className="val">{v}</div>
+            <div className="val" style={{ color: i === 4 && highAnomaly > 0 ? 'var(--dn)' : undefined }}>{v}</div>
             <div className="dlt"><span className="muted">{d}</span></div>
           </div>
         ))}
       </div>
 
       <div className="grid grid-2 gap-12">
+        {/* 평점 분포 */}
         <section className="panel">
           <div className="sec-head"><h3>평점 분포</h3></div>
           <div className="col-flex gap-6">
@@ -98,79 +232,93 @@ function RvDashboard({ onRoute }: { onRoute: () => void }) {
                 <div key={star} className="row-flex center gap-10">
                   <span className="mono dim" style={{ width: 24, fontSize: 11 }}>★{star}</span>
                   <div style={{ flex: 1, height: 14, background: 'var(--snk)', borderRadius: 2 }}>
-                    <div style={{ width: `${pct}%`, height: '100%', background: star <= 2 ? 'var(--hs)' : 'var(--f2)', borderRadius: 2 }} />
+                    <div style={{
+                      width: `${pct}%`, height: '100%',
+                      background: star <= 2 ? 'var(--dn)' : star === 3 ? 'var(--warn, #f0a500)' : 'var(--f2)',
+                      borderRadius: 2,
+                    }} />
                   </div>
-                  <span className="mono dim" style={{ width: 48, textAlign: 'right', fontSize: 11 }}>
+                  <span className="mono dim" style={{ width: 56, textAlign: 'right', fontSize: 11 }}>
                     {stats ? `${pct}% (${count})` : '…'}
                   </span>
                 </div>
               );
             })}
           </div>
-          <hr className="hr-d" style={{ margin: '14px 0' }} />
-          <div className="sec-head"><h3 style={{ fontSize: 13 }}>평점 추이 <span className="sub">30일</span></h3></div>
-          <Line h={90} yMin={3.5} yMax={5}
-            series={[{ points: [4.5, 4.4, 4.4, 4.3, 4.3, 4.4, 4.3, 4.2, 4.2, 4.1, 4.2, 4.2], color: 'var(--f1)' }]} />
         </section>
 
+        {/* CS 이상탐지 요약 */}
         <section className="panel">
-          <div className="sec-head"><h3>키워드 (AI 추출) <span className="sub">저점 ↔ 고점</span></h3></div>
-          <div className="grid grid-2 gap-10">
-            <div>
-              <span className="sec-tag" style={{ color: 'var(--shf)' }}>↓ 저점 키워드</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                {([['사이즈 작음', 12, true], ['배송 지연', 8, false], ['색감 다름', 7, false], ['실밥', 6, true], ['핏', 5, false], ['교환문의', 4, false]] as [string, number, boolean][]).map(([k, n, hot], i) => (
-                  <span key={i} className="chip lg"
-                    style={{ background: hot ? 'var(--shb)' : 'var(--snk)', color: hot ? 'var(--shf)' : 'var(--f2)', borderColor: hot ? 'var(--shf)' : 'var(--bs)', textTransform: 'none', letterSpacing: 0 }}>
-                    {k} · {n}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div>
-              <span className="sec-tag" style={{ color: 'var(--tu)' }}>↑ 고점 키워드</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-                {[['핏 좋음', 42], ['재구매', 28], ['편안함', 24], ['색감', 22], ['가성비', 18], ['포장', 14]].map(([k, n], i) => (
-                  <span key={i} className="chip lg"
-                    style={{ background: 'var(--slb)', color: 'var(--slf)', borderColor: 'var(--slf)', textTransform: 'none', letterSpacing: 0 }}>
-                    {k} · {n}
-                  </span>
-                ))}
-              </div>
-            </div>
+          <div className="sec-head">
+            <h3>CS 이상탐지 <span className="sub">리뷰 기반</span></h3>
+            <button className="btn sm" onClick={onAnomalyRoute}>전체 보기 ↗</button>
           </div>
+          {csAnomalies.length === 0 ? (
+            <div className="dim" style={{ fontSize: 12, padding: '12px 0', textAlign: 'center' }}>
+              탐지된 이상 없음
+            </div>
+          ) : csAnomalies.slice(0, 5).map((a, i) => {
+            const color = SEV_COLOR(a.severity);
+            return (
+              <div key={a.id} className={`row-flex center gap-8 ${i % 2 ? 'alt' : ''}`}
+                style={{ padding: '6px 0', cursor: 'pointer' }}
+                onClick={onAnomalyRoute}>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color, background: `${color}18`,
+                  padding: '1px 5px', borderRadius: 3, flexShrink: 0,
+                }}>
+                  {a.severity.toUpperCase()}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 500, flexShrink: 0 }}>
+                  {CS_LABELS[a.anomaly_type] ?? a.anomaly_type}
+                </span>
+                <span className="dim" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {a.entity_name}
+                </span>
+                <span className="mono dim" style={{ fontSize: 10, marginLeft: 'auto', flexShrink: 0 }}>
+                  {a.detection_date}
+                </span>
+              </div>
+            );
+          })}
         </section>
       </div>
 
+      {/* 특이점 상품 */}
       <section className="panel">
         <div className="sec-head">
-          <h3>특이점 상품 <span className="sub">평점 낮은 자사 상품</span></h3>
-          <button className="btn sm" onClick={onRoute}>전체 보기 ↗</button>
+          <h3>자사 상품 리뷰 현황 <span className="sub">리뷰 수 기준</span></h3>
         </div>
         <div className="tbl">
-          <div className="row head" style={{ gridTemplateColumns: '110px 1fr 80px 70px 100px 1fr 60px' }}>
-            <span>상품번호</span><span>상품</span>
-            <span className="cell-r">리뷰</span><span className="cell-r">평점</span>
-            <span>추이</span><span>브랜드</span><span></span>
+          <div className="row head" style={{ gridTemplateColumns: '1fr 100px 70px 70px 70px' }}>
+            <span>상품</span>
+            <span>브랜드</span>
+            <span className="cell-r">리뷰</span>
+            <span className="cell-r">만족도</span>
+            <span></span>
           </div>
-          {ownProducts.slice(0, 5).map((p, i) => (
-            <div key={p.id} className={`row hover ${i % 2 ? 'alt' : ''}`} style={{ gridTemplateColumns: '110px 1fr 80px 70px 100px 1fr 60px' }}>
-              <span className="mono dim" style={{ fontSize: 10 }}>{p.musinsa_no}</span>
-              <span>{p.name}</span>
-              <span className="mono muted cell-r">{p.review_count}</span>
-              <span className={`mono cell-r ${(p.satisfaction_score ?? 100) < 60 ? 'hs' : ''}`} style={{ fontWeight: 500 }}>
+          {ownProducts.slice(0, 8).map((p, i) => (
+            <div key={p.id} className={`row hover ${i % 2 ? 'alt' : ''}`}
+              style={{ gridTemplateColumns: '1fr 100px 70px 70px 70px' }}>
+              <span style={{ fontSize: 12 }}>{p.name}</span>
+              <span className="dim" style={{ fontSize: 11 }}>{p.brand_name}</span>
+              <span className="mono cell-r" style={{ fontSize: 12 }}>{(p.review_count ?? 0).toLocaleString()}</span>
+              <span className={`mono cell-r ${(p.satisfaction_score ?? 100) < 60 ? 'hs' : ''}`}
+                style={{ fontWeight: (p.satisfaction_score ?? 100) < 60 ? 500 : 400, fontSize: 12 }}>
                 {p.satisfaction_score != null ? `${p.satisfaction_score}%` : '—'}
               </span>
-              <span><Spark w={80} h={20} up={(p.satisfaction_score ?? 80) >= 70} /></span>
-              <span className="dim" style={{ fontSize: 11 }}>{p.brand_name}</span>
               <span>
-                <button className="btn sm icon" onClick={onRoute}><IcArrowUR /></button>
+                <a href={`/product?no=${p.musinsa_no}`} className="btn sm icon">
+                  <IcArrowUR />
+                </a>
               </span>
             </div>
           ))}
           {ownProducts.length === 0 && (
             <div className="row" style={{ gridTemplateColumns: '1fr' }}>
-              <span className="dim" style={{ fontSize: 12, textAlign: 'center', padding: '16px 0' }}>자사 상품 없음</span>
+              <span className="dim" style={{ fontSize: 12, textAlign: 'center', padding: '16px 0' }}>
+                자사 상품 없음
+              </span>
             </div>
           )}
         </div>
@@ -180,134 +328,143 @@ function RvDashboard({ onRoute }: { onRoute: () => void }) {
 }
 
 // ===========================================================================
-// B · Browse (filter + Excel)
+// B · 조회
 // ===========================================================================
-
 function RvBrowse() {
-  const today = new Date().toISOString().split('T')[0];
+  const today     = new Date().toISOString().split('T')[0];
   const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
 
-  const [target, setTarget] = React.useState('own');
-  const [period, setPeriod] = React.useState('30d');
-  const [fromDate, setFromDate] = React.useState(thirtyAgo);
-  const [toDate, setToDate] = React.useState(today);
+  const [period, setPeriod]       = React.useState('30d');
+  const [fromDate, setFromDate]   = React.useState(thirtyAgo);
+  const [toDate, setToDate]       = React.useState(today);
   const [ratingFrom, setRatingFrom] = React.useState(1);
-  const [ratingTo, setRatingTo] = React.useState(2);
-  const [categories, setCategories] = React.useState(new Set(CATEGORY_LABELS));
-  const [companies, setCompanies] = React.useState<Set<string>>(new Set());
-  const [brands, setBrands] = React.useState<Set<string>>(new Set());
-  const [keyword, setKeyword] = React.useState('');
-  const [sort, setSort] = React.useState('recent');
-  const [page, setPage] = React.useState(0);
-  const PAGE_SIZE = 30;
+  const [ratingTo, setRatingTo]   = React.useState(5);
+  const [keyword, setKeyword]     = React.useState('');
+  const [kwInput, setKwInput]     = React.useState('');
+  const [sort, setSort]           = React.useState<'recent' | 'rating_asc' | 'rating_desc' | 'helpful'>('recent');
+  const [page, setPage]           = React.useState(0);
 
-  const [rows, setRows] = React.useState<ReviewRow[]>([]);
+  const [ownBrands, setOwnBrands] = React.useState<{ id: string; name: string }[]>([]);
+  const [selectedBrandIds, setSelectedBrandIds] = React.useState<Set<string>>(new Set());
+  const [categories, setCategories] = React.useState<Set<string>>(new Set(ALL_CATEGORY_CODES));
+
+  const [rows, setRows]   = React.useState<ReviewRow[]>([]);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
 
-  const [brandOpts, setBrandOpts] = React.useState<string[]>([]);
-  const [companyOpts, setCompanyOpts] = React.useState<string[]>([]);
+  const [noteReviewId, setNoteReviewId] = React.useState<string | null>(null);
+
+  const PAGE_SIZE = 30;
 
   React.useEffect(() => {
-    fetchBrandOptions().then(data => setBrandOpts(data.map(d => d.name))).catch(console.error);
-    fetchCompanyOptions().then(data => setCompanyOpts(data.map(d => d.corp_name))).catch(console.error);
+    fetchOwnBrands().then(setOwnBrands).catch(console.error);
   }, []);
+
+  const calcDateFrom = React.useMemo(() => {
+    if (period === 'today') return today;
+    if (period === '7d') return new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+    if (period === '30d') return new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+    if (period === '90d') return new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+    if (period === 'custom') return fromDate;
+    return undefined;
+  }, [period, fromDate, today]);
 
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const dateFrom = period !== 'custom' ? (() => {
-      if (period === 'today') return today;
-      if (period === '7d') return new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-      if (period === '30d') return new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-      if (period === '90d') return new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
-      return undefined;
-    })() : fromDate;
-    const dateTo = period === 'custom' ? toDate : undefined;
-
     fetchReviews({
       ratingMin: ratingFrom,
       ratingMax: ratingTo,
-      dateFrom,
-      dateTo,
+      dateFrom: calcDateFrom,
+      dateTo: period === 'custom' ? toDate : undefined,
       keyword: keyword.trim() || undefined,
-      ownOnly: target === 'own',
-      sort: sort as any,
+      brandIds: selectedBrandIds.size > 0 ? [...selectedBrandIds] : undefined,
+      categoryCodes: categories.size < ALL_CATEGORY_CODES.size ? [...categories] : undefined,
+      sort,
       limit: PAGE_SIZE,
       offset: page * PAGE_SIZE,
     }).then(({ rows: r, total: t }) => {
       if (cancelled) return;
-      setRows(r);
-      setTotal(t);
+      setRows(r); setTotal(t);
     }).catch(console.error)
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [target, period, fromDate, toDate, ratingFrom, ratingTo, keyword, sort, page]);
+  }, [calcDateFrom, toDate, period, ratingFrom, ratingTo, keyword, selectedBrandIds, categories, sort, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const allCatSelected = categories.size === CATEGORY_LABELS.length;
-  const toggleCat = (c: string) => setCategories(p => { const n = new Set(p); n.has(c) ? n.delete(c) : n.add(c); return n; });
-
-  const periodLabel = period === 'today' ? '오늘' : period === '7d' ? '7일' : period === '30d' ? '30일' : period === '90d' ? '90일' : `${fromDate} ~ ${toDate}`;
-
-  const reset = () => {
-    setTarget('own'); setRatingFrom(1); setRatingTo(2);
-    setPeriod('30d'); setCategories(new Set(CATEGORY_LABELS));
-    setCompanies(new Set()); setBrands(new Set());
-    setKeyword(''); setSort('recent'); setPage(0);
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleLoadFilter = (filter: unknown) => {
-    const f = filter as any;
-    if (f.target !== undefined)         setTarget(f.target);
-    if (f.period !== undefined)         setPeriod(f.period);
-    if (f.fromDate !== undefined)       setFromDate(f.fromDate);
-    if (f.toDate !== undefined)         setToDate(f.toDate);
-    if (f.ratingFrom !== undefined)     setRatingFrom(f.ratingFrom);
-    if (f.ratingTo !== undefined)       setRatingTo(f.ratingTo);
-    if (Array.isArray(f.categories))    setCategories(new Set(f.categories));
-    if (Array.isArray(f.companies))     setCompanies(new Set(f.companies));
-    if (Array.isArray(f.brands))        setBrands(new Set(f.brands));
-    if (f.keyword !== undefined)        setKeyword(f.keyword);
-    if (f.sort !== undefined)           setSort(f.sort);
+  const toggleBrand = (id: string) => {
+    setSelectedBrandIds(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
     setPage(0);
   };
 
-  const visibleRows = brands.size > 0
-    ? rows.filter(r => brands.has(r.brand_name))
-    : rows;
+  const toggleCat = (code: string) => {
+    setCategories(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; });
+    setPage(0);
+  };
+
+  const reset = () => {
+    setPeriod('30d'); setRatingFrom(1); setRatingTo(5);
+    setKwInput(''); setKeyword(''); setSort('recent'); setPage(0);
+    setSelectedBrandIds(new Set()); setCategories(new Set(ALL_CATEGORY_CODES));
+  };
 
   return (
-    <div className="grid" style={{ gridTemplateColumns: '300px 1fr', gap: 14 }}>
+    <div className="grid" style={{ gridTemplateColumns: '280px 1fr', gap: 14 }}>
+      {/* 필터 레일 */}
       <aside className="filter-rail">
         <div className="frh">
           <h3>조회 조건</h3>
           <button className="btn sm" onClick={reset}>초기화</button>
         </div>
-        <div style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
-          <SavedFiltersDropdown
-            page="/reviews"
-            currentFilter={{
-              target, period, fromDate, toDate,
-              ratingFrom, ratingTo,
-              categories: [...categories],
-              companies: [...companies],
-              brands: [...brands],
-              keyword, sort,
-            }}
-            onLoad={handleLoadFilter}
-          />
-        </div>
         <div className="frb">
-          <FilterBlock label="대상">
-            <PillGroup value={target} onChange={v => { setTarget(v); setPage(0); }}
-              options={[['own', '자사'], ['all', '전체']]} />
-          </FilterBlock>
+          {/* 회사 고정 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div className="row-flex between center" style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>회사</span>
+            </div>
+            <span className="chip" style={{
+              background: 'var(--hs-soft, #fff0f0)', color: 'var(--hs)', borderColor: 'var(--hs)',
+              textTransform: 'none', letterSpacing: 0, fontSize: 12,
+            }}>B.CAVE</span>
+          </div>
 
-          <PeriodFilter value={period} onChange={v => { setPeriod(v); setPage(0); }}
-            from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
+          {/* 브랜드 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div className="row-flex between center" style={{ marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>
+                브랜드 {selectedBrandIds.size > 0 ? `· ${selectedBrandIds.size}개 선택` : '· 전체'}
+              </span>
+              {selectedBrandIds.size > 0 && (
+                <button className="btn sm" onClick={() => { setSelectedBrandIds(new Set()); setPage(0); }}>전체</button>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {ownBrands.map(b => (
+                <button key={b.id}
+                  className={`btn sm ${selectedBrandIds.has(b.id) ? 'active' : ''}`}
+                  onClick={() => toggleBrand(b.id)}
+                  style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <FilterBlock label="별점 범위" hint={`★${ratingFrom} ~ ★${ratingTo}`}>
+          {/* 기간 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <PeriodFilter value={period} onChange={v => { setPeriod(v); setPage(0); }}
+              from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
+          </div>
+
+          {/* 별점 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div className="row-flex between center" style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>별점 범위</span>
+              <span className="mono dim" style={{ fontSize: 10 }}>★{ratingFrom} ~ ★{ratingTo}</span>
+            </div>
             <div style={{ position: 'relative', height: 22, marginTop: 2 }}>
               <div style={{ position: 'absolute', top: 9, left: 0, right: 0, height: 4, background: 'var(--snk)', borderRadius: 2 }} />
               <div style={{
@@ -316,8 +473,6 @@ function RvBrowse() {
                 width: `${((ratingTo - ratingFrom) / 4) * 100}%`,
                 height: 4, background: 'var(--f1)', borderRadius: 2,
               }} />
-              <div style={{ position: 'absolute', top: 4, left: `${((ratingFrom - 1) / 4) * 100}%`, width: 14, height: 14, borderRadius: 7, background: 'var(--rai)', border: '1.5px solid var(--f1)', transform: 'translateX(-50%)', cursor: 'pointer' }} />
-              <div style={{ position: 'absolute', top: 4, left: `${((ratingTo - 1) / 4) * 100}%`, width: 14, height: 14, borderRadius: 7, background: 'var(--rai)', border: '1.5px solid var(--f1)', transform: 'translateX(-50%)', cursor: 'pointer' }} />
               <input type="range" min={1} max={5} step={1} value={ratingFrom}
                 onChange={e => { const v = +e.target.value; setRatingFrom(Math.min(v, ratingTo)); setPage(0); }}
                 style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', cursor: 'pointer' }} />
@@ -325,121 +480,118 @@ function RvBrowse() {
                 onChange={e => { const v = +e.target.value; setRatingTo(Math.max(v, ratingFrom)); setPage(0); }}
                 style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', cursor: 'pointer' }} />
             </div>
-            <div className="row-flex between" style={{ marginTop: 2 }}>
+            <div className="row-flex between">
               <span className="mono dim" style={{ fontSize: 10 }}>★1</span>
               <span className="mono dim" style={{ fontSize: 10 }}>★5</span>
             </div>
-          </FilterBlock>
+          </div>
 
-          <FilterBlock label="카테고리" hint={`${categories.size}/${CATEGORY_LABELS.length}`}>
-            <div className="check-grid" style={{ maxHeight: 116, overflowY: 'auto' }}>
-              {CATEGORY_LABELS.map(c => (
-                <CheckRow key={c} on={categories.has(c)} onToggle={() => toggleCat(c)} label={c} />
-              ))}
+          {/* 카테고리 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <FilterBlock label="카테고리" hint={`${categories.size}/${ALL_CATEGORY_CODES.size}`}>
+              <div className="check-grid" style={{ maxHeight: 110, overflowY: 'auto' }}>
+                {CATEGORY_ENTRIES.map(([code, label]) => (
+                  <CheckRow key={code} on={categories.has(code)} onToggle={() => toggleCat(code)} label={label} />
+                ))}
+              </div>
+              <div className="row-flex gap-4" style={{ marginTop: 4 }}>
+                <button className="btn sm" onClick={() => { setCategories(new Set(ALL_CATEGORY_CODES)); setPage(0); }}>전체</button>
+                <button className="btn sm" onClick={() => { setCategories(new Set()); setPage(0); }}>해제</button>
+              </div>
+            </FilterBlock>
+          </div>
+
+          {/* 키워드 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, marginBottom: 4 }}>키워드</div>
+            <div className="row-flex gap-4">
+              <input type="text" value={kwInput}
+                onChange={e => setKwInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { setKeyword(kwInput); setPage(0); } }}
+                placeholder="Enter로 검색…"
+                style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+              {keyword && (
+                <button className="btn sm icon" onClick={() => { setKwInput(''); setKeyword(''); setPage(0); }}>
+                  <IcX />
+                </button>
+              )}
             </div>
-            <div className="row-flex gap-4" style={{ marginTop: 4 }}>
-              <button className="btn sm" onClick={() => setCategories(new Set(CATEGORY_LABELS))}>전체</button>
-              <button className="btn sm" onClick={() => setCategories(new Set())}>해제</button>
-            </div>
-          </FilterBlock>
-
-          <FilterBlock label="회사" hint={companies.size > 0 ? `${companies.size} 적용` : '검색 추가'}>
-            <SearchSelect
-              options={companyOpts}
-              selected={companies}
-              onAdd={c => setCompanies(p => new Set([...p, c]))}
-              onRemove={c => setCompanies(p => { const n = new Set(p); n.delete(c); return n; })}
-              placeholder="회사명 검색…"
-            />
-          </FilterBlock>
-
-          <FilterBlock label="브랜드" hint={brands.size > 0 ? `${brands.size} 적용` : '검색 추가'}>
-            <SearchSelect
-              options={brandOpts}
-              selected={brands}
-              onAdd={b => setBrands(p => new Set([...p, b]))}
-              onRemove={b => setBrands(p => { const n = new Set(p); n.delete(b); return n; })}
-              placeholder="브랜드명 검색…"
-            />
-          </FilterBlock>
-
-          <FilterBlock label="키워드">
-            <input type="text" value={keyword} onChange={e => { setKeyword(e.target.value); setPage(0); }}
-              placeholder="예: 사이즈, 핏, 배송" className="input"
-              style={{ width: '100%', fontFamily: 'var(--sans)', fontSize: 12 }} />
-          </FilterBlock>
+          </div>
         </div>
       </aside>
 
+      {/* 메인 */}
       <div className="col-flex gap-10">
+        {/* 도구 바 */}
         <div className="row-flex center gap-6 wrap">
-          <span className="sec-tag">applied</span>
-          <DismissChip onDismiss={() => setTarget('all')}
-            style={target === 'own' ? { background: 'var(--hs-soft)', color: 'var(--hs)', borderColor: 'var(--hs)' } : {}}>
-            {target === 'own' ? '자사' : '전체'}
-          </DismissChip>
-          <DismissChip onDismiss={() => setPeriod('30d')}>{periodLabel}</DismissChip>
-          {(ratingFrom !== 1 || ratingTo !== 5) && (
-            <DismissChip onDismiss={() => { setRatingFrom(1); setRatingTo(5); }}>★{ratingFrom}~{ratingTo}</DismissChip>
-          )}
-          {!allCatSelected && (
-            <DismissChip onDismiss={() => setCategories(new Set(CATEGORY_LABELS))}>
-              카테고리 {categories.size}/{CATEGORY_LABELS.length}
-            </DismissChip>
-          )}
-          {[...companies].map(c => (
-            <DismissChip key={`co-${c}`} onDismiss={() => setCompanies(p => { const n = new Set(p); n.delete(c); return n; })}>
-              회사 · {c}
-            </DismissChip>
-          ))}
-          {[...brands].map(b => (
-            <DismissChip key={`br-${b}`} onDismiss={() => setBrands(p => { const n = new Set(p); n.delete(b); return n; })}>
-              브랜드 · {b}
-            </DismissChip>
-          ))}
-          {keyword.trim() && (
-            <DismissChip onDismiss={() => setKeyword('')}>키워드 · {keyword.trim()}</DismissChip>
+          <span className="mono dim" style={{ fontSize: 12 }}>
+            {loading ? '…' : `${total.toLocaleString()}건`}
+          </span>
+          {keyword && (
+            <span className="chip" style={{ fontSize: 11, textTransform: 'none', letterSpacing: 0 }}>
+              키워드: {keyword}
+            </span>
           )}
           <div className="flex-1" />
-          <span className="mono dim" style={{ fontSize: 12 }}>{loading ? '…' : `${total.toLocaleString()}건`}</span>
-          <SegGroup value={sort} onChange={v => { setSort(v); setPage(0); }} full={false}
-            options={[['recent', '최신순'], ['rating_asc', '평점↑'], ['rating_desc', '평점↓'], ['helpful', '도움']]} />
-          <button className="btn brand sm"><IcDownload /> Excel</button>
+          {(['recent', 'rating_asc', 'rating_desc', 'helpful'] as const).map((s, i) => (
+            <button key={s} className={`btn sm ${sort === s ? 'active' : ''}`}
+              onClick={() => { setSort(s); setPage(0); }}>
+              {['최신순', '평점↑', '평점↓', '도움순'][i]}
+            </button>
+          ))}
         </div>
 
-        <section className="panel" style={{ padding: 0 }}>
-          <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
-            <div className="row head" style={{ gridTemplateColumns: '120px 180px 36px 80px 110px 1fr 110px' }}>
-              <span>sku</span><span>상품</span><span className="cell-c">★</span>
-              <span>날짜</span><span>유저 메타</span><span>리뷰</span><span>키워드</span>
-            </div>
-            {loading ? (
-              Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="row" style={{ gridTemplateColumns: '120px 180px 36px 80px 110px 1fr 110px' }}>
-                  {Array.from({ length: 7 }).map((_, j) => (
-                    <span key={j} style={{ height: 14, background: 'var(--rai)', borderRadius: 3, display: 'block' }} />
-                  ))}
-                </div>
-              ))
-            ) : visibleRows.length === 0 ? (
-              <div className="row" style={{ gridTemplateColumns: '1fr' }}>
-                <span className="dim" style={{ fontSize: 12, textAlign: 'center', padding: '20px 0' }}>조회 결과 없음</span>
-              </div>
-            ) : visibleRows.map((r, i) => (
-              <div key={r.id} className={`row ${i % 2 ? 'alt' : ''}`}
-                style={{ gridTemplateColumns: '120px 180px 36px 80px 110px 1fr 110px', alignItems: 'flex-start' }}>
-                <span className="mono dim" style={{ fontSize: 10 }}>—</span>
-                <span style={{ fontSize: 12 }}>{r.product_name}</span>
-                <span className={`mono cell-c ${r.rating <= 2 ? 'hs' : ''}`} style={{ fontWeight: 500 }}>{r.rating}</span>
-                <span className="mono dim" style={{ fontSize: 11 }}>{r.review_date}</span>
-                <span className="mono dim" style={{ fontSize: 11 }}>—</span>
-                <span style={{ fontSize: 12, color: 'var(--f2)', lineHeight: 1.5 }}>{r.review_text ?? '—'}</span>
-                <span style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                  <span className="chip" style={{ fontSize: 10, padding: '1px 6px', textTransform: 'none', letterSpacing: 0 }}>—</span>
-                </span>
-              </div>
-            ))}
+        {/* 리뷰 목록 */}
+        <section className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+          {/* 그리드 헤더 */}
+          <div className="row head" style={{
+            display: 'grid',
+            gridTemplateColumns: '44px 1fr',
+            gap: '0 10px',
+            padding: '6px 14px',
+            borderBottom: '0.5px solid var(--bs)',
+            background: 'var(--snk)',
+          }}>
+            <span style={{ fontSize: 11 }}>이미지</span>
+            <span style={{ fontSize: 11 }}>
+              평점 · 날짜 · 도움 · 이미지수 · 리뷰ID &nbsp;/&nbsp; 내용 &nbsp;/&nbsp; 상품 → 브랜드
+            </span>
           </div>
+
+          {loading ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+                <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3, width: '60%', marginBottom: 6 }} />
+                <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3, width: '90%' }} />
+              </div>
+            ))
+          ) : rows.length === 0 ? (
+            <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+              조회 결과 없음
+            </div>
+          ) : rows.map(r => (
+            <div key={r.id}>
+              <ReviewCard r={r} onNote={id => setNoteReviewId(id)} />
+              {/* 상품 정보 행 */}
+              <div style={{
+                display: 'grid', gridTemplateColumns: '44px 1fr',
+                gap: '0 10px', padding: '2px 14px 8px',
+                borderBottom: '0.5px solid var(--bs)',
+              }}>
+                <div />
+                <div className="row-flex center gap-6" style={{ flexWrap: 'wrap' }}>
+                  <a href={`/product?no=${r.musinsa_no}`}
+                    style={{ fontSize: 11, color: 'var(--hs)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    {r.product_name} <IcArrowUR size={10} />
+                  </a>
+                  <span className="dim" style={{ fontSize: 11 }}>· {r.brand_name}</span>
+                  <span className="mono dim" style={{ fontSize: 10 }}>no.{r.musinsa_no}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* 페이지네이션 */}
           <div className="row-flex between center" style={{ padding: '10px 14px', borderTop: '0.5px solid var(--bs)' }}>
             <span className="mono dim" style={{ fontSize: 11 }}>
               {total === 0 ? '0건' : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} / ${total.toLocaleString()}`}
@@ -452,169 +604,723 @@ function RvBrowse() {
           </div>
         </section>
       </div>
+
+      {/* 리뷰 메모 드로어 */}
+      {noteReviewId && (
+        <NoteDrawer
+          entity_type="review"
+          entity_id={noteReviewId}
+          entity_label={rows.find(r => r.id === noteReviewId)?.product_name ?? '리뷰'}
+          open={true}
+          onClose={() => setNoteReviewId(null)}
+        />
+      )}
     </div>
   );
 }
 
 // ===========================================================================
-// C · Product reviews (anomaly)
+// C · 특이점 리뷰 (CS 이상탐지)
 // ===========================================================================
+function RvAnomalyReviews() {
+  const [csAnomalies, setCsAnomalies] = React.useState<CsAnomaly[]>([]);
+  const [sevFilter, setSevFilter]     = React.useState('');
+  const [loading, setLoading]         = React.useState(true);
 
-function RvProductReviews() {
-  const [products, setProducts] = React.useState<OwnProduct[]>([]);
-  const [selectedId, setSelectedId] = React.useState('');
-  const [rows, setRows] = React.useState<ReviewRow[]>([]);
-  const [total, setTotal] = React.useState(0);
-  const [page, setPage] = React.useState(0);
-  const [loading, setLoading] = React.useState(false);
+  const [selectedAnomaly, setSelectedAnomaly] = React.useState<CsAnomaly | null>(null);
+  const [product, setProduct]   = React.useState<{ name: string; musinsa_no: string; brand_name: string } | null>(null);
+  const [reviews, setReviews]   = React.useState<ReviewRow[]>([]);
+  const [rvTotal, setRvTotal]   = React.useState(0);
+  const [rvPage, setRvPage]     = React.useState(0);
   const [ratingTab, setRatingTab] = React.useState<'all' | 'low' | 'mid' | 'hi'>('all');
-  const PAGE_SIZE = 20;
+  const [rvLoading, setRvLoading] = React.useState(false);
+  const [noteReviewId, setNoteReviewId] = React.useState<string | null>(null);
 
+  const RV_PAGE = 20;
+
+  // 이상탐지 목록 로드
   React.useEffect(() => {
-    fetchOwnProducts(500).then(setProducts).catch(console.error);
-  }, []);
-
-  const ratingMin = ratingTab === 'low' ? 1 : ratingTab === 'mid' ? 3 : ratingTab === 'hi' ? 4 : 1;
-  const ratingMax = ratingTab === 'low' ? 2 : ratingTab === 'mid' ? 3 : ratingTab === 'hi' ? 5 : 5;
-
-  React.useEffect(() => {
-    if (!selectedId) { setRows([]); setTotal(0); return; }
-    let cancelled = false;
     setLoading(true);
+    fetchCsAnomalies({ severity: sevFilter || undefined, limit: 200 })
+      .then(setCsAnomalies)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [sevFilter]);
+
+  // 선택된 이상 → 상품 정보 + 리뷰 로드
+  React.useEffect(() => {
+    if (!selectedAnomaly) { setReviews([]); setProduct(null); return; }
+    setProduct(null);
+    fetchProductBrief(selectedAnomaly.entity_id).then(setProduct).catch(console.error);
+  }, [selectedAnomaly]);
+
+  React.useEffect(() => {
+    if (!selectedAnomaly) return;
+    let cancelled = false;
+    setRvLoading(true);
+    const ratingMin = ratingTab === 'low' ? 1 : ratingTab === 'mid' ? 3 : 1;
+    const ratingMax = ratingTab === 'low' ? 2 : ratingTab === 'mid' ? 3 : ratingTab === 'hi' ? 5 : 5;
+    const ratingMinFinal = ratingTab === 'hi' ? 4 : ratingMin;
     fetchReviews({
-      productId: selectedId,
-      ratingMin, ratingMax,
+      productId: selectedAnomaly.entity_id,
+      ratingMin: ratingMinFinal,
+      ratingMax,
       sort: 'recent',
-      limit: PAGE_SIZE,
-      offset: page * PAGE_SIZE,
+      limit: RV_PAGE,
+      offset: rvPage * RV_PAGE,
     }).then(({ rows: r, total: t }) => {
-      if (!cancelled) { setRows(r); setTotal(t); }
+      if (!cancelled) { setReviews(r); setRvTotal(t); }
     }).catch(console.error)
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .finally(() => { if (!cancelled) setRvLoading(false); });
     return () => { cancelled = true; };
-  }, [selectedId, ratingTab, page]);
+  }, [selectedAnomaly, ratingTab, rvPage]);
 
-  const selected = products.find(p => p.id === selectedId);
+  const selectAnomaly = (a: CsAnomaly) => {
+    setSelectedAnomaly(a);
+    setRvPage(0);
+    setRatingTab('all');
+  };
 
-  const lowCount = rows.filter(r => r.rating <= 2).length;
-  const midCount = rows.filter(r => r.rating === 3).length;
-  const hiCount = rows.filter(r => r.rating >= 4).length;
+  const sevColor = (s: string) => SEV_COLOR(s);
 
   return (
     <>
-      <div className="row-flex center gap-6" style={{ marginBottom: 12 }}>
-        <span style={{ fontSize: 12, color: 'var(--f3)', whiteSpace: 'nowrap' }}>상품 선택</span>
-        <select value={selectedId} onChange={e => { setSelectedId(e.target.value); setPage(0); setRatingTab('all'); }}
-          style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '5px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)', maxWidth: 500 }}>
-          <option value="">— 자사 상품 선택 ({products.length}개) —</option>
-          {products.map(p => (
-            <option key={p.id} value={p.id}>{p.brand_name} · {p.name} (리뷰 {p.review_count})</option>
+      {/* 헤더 */}
+      <div className="row-flex between center" style={{ marginBottom: 12 }}>
+        <div className="row-flex center gap-8">
+          <h2 style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>CS 이상탐지 — 특이점 리뷰</h2>
+          <span className="sec-tag">
+            {loading ? '…' : `${csAnomalies.length}건 탐지`}
+          </span>
+        </div>
+        <div className="row-flex gap-4">
+          {(['', 'high', 'medium', 'low'] as const).map(s => (
+            <button key={s} className={`btn sm ${sevFilter === s ? 'active' : ''}`}
+              onClick={() => setSevFilter(s)}>
+              {s === '' ? '전체' : s === 'high' ? 'HIGH' : s === 'medium' ? 'MED' : 'LOW'}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
-      {!selectedId ? (
-        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--f4)' }}>
-          <span style={{ fontSize: 13 }}>상품을 선택하면 리뷰가 표시됩니다</span>
-        </div>
-      ) : (
-        <div className="grid" style={{ gridTemplateColumns: '300px 1fr', gap: 14 }}>
-          {/* 좌측: 이미지 + 스탯 + AI 요약 */}
-          <div className="col-flex gap-10">
-            <div className="panel compact" style={{
-              height: 240, background: 'var(--snk)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              position: 'relative', overflow: 'hidden',
-            }}>
-              <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, opacity: 0.4 }}>
-                <line x1="0" y1="0" x2="100%" y2="100%" stroke="var(--bs)" strokeDasharray="3 4" />
-                <line x1="100%" y1="0" x2="0" y2="100%" stroke="var(--bs)" strokeDasharray="3 4" />
-              </svg>
-              <span className="mono dim" style={{ fontSize: 11, background: 'var(--rai)', padding: '2px 6px', borderRadius: 2 }}>product image</span>
-            </div>
-
-            <section className="panel">
-              <div style={{ fontSize: 14, fontWeight: 500 }}>{selected?.name ?? '—'}</div>
-              <div className="mono dim" style={{ fontSize: 11 }}>{selected?.brand_name ?? '—'}</div>
-              <hr className="hr-d" style={{ margin: '12px 0' }} />
-              {([
-                ['총 리뷰',    String(selected?.review_count ?? 0), false],
-                ['평균 만족도', selected?.satisfaction_score != null ? `${selected.satisfaction_score}%` : '—', (selected?.satisfaction_score ?? 100) < 60],
-                ['저점 (≤2)',  loading ? '…' : String(rows.filter(r => r.rating <= 2).length), false],
-              ] as [string, string, boolean][]).map(([k, v, hot], i) => (
-                <div key={i} className="row-flex between" style={{ padding: '3px 0' }}>
-                  <span className="dim" style={{ fontSize: 11 }}>{k}</span>
-                  <span className={`mono ${hot ? 'hs' : ''}`} style={{ fontSize: 11, fontWeight: hot ? 500 : 400 }}>{v}</span>
-                </div>
-              ))}
-            </section>
-
-            <section className="panel surface">
-              <span className="sec-tag">AI 요약</span>
-              <div style={{ fontSize: 12, color: 'var(--f2)', lineHeight: 1.55, marginTop: 6 }}>
-                AI 요약 기능은 준비 중입니다. 리뷰 데이터를 수집한 후 자동 분석이 활성화됩니다.
-              </div>
-            </section>
+      <div className="grid" style={{ gridTemplateColumns: '300px 1fr', gap: 14 }}>
+        {/* 좌측: 이상탐지 목록 */}
+        <section className="panel" style={{ padding: 0, overflowY: 'auto', maxHeight: 'calc(100vh - 220px)' }}>
+          <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--bs)', background: 'var(--snk)' }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--f3)' }}>이상 항목</span>
           </div>
-
-          {/* 우측: 필터 탭 + 키워드 + 리뷰 목록 */}
-          <div className="col-flex gap-12">
-            <div className="row-flex gap-6 center" style={{ flexWrap: 'wrap' }}>
-              <button className={`btn sm ${ratingTab === 'all' ? 'active' : ''}`} onClick={() => { setRatingTab('all'); setPage(0); }}>
-                전체 ({total})
-              </button>
-              <button className={`btn sm ${ratingTab === 'low' ? 'active' : ''}`} onClick={() => { setRatingTab('low'); setPage(0); }}>
-                ★1~2 ({lowCount})
-              </button>
-              <button className={`btn sm ${ratingTab === 'mid' ? 'active' : ''}`} onClick={() => { setRatingTab('mid'); setPage(0); }}>
-                ★3 ({midCount})
-              </button>
-              <button className={`btn sm ${ratingTab === 'hi' ? 'active' : ''}`} onClick={() => { setRatingTab('hi'); setPage(0); }}>
-                ★4~5 ({hiCount})
-              </button>
-              <div className="row-flex gap-4" style={{ marginLeft: 'auto' }}>
-                <button className="btn sm">최신순</button>
-                <button className="btn brand sm"><IcDownload /> Excel</button>
+          {loading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} style={{ padding: '10px 12px', borderBottom: '0.5px solid var(--bs)' }}>
+                <div style={{ height: 11, background: 'var(--rai)', borderRadius: 3, width: '70%', marginBottom: 5 }} />
+                <div style={{ height: 11, background: 'var(--rai)', borderRadius: 3, width: '40%' }} />
               </div>
+            ))
+          ) : csAnomalies.length === 0 ? (
+            <div style={{ padding: '32px 12px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+              탐지된 이상 없음
             </div>
-
-            <section className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} style={{ padding: '16px 16px', borderBottom: '0.5px solid var(--bs)' }}>
-                    <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3, marginBottom: 8, width: '40%' }} />
-                    <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3, width: '90%' }} />
-                  </div>
-                ))
-              ) : rows.length === 0 ? (
-                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>리뷰 없음</div>
-              ) : rows.map((r, i) => (
-                <div key={r.id} className={`review-row ${r.rating <= 2 ? 'flag' : ''}`}>
-                  <div className="head">
-                    <span className="mono dim" style={{ fontSize: 11 }}>{r.review_date}</span>
-                    <span className={`mono ${r.rating <= 2 ? 'hs' : ''}`} style={{ fontWeight: 500, fontSize: 13 }}>★ {r.rating}</span>
-                    <span className="chip" style={{ fontSize: 10, padding: '1px 6px', textTransform: 'none', letterSpacing: 0 }}>—</span>
-                    <span style={{ marginLeft: 'auto' }} className="mono dim">도움 {r.helpful_count}</span>
-                  </div>
-                  <div className="text">{r.review_text ?? '(리뷰 내용 없음)'}</div>
-                </div>
-              ))}
-              {rows.length > 0 && (
-                <div className="row-flex between center" style={{ padding: '10px 14px', borderTop: '0.5px solid var(--bs)' }}>
-                  <span className="mono dim" style={{ fontSize: 11 }}>
-                    {`${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} / ${total.toLocaleString()}`}
+          ) : csAnomalies.map(a => {
+            const isSelected = selectedAnomaly?.id === a.id;
+            const color = sevColor(a.severity);
+            return (
+              <div key={a.id}
+                onClick={() => selectAnomaly(a)}
+                style={{
+                  padding: '10px 12px',
+                  borderBottom: '0.5px solid var(--bs)',
+                  cursor: 'pointer',
+                  background: isSelected ? 'var(--snk)' : undefined,
+                  borderLeft: isSelected ? `3px solid var(--hs)` : '3px solid transparent',
+                }}>
+                <div className="row-flex center gap-6" style={{ marginBottom: 4 }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, color, background: `${color}18`,
+                    padding: '1px 5px', borderRadius: 3, flexShrink: 0,
+                  }}>
+                    {a.severity.toUpperCase()}
                   </span>
-                  <div className="row-flex gap-4">
-                    <button className="btn sm" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>←</button>
-                    <span className="mono dim" style={{ fontSize: 11 }}>{page + 1} / {Math.ceil(total / PAGE_SIZE) || 1}</span>
-                    <button className="btn sm" onClick={() => setPage(p => p + 1)} disabled={(page + 1) * PAGE_SIZE >= total}>→</button>
-                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 500 }}>
+                    {CS_LABELS[a.anomaly_type] ?? a.anomaly_type}
+                  </span>
                 </div>
-              )}
+                <div style={{ fontSize: 12, color: 'var(--f2)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {a.entity_name}
+                </div>
+                <div className="row-flex between center">
+                  <span style={{ fontSize: 11, color: 'var(--f3)', lineHeight: 1.4 }}>
+                    {a.description?.slice(0, 50)}{(a.description?.length ?? 0) > 50 ? '…' : ''}
+                  </span>
+                  <span className="mono dim" style={{ fontSize: 10, flexShrink: 0 }}>{a.detection_date}</span>
+                </div>
+              </div>
+            );
+          })}
+        </section>
+
+        {/* 우측: 리뷰 상세 */}
+        <div className="col-flex gap-10">
+          {!selectedAnomaly ? (
+            <section className="panel" style={{ padding: '60px 0', textAlign: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--f4)' }}>← 좌측에서 이상 항목을 선택하세요</span>
             </section>
-          </div>
+          ) : (
+            <>
+              {/* 상품 헤더 */}
+              <section className="panel" style={{ padding: '12px 14px' }}>
+                <div className="row-flex between center">
+                  <div>
+                    <div className="row-flex center gap-8">
+                      <span style={{ fontSize: 14, fontWeight: 600 }}>
+                        {product?.name ?? selectedAnomaly.entity_name}
+                      </span>
+                      {product && (
+                        <span className="dim" style={{ fontSize: 12 }}>{product.brand_name}</span>
+                      )}
+                    </div>
+                    {/* 이상탐지 설명 */}
+                    <div style={{
+                      marginTop: 8, padding: '6px 10px', borderRadius: 4,
+                      background: `${sevColor(selectedAnomaly.severity)}12`,
+                      borderLeft: `3px solid ${sevColor(selectedAnomaly.severity)}`,
+                    }}>
+                      <div className="row-flex center gap-6" style={{ marginBottom: 3 }}>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, color: sevColor(selectedAnomaly.severity),
+                          background: `${sevColor(selectedAnomaly.severity)}20`,
+                          padding: '1px 5px', borderRadius: 3,
+                        }}>
+                          {selectedAnomaly.severity.toUpperCase()}
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 500 }}>
+                          {CS_LABELS[selectedAnomaly.anomaly_type] ?? selectedAnomaly.anomaly_type}
+                        </span>
+                        <span className="mono dim" style={{ fontSize: 10 }}>{selectedAnomaly.detection_date}</span>
+                      </div>
+                      <span style={{ fontSize: 12, color: 'var(--f2)' }}>{selectedAnomaly.description}</span>
+                    </div>
+                  </div>
+                  {product?.musinsa_no && (
+                    <a href={`/product?no=${product.musinsa_no}`} className="btn sm"
+                      style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      상품 페이지 <IcArrowUR size={12} />
+                    </a>
+                  )}
+                </div>
+              </section>
+
+              {/* 리뷰 필터 탭 */}
+              <div className="row-flex center gap-4">
+                {([
+                  ['all', `전체 (${rvTotal})`],
+                  ['low', '★1~2'],
+                  ['mid', '★3'],
+                  ['hi',  '★4~5'],
+                ] as const).map(([key, label]) => (
+                  <button key={key}
+                    className={`btn sm ${ratingTab === key ? 'active' : ''}`}
+                    onClick={() => { setRatingTab(key); setRvPage(0); }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* 리뷰 목록 */}
+              <section className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+                {rvLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+                      <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3, width: '50%', marginBottom: 6 }} />
+                      <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3 }} />
+                    </div>
+                  ))
+                ) : reviews.length === 0 ? (
+                  <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+                    리뷰 없음
+                  </div>
+                ) : reviews.map(r => (
+                  <ReviewCard key={r.id} r={r} onNote={id => setNoteReviewId(id)} />
+                ))}
+
+                {reviews.length > 0 && (
+                  <div className="row-flex between center" style={{ padding: '10px 14px', borderTop: '0.5px solid var(--bs)' }}>
+                    <span className="mono dim" style={{ fontSize: 11 }}>
+                      {`${rvPage * RV_PAGE + 1}–${Math.min((rvPage + 1) * RV_PAGE, rvTotal)} / ${rvTotal.toLocaleString()}`}
+                    </span>
+                    <div className="row-flex gap-4">
+                      <button className="btn sm" onClick={() => setRvPage(p => Math.max(0, p - 1))} disabled={rvPage === 0}>←</button>
+                      <span className="mono dim" style={{ fontSize: 11 }}>{rvPage + 1} / {Math.ceil(rvTotal / RV_PAGE) || 1}</span>
+                      <button className="btn sm" onClick={() => setRvPage(p => p + 1)} disabled={(rvPage + 1) * RV_PAGE >= rvTotal}>→</button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
         </div>
+      </div>
+
+      {/* 리뷰 메모 드로어 */}
+      {noteReviewId && (
+        <NoteDrawer
+          entity_type="review"
+          entity_id={noteReviewId}
+          entity_label={reviews.find(r => r.id === noteReviewId)?.product_name ?? '리뷰'}
+          open={true}
+          onClose={() => setNoteReviewId(null)}
+        />
       )}
     </>
+  );
+}
+
+// ===========================================================================
+// D · 상품별 조회 (master-detail)
+// ===========================================================================
+function RvProductBrowse() {
+  const today     = new Date().toISOString().split('T')[0];
+  const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+
+  // 필터 상태
+  const [ownBrands, setOwnBrands] = React.useState<{ id: string; name: string }[]>([]);
+  const [selectedBrandIds, setSelectedBrandIds] = React.useState<Set<string>>(new Set());
+  const [categories, setCategories] = React.useState<Set<string>>(new Set(ALL_CATEGORY_CODES));
+  const [productKw, setProductKw]   = React.useState('');
+  const [productKwInput, setProductKwInput] = React.useState('');
+  const [period, setPeriod]         = React.useState('all');
+  const [fromDate, setFromDate]     = React.useState(thirtyAgo);
+  const [toDate, setToDate]         = React.useState(today);
+  const [ratingFrom, setRatingFrom] = React.useState(1);
+  const [ratingTo, setRatingTo]     = React.useState(5);
+  const [rvKeyword, setRvKeyword]   = React.useState('');
+  const [rvKwInput, setRvKwInput]   = React.useState('');
+  const [masterPage, setMasterPage] = React.useState(0);
+
+  // 마스터 그리드
+  const [products, setProducts] = React.useState<OwnProductWithPrice[]>([]);
+  const [total, setTotal]       = React.useState(0);
+  const [masterLoading, setMasterLoading] = React.useState(true);
+
+  // 선택된 상품
+  const [selectedProduct, setSelectedProduct] = React.useState<OwnProductWithPrice | null>(null);
+
+  // 리뷰 (디테일)
+  const [reviews, setReviews]   = React.useState<ReviewRow[]>([]);
+  const [rvTotal, setRvTotal]   = React.useState(0);
+  const [rvPage, setRvPage]     = React.useState(0);
+  const [ratingTab, setRatingTab] = React.useState<'all' | 'low' | 'mid' | 'hi'>('all');
+  const [rvLoading, setRvLoading] = React.useState(false);
+  const [noteReviewId, setNoteReviewId] = React.useState<string | null>(null);
+
+  const MASTER_SIZE = 30;
+  const RV_SIZE     = 20;
+
+  React.useEffect(() => {
+    fetchOwnBrands().then(setOwnBrands).catch(console.error);
+  }, []);
+
+  // 마스터 그리드 로드
+  React.useEffect(() => {
+    let cancelled = false;
+    setMasterLoading(true);
+    fetchOwnProductsWithPrices({
+      brandIds:      selectedBrandIds.size > 0 ? [...selectedBrandIds] : undefined,
+      categoryCodes: categories.size < ALL_CATEGORY_CODES.size ? [...categories] : undefined,
+      keyword:       productKw.trim() || undefined,
+      limit:         MASTER_SIZE,
+      offset:        masterPage * MASTER_SIZE,
+    }).then(({ rows: r, total: t }) => {
+      if (cancelled) return;
+      setProducts(r); setTotal(t);
+      setSelectedProduct(null); setReviews([]);
+    }).catch(console.error)
+      .finally(() => { if (!cancelled) setMasterLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedBrandIds, categories, productKw, masterPage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 디테일 리뷰 로드
+  const calcDateFrom = React.useMemo(() => {
+    if (period === 'today') return today;
+    if (period === '7d') return new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+    if (period === '30d') return new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+    if (period === '90d') return new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+    if (period === 'custom') return fromDate;
+    return undefined;
+  }, [period, fromDate, today]);
+
+  React.useEffect(() => {
+    if (!selectedProduct) return;
+    let cancelled = false;
+    setRvLoading(true);
+    const ratingMin = ratingTab === 'low' ? 1 : ratingTab === 'hi' ? 4 : ratingTab === 'mid' ? 3 : ratingFrom;
+    const ratingMax = ratingTab === 'low' ? 2 : ratingTab === 'mid' ? 3 : ratingTo;
+    fetchReviews({
+      productId:  selectedProduct.id,
+      ratingMin,
+      ratingMax,
+      dateFrom:   calcDateFrom,
+      dateTo:     period === 'custom' ? toDate : undefined,
+      keyword:    rvKeyword.trim() || undefined,
+      sort:       'recent',
+      limit:      RV_SIZE,
+      offset:     rvPage * RV_SIZE,
+    }).then(({ rows: r, total: t }) => {
+      if (!cancelled) { setReviews(r); setRvTotal(t); }
+    }).catch(console.error)
+      .finally(() => { if (!cancelled) setRvLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedProduct, ratingTab, ratingFrom, ratingTo, calcDateFrom, toDate, period, rvKeyword, rvPage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleBrand = (id: string) => {
+    setSelectedBrandIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setMasterPage(0);
+  };
+  const toggleCat = (code: string) => {
+    setCategories(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; });
+    setMasterPage(0);
+  };
+
+  const fmt = (n: number | null, type: 'price' | 'pct') => {
+    if (n == null) return '—';
+    if (type === 'price') return n.toLocaleString();
+    return `${n.toFixed(0)}%`;
+  };
+
+  return (
+    <div className="grid" style={{ gridTemplateColumns: '260px 1fr', gap: 14 }}>
+      {/* 필터 레일 */}
+      <aside className="filter-rail">
+        <div className="frh">
+          <h3>조회 조건</h3>
+          <button className="btn sm" onClick={() => {
+            setSelectedBrandIds(new Set()); setCategories(new Set(ALL_CATEGORY_CODES));
+            setProductKwInput(''); setProductKw(''); setMasterPage(0);
+            setPeriod('all'); setRatingFrom(1); setRatingTo(5);
+            setRvKwInput(''); setRvKeyword(''); setRvPage(0);
+          }}>초기화</button>
+        </div>
+        <div className="frb">
+          {/* 브랜드 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div className="row-flex between center" style={{ marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>
+                브랜드 {selectedBrandIds.size > 0 ? `· ${selectedBrandIds.size}개` : '· 전체'}
+              </span>
+              {selectedBrandIds.size > 0 && (
+                <button className="btn sm" onClick={() => { setSelectedBrandIds(new Set()); setMasterPage(0); }}>전체</button>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {ownBrands.map(b => (
+                <button key={b.id}
+                  className={`btn sm ${selectedBrandIds.has(b.id) ? 'active' : ''}`}
+                  onClick={() => toggleBrand(b.id)}
+                  style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 카테고리 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <FilterBlock label="카테고리" hint={`${categories.size}/${ALL_CATEGORY_CODES.size}`}>
+              <div className="check-grid" style={{ maxHeight: 110, overflowY: 'auto' }}>
+                {CATEGORY_ENTRIES.map(([code, label]) => (
+                  <CheckRow key={code} on={categories.has(code)} onToggle={() => toggleCat(code)} label={label} />
+                ))}
+              </div>
+              <div className="row-flex gap-4" style={{ marginTop: 4 }}>
+                <button className="btn sm" onClick={() => { setCategories(new Set(ALL_CATEGORY_CODES)); setMasterPage(0); }}>전체</button>
+                <button className="btn sm" onClick={() => { setCategories(new Set()); setMasterPage(0); }}>해제</button>
+              </div>
+            </FilterBlock>
+          </div>
+
+          {/* 상품 검색 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, marginBottom: 4 }}>상품 검색</div>
+            <div className="row-flex gap-4">
+              <input type="text" value={productKwInput}
+                onChange={e => setProductKwInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { setProductKw(productKwInput); setMasterPage(0); } }}
+                placeholder="상품명 검색 (Enter)"
+                style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+              {productKw && (
+                <button className="btn sm icon" onClick={() => { setProductKwInput(''); setProductKw(''); setMasterPage(0); }}><IcX /></button>
+              )}
+            </div>
+          </div>
+
+          <div style={{ padding: '6px 14px 4px', background: 'var(--snk)' }}>
+            <span style={{ fontSize: 10, color: 'var(--f4)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: 1 }}>리뷰 필터</span>
+          </div>
+
+          {/* 기간 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <PeriodFilter value={period} onChange={v => { setPeriod(v); setRvPage(0); }}
+              from={fromDate} to={toDate} onFromChange={setFromDate} onToChange={setToDate} />
+          </div>
+
+          {/* 별점 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div className="row-flex between center" style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>별점 범위</span>
+              <span className="mono dim" style={{ fontSize: 10 }}>★{ratingFrom} ~ ★{ratingTo}</span>
+            </div>
+            <div style={{ position: 'relative', height: 22, marginTop: 2 }}>
+              <div style={{ position: 'absolute', top: 9, left: 0, right: 0, height: 4, background: 'var(--snk)', borderRadius: 2 }} />
+              <div style={{ position: 'absolute', top: 9, left: `${((ratingFrom - 1) / 4) * 100}%`, width: `${((ratingTo - ratingFrom) / 4) * 100}%`, height: 4, background: 'var(--f1)', borderRadius: 2 }} />
+              <input type="range" min={1} max={5} step={1} value={ratingFrom}
+                onChange={e => { const v = +e.target.value; setRatingFrom(Math.min(v, ratingTo)); setRvPage(0); }}
+                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', cursor: 'pointer' }} />
+              <input type="range" min={1} max={5} step={1} value={ratingTo}
+                onChange={e => { const v = +e.target.value; setRatingTo(Math.max(v, ratingFrom)); setRvPage(0); }}
+                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', cursor: 'pointer' }} />
+            </div>
+            <div className="row-flex between">
+              <span className="mono dim" style={{ fontSize: 10 }}>★1</span>
+              <span className="mono dim" style={{ fontSize: 10 }}>★5</span>
+            </div>
+          </div>
+
+          {/* 리뷰 키워드 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, marginBottom: 4 }}>리뷰 키워드</div>
+            <div className="row-flex gap-4">
+              <input type="text" value={rvKwInput}
+                onChange={e => setRvKwInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { setRvKeyword(rvKwInput); setRvPage(0); } }}
+                placeholder="리뷰 내용 검색 (Enter)"
+                style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+              {rvKeyword && (
+                <button className="btn sm icon" onClick={() => { setRvKwInput(''); setRvKeyword(''); setRvPage(0); }}><IcX /></button>
+              )}
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* 메인 */}
+      <div className="col-flex gap-10">
+        {/* 마스터 그리드: 상품 목록 */}
+        <section className="panel" style={{ padding: 0 }}>
+          <div className="row-flex between center" style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>
+              상품 목록
+              <span className="mono dim" style={{ fontSize: 11, fontWeight: 400, marginLeft: 6 }}>
+                {masterLoading ? '…' : `${total.toLocaleString()}개`}
+              </span>
+            </span>
+            {selectedProduct && (
+              <span style={{ fontSize: 11, color: 'var(--hs)' }}>
+                선택: {selectedProduct.name}
+              </span>
+            )}
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ minWidth: 860 }}>
+              {/* 헤더 */}
+              <div className="row head" style={{
+                display: 'grid',
+                gridTemplateColumns: '48px 1fr 90px 80px 90px 90px 70px 55px 60px 70px',
+                padding: '5px 10px', gap: '0 6px', background: 'var(--snk)',
+                borderBottom: '0.5px solid var(--bs)',
+              }}>
+                <span style={{ fontSize: 10 }}>이미지</span>
+                <span style={{ fontSize: 10 }}>상품명</span>
+                <span style={{ fontSize: 10 }}>브랜드</span>
+                <span style={{ fontSize: 10 }}>카테고리</span>
+                <span className="cell-r" style={{ fontSize: 10 }}>소비자가</span>
+                <span className="cell-r" style={{ fontSize: 10 }}>판매가</span>
+                <span className="cell-r" style={{ fontSize: 10 }}>할인율</span>
+                <span className="cell-c" style={{ fontSize: 10 }}>품절</span>
+                <span className="cell-r" style={{ fontSize: 10 }}>리뷰</span>
+                <span className="cell-r" style={{ fontSize: 10 }}>만족도</span>
+              </div>
+
+              {/* 로딩 스켈레톤 */}
+              {masterLoading ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} style={{
+                    display: 'grid', gridTemplateColumns: '48px 1fr 90px 80px 90px 90px 70px 55px 60px 70px',
+                    padding: '8px 10px', gap: '0 6px', borderBottom: '0.5px solid var(--bs)',
+                  }}>
+                    {Array.from({ length: 10 }).map((_, j) => (
+                      <div key={j} style={{ height: 12, background: 'var(--rai)', borderRadius: 3 }} />
+                    ))}
+                  </div>
+                ))
+              ) : products.length === 0 ? (
+                <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+                  상품 없음
+                </div>
+              ) : products.map((p, i) => {
+                const isSelected = selectedProduct?.id === p.id;
+                return (
+                  <div key={p.id}
+                    onClick={() => { setSelectedProduct(p); setRvPage(0); setRatingTab('all'); }}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '48px 1fr 90px 80px 90px 90px 70px 55px 60px 70px',
+                      padding: '6px 10px', gap: '0 6px',
+                      borderBottom: '0.5px solid var(--bs)',
+                      cursor: 'pointer',
+                      background: isSelected ? 'var(--snk)' : i % 2 ? 'var(--rai-light, var(--snk))' : undefined,
+                      borderLeft: isSelected ? '3px solid var(--hs)' : '3px solid transparent',
+                    }}>
+                    {/* 썸네일 */}
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      {p.thumbnail_url ? (
+                        <img src={p.thumbnail_url} alt=""
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          style={{ width: 40, height: 40, borderRadius: 3, objectFit: 'cover', display: 'block', border: '0.5px solid var(--bs)' }} />
+                      ) : (
+                        <div style={{ width: 40, height: 40, borderRadius: 3, background: 'var(--snk)', border: '0.5px solid var(--bs)' }} />
+                      )}
+                    </div>
+                    {/* 상품명 */}
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0 }}>
+                      <a href={`/product?no=${p.musinsa_no}`} onClick={e => e.stopPropagation()}
+                        style={{ fontSize: 12, color: 'var(--hs)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.name}
+                      </a>
+                      <span className="mono dim" style={{ fontSize: 9, marginTop: 1 }}>no.{p.musinsa_no}{p.season_year ? ` · ${p.season_year}` : ''}</span>
+                    </div>
+                    {/* 브랜드 */}
+                    <div style={{ fontSize: 11, display: 'flex', alignItems: 'center', color: 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.brand_name}
+                    </div>
+                    {/* 카테고리 */}
+                    <div style={{ fontSize: 11, display: 'flex', alignItems: 'center', color: 'var(--f3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.category_code ? (CATEGORY_MAP[p.category_code] ?? p.category_code) : '—'}
+                    </div>
+                    {/* 소비자가 */}
+                    <div className="mono cell-r" style={{ fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                      {fmt(p.list_price, 'price')}
+                    </div>
+                    {/* 판매가 */}
+                    <div className="mono cell-r" style={{ fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', fontWeight: p.discount_rate ? 500 : 400 }}>
+                      {fmt(p.final_price, 'price')}
+                    </div>
+                    {/* 할인율 */}
+                    <div className="mono cell-r" style={{
+                      fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                      color: (p.discount_rate ?? 0) >= 30 ? 'var(--dn)' : undefined,
+                      fontWeight: (p.discount_rate ?? 0) >= 30 ? 600 : 400,
+                    }}>
+                      {fmt(p.discount_rate, 'pct')}
+                    </div>
+                    {/* 품절 */}
+                    <div className="cell-c" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {p.is_sold_out && (
+                        <span style={{ fontSize: 9, background: 'var(--dn)', color: '#fff', padding: '1px 4px', borderRadius: 2 }}>품절</span>
+                      )}
+                    </div>
+                    {/* 리뷰수 */}
+                    <div className="mono cell-r" style={{ fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                      {(p.review_count ?? 0).toLocaleString()}
+                    </div>
+                    {/* 만족도 */}
+                    <div className="mono cell-r" style={{
+                      fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                      color: (p.satisfaction_score ?? 100) < 60 ? 'var(--dn)' : undefined,
+                    }}>
+                      {p.satisfaction_score != null ? `${p.satisfaction_score}%` : '—'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 마스터 페이지네이션 */}
+          <div className="row-flex between center" style={{ padding: '8px 14px', borderTop: '0.5px solid var(--bs)' }}>
+            <span className="mono dim" style={{ fontSize: 11 }}>
+              {total === 0 ? '0개' : `${masterPage * MASTER_SIZE + 1}–${Math.min((masterPage + 1) * MASTER_SIZE, total)} / ${total.toLocaleString()}`}
+            </span>
+            <div className="row-flex gap-4">
+              <button className="btn sm" onClick={() => setMasterPage(p => Math.max(0, p - 1))} disabled={masterPage === 0}>←</button>
+              <span className="mono dim" style={{ fontSize: 11 }}>{masterPage + 1} / {Math.ceil(total / MASTER_SIZE) || 1}</span>
+              <button className="btn sm" onClick={() => setMasterPage(p => p + 1)} disabled={(masterPage + 1) * MASTER_SIZE >= total}>→</button>
+            </div>
+          </div>
+        </section>
+
+        {/* 디테일 그리드: 선택된 상품의 리뷰 */}
+        {!selectedProduct ? (
+          <section className="panel" style={{ padding: '32px 0', textAlign: 'center' }}>
+            <span style={{ fontSize: 13, color: 'var(--f4)' }}>↑ 상품을 선택하면 리뷰가 표시됩니다</span>
+          </section>
+        ) : (
+          <section className="panel" style={{ padding: 0 }}>
+            <div className="row-flex between center" style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+              <div className="row-flex center gap-8">
+                <span style={{ fontSize: 13, fontWeight: 500 }}>{selectedProduct.name}</span>
+                <span className="dim" style={{ fontSize: 12 }}>{selectedProduct.brand_name}</span>
+                <span className="sec-tag">{rvLoading ? '…' : `${rvTotal.toLocaleString()}건`}</span>
+              </div>
+              <div className="row-flex gap-4">
+                {([
+                  ['all', '전체'],
+                  ['low', '★1~2'],
+                  ['mid', '★3'],
+                  ['hi',  '★4~5'],
+                ] as const).map(([key, label]) => (
+                  <button key={key}
+                    className={`btn sm ${ratingTab === key ? 'active' : ''}`}
+                    onClick={() => { setRatingTab(key); setRvPage(0); }}>
+                    {label}
+                  </button>
+                ))}
+                <a href={`/product?no=${selectedProduct.musinsa_no}`} className="btn sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                  상품 페이지 <IcArrowUR size={11} />
+                </a>
+              </div>
+            </div>
+
+            {rvLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+                  <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3, width: '50%', marginBottom: 6 }} />
+                  <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3 }} />
+                </div>
+              ))
+            ) : reviews.length === 0 ? (
+              <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+                리뷰 없음
+              </div>
+            ) : reviews.map(r => (
+              <ReviewCard key={r.id} r={r} onNote={id => setNoteReviewId(id)} />
+            ))}
+
+            {reviews.length > 0 && (
+              <div className="row-flex between center" style={{ padding: '8px 14px', borderTop: '0.5px solid var(--bs)' }}>
+                <span className="mono dim" style={{ fontSize: 11 }}>
+                  {`${rvPage * RV_SIZE + 1}–${Math.min((rvPage + 1) * RV_SIZE, rvTotal)} / ${rvTotal.toLocaleString()}`}
+                </span>
+                <div className="row-flex gap-4">
+                  <button className="btn sm" onClick={() => setRvPage(p => Math.max(0, p - 1))} disabled={rvPage === 0}>←</button>
+                  <span className="mono dim" style={{ fontSize: 11 }}>{rvPage + 1} / {Math.ceil(rvTotal / RV_SIZE) || 1}</span>
+                  <button className="btn sm" onClick={() => setRvPage(p => p + 1)} disabled={(rvPage + 1) * RV_SIZE >= rvTotal}>→</button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+
+      {/* 리뷰 메모 드로어 */}
+      {noteReviewId && (
+        <NoteDrawer
+          entity_type="review"
+          entity_id={noteReviewId}
+          entity_label={reviews.find(r => r.id === noteReviewId)?.product_name ?? '리뷰'}
+          open={true}
+          onClose={() => setNoteReviewId(null)}
+        />
+      )}
+    </div>
   );
 }

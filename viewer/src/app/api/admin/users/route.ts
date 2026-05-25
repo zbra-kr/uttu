@@ -12,6 +12,10 @@ function kstMonthStart(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
 }
 
+function kstToday(): string {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+}
+
 export async function GET(req: NextRequest) {
   const { error } = await requireAdmin();
   if (error) return error;
@@ -53,15 +57,17 @@ export async function GET(req: NextRequest) {
     }) => [q.user_id, q]),
   );
 
-  // 3. 이번달 사용량 집계
+  // 3. 이번달 + 오늘 사용량 집계
   const monthStart = kstMonthStart();
+  const today      = kstToday();
   const { data: usageRows } = await adminClient
     .from('ai_usage_daily')
-    .select('user_id, input_tokens, output_tokens, session_count')
+    .select('user_id, usage_date, input_tokens, output_tokens, session_count')
     .gte('usage_date', monthStart);
 
   type UsageAccum = { input_tokens: number; output_tokens: number; session_count: number };
-  const usageMap = new Map<string, UsageAccum>();
+  const usageMap  = new Map<string, UsageAccum>();
+  const todayMap  = new Map<string, number>(); // user_id → today total tokens
   for (const row of (usageRows ?? [])) {
     const prev = usageMap.get(row.user_id) ?? { input_tokens: 0, output_tokens: 0, session_count: 0 };
     usageMap.set(row.user_id, {
@@ -69,6 +75,9 @@ export async function GET(req: NextRequest) {
       output_tokens: prev.output_tokens + (row.output_tokens ?? 0),
       session_count: prev.session_count + (row.session_count ?? 0),
     });
+    if (row.usage_date === today) {
+      todayMap.set(row.user_id, (todayMap.get(row.user_id) ?? 0) + (row.input_tokens ?? 0) + (row.output_tokens ?? 0));
+    }
   }
 
   // 4. email 검색 필터 (auth.users는 ilike 미지원 → 클라이언트 필터)
@@ -89,6 +98,7 @@ export async function GET(req: NextRequest) {
     const auth  = authMap.get(p.id) ?? { email: '', last_sign_in_at: null };
     const quota = quotaMap.get(p.id) ?? null;
     const usage = usageMap.get(p.id) ?? { input_tokens: 0, output_tokens: 0, session_count: 0 };
+    const usedToday = todayMap.get(p.id) ?? 0;
     return {
       id:              p.id,
       email:           auth.email,
@@ -111,6 +121,7 @@ export async function GET(req: NextRequest) {
         total_tokens:  usage.input_tokens + usage.output_tokens,
         session_count: usage.session_count,
       },
+      usage_today: usedToday,
     };
   });
 

@@ -168,6 +168,41 @@ class ProductScraper(BaseScraper):
 
     # ── 수집 루프 ────────────────────────────────────────────────────────────
 
+    def _get_magazine_product_ids(self) -> list[str]:
+        """magazine_article_products 에 연결된 products.id 중 detail_fetched_at IS NULL 목록."""
+        mag_nos: set[str] = set()
+        offset = 0
+        while True:
+            batch = (
+                self.client.table("magazine_article_products")
+                .select("musinsa_no")
+                .range(offset, offset + 999)
+                .execute()
+                .data or []
+            )
+            mag_nos.update(r["musinsa_no"] for r in batch if r.get("musinsa_no"))
+            if len(batch) < 1000:
+                break
+            offset += 1000
+
+        if not mag_nos:
+            return []
+
+        nos_list = list(mag_nos)
+        product_ids: list[str] = []
+        for i in range(0, len(nos_list), 200):
+            chunk = nos_list[i : i + 200]
+            rows = (
+                self.client.table("products")
+                .select("id")
+                .in_("musinsa_no", chunk)
+                .is_("detail_fetched_at", "null")
+                .execute()
+                .data or []
+            )
+            product_ids.extend(r["id"] for r in rows)
+        return product_ids
+
     def _get_snap_product_ids(self) -> list[str]:
         """snap_products 에 연결된 products.id 중 detail_fetched_at IS NULL 목록."""
         # 1) snap_products 의 고유 musinsa_no 수집
@@ -234,13 +269,36 @@ class ProductScraper(BaseScraper):
         today_ranking: bool = False,
         ranking_top_n: int = 50,
         snap_only: bool = False,
+        magazine_only: bool = False,
     ) -> int:
         """
         detail_fetched_at IS NULL인 stub 상품 수집.
         today_ranking=True면 오늘 랭킹 top_n 이내 상품만 수집 (111k 보류분 제외).
         snap_only=True면 snap_products 에 연결된 상품만 우선 수집.
+        magazine_only=True면 magazine_article_products 연결 상품만 우선 수집.
         """
-        if snap_only:
+        if magazine_only:
+            product_ids = self._get_magazine_product_ids()
+            if not product_ids:
+                logger.info("product_detail_magazine_only_empty")
+                return 0
+            if limit:
+                product_ids = product_ids[:limit]
+            logger.info("product_detail_magazine_only", candidates=len(product_ids))
+            targets: list[dict] = []
+            for i in range(0, len(product_ids), 200):
+                chunk = product_ids[i : i + 200]
+                rows = (
+                    self.client.table("products")
+                    .select("id, musinsa_no")
+                    .in_("id", chunk)
+                    .is_("detail_fetched_at", "null")
+                    .execute()
+                    .data or []
+                )
+                targets.extend(rows)
+            logger.info("product_detail_start", targets=len(targets))
+        elif snap_only:
             product_ids = self._get_snap_product_ids()
             if not product_ids:
                 logger.info("product_detail_snap_only_empty")
@@ -347,14 +405,14 @@ class ProductScraper(BaseScraper):
         return success
 
 
-async def main(limit: int = 50, own_only: bool = False, today_ranking: bool = False, ranking_top_n: int = 50, snap_only: bool = False) -> None:
+async def main(limit: int = 50, own_only: bool = False, today_ranking: bool = False, ranking_top_n: int = 50, snap_only: bool = False, magazine_only: bool = False) -> None:
     from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = ProductScraper(client)
     tracker = JobTracker(client, script="musinsa_product", label="상품 상세")
     await tracker.start()
     try:
-        total = await scraper.run(limit=limit, own_only=own_only, today_ranking=today_ranking, ranking_top_n=ranking_top_n, snap_only=snap_only)
+        total = await scraper.run(limit=limit, own_only=own_only, today_ranking=today_ranking, ranking_top_n=ranking_top_n, snap_only=snap_only, magazine_only=magazine_only)
         await tracker.finish(rows_done=total or 0)
     except Exception as e:
         await tracker.error(str(e))
@@ -371,5 +429,6 @@ if __name__ == "__main__":
     parser.add_argument("--today-ranking", action="store_true", help="오늘 랭킹 top-n 상품만 수집 (보류분 111k 제외)")
     parser.add_argument("--ranking-top-n", type=int, default=50, help="랭킹 몇 위까지 수집할지 (기본 50)")
     parser.add_argument("--snap-only", action="store_true", help="snap_products 연결 상품만 우선 수집 (111k 보류분 제외)")
+    parser.add_argument("--magazine-only", action="store_true", help="magazine_article_products 연결 상품만 우선 수집")
     args = parser.parse_args()
-    asyncio.run(main(limit=args.limit, own_only=args.own_only, today_ranking=args.today_ranking, ranking_top_n=args.ranking_top_n, snap_only=args.snap_only))
+    asyncio.run(main(limit=args.limit, own_only=args.own_only, today_ranking=args.today_ranking, ranking_top_n=args.ranking_top_n, snap_only=args.snap_only, magazine_only=args.magazine_only))

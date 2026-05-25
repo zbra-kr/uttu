@@ -18,6 +18,7 @@ from loguru import logger
 from worker.detectors.base import Anomaly, save_anomalies, supabase_client
 from worker.detectors.bookmark_detector import detect_bookmark_changes
 from worker.detectors.brand_ranking_detector import detect_brand_ranking
+from worker.detectors.magazine_boost_detector import detect_magazine_boost
 from worker.detectors.ranking_detector import detect_promo_anomalies, detect_promo_discount, detect_ranking
 from worker.detectors.review_detector import detect_review
 from worker.notifications.enqueue import enqueue_for_subscribers
@@ -43,6 +44,9 @@ _ANOMALY_LABELS: dict[str, str] = {
     "brand_new_entrant_top10":     "브랜드 TOP10 신규 진입",
     "brand_exit_top50_own":        "자사 브랜드 TOP50 이탈",
     "brand_rank_gender_diverge":   "브랜드 성별 순위 편차",
+    # 매거진
+    "magazine_rank_boost":     "매거진 피처링 후 순위 급등",
+    "magazine_rank_new_entry": "매거진 피처링 후 랭킹 신규 진입",
     # 리뷰
     "review_rating_drop":    "자사 리뷰 평점 하락",
     "review_negative_surge": "자사 부정 리뷰 급증",
@@ -110,6 +114,9 @@ def run(target_date: date) -> None:
 
     _enqueue_anomalies(all_anomalies, target_date)
     logger.info(f"enqueue_done date={target_date} high={sum(1 for a in all_anomalies if a.severity=='high')} med={sum(1 for a in all_anomalies if a.severity=='medium')}")
+
+    # 매거진 피처링 → 순위 급등
+    all_anomalies.extend(detect_magazine_boost(client, target_date))
 
     # 북마크 기반 랭킹 변동 알림
     try:

@@ -184,7 +184,7 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
 
       {isAdmin && (
         <>
-          {show ? (
+          {!collapsed ? (
             <button
               className="sb-section"
               onClick={() => setAdminOpen(o => !o)}
@@ -194,7 +194,7 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
                 padding: 0, textAlign: 'left',
               }}
             >
-              <span>관리</span>
+              <span>Administrator</span>
               <IcChevD
                 size={11}
                 style={{
@@ -208,7 +208,7 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
           ) : (
             <div className="sb-section" />
           )}
-          {(adminOpen || !show) && (
+          {(adminOpen || collapsed) && (
             <nav className="sb-nav">
               {MANAGE_ROUTES.map(r => (
                 <Link

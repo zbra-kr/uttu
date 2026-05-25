@@ -1,17 +1,31 @@
 """
 무신사 자사 브랜드 상품 리뷰 스크래퍼
-API: api.musinsa.com/api2/review/v1/view/list (인증 불필요)
-대상: products.is_own = True, 수집 주기:
-  - 리뷰 있는 상품: 매일 확인 (review_checked_at < 1일)
-  - 리뷰 없는 상품: 7일마다 확인 (review_checked_at < 7일 또는 NULL)
-증분: reviews 테이블의 MAX(review_date) 이후 신규 리뷰만 수집
+
+수집 모드:
+  --backfill  전체 수집 (1회성). is_own=True 전체 상품, 모든 페이지 수집.
+              NULL review_checked_at 상품 먼저 → review_count 많은 순.
+              재시작 시 이미 처리된 상품은 자동 스킵 (마커파일 기반).
+  (기본)      일별 증분 수집. ranking_snapshots 최근 30일 등장 활성 상품만.
+              _get_last_review_date 이후 신규 리뷰만 수집.
+
 금지: userNickName, userId, encryptedUserId — 개인정보 절대 저장 금지
 pageSize 최대 20 (50+ → HTTP 400)
 """
 
 import os
+import pathlib
 from datetime import date, datetime, timedelta
 from typing import Any
+
+
+def _fmt_duration(td: timedelta) -> str:
+    """timedelta → '2시간 15분' 형식."""
+    total_sec = int(td.total_seconds())
+    h, rem = divmod(total_sec, 3600)
+    m = rem // 60
+    if h > 0:
+        return f"{h}시간 {m}분"
+    return f"{m}분"
 
 import httpx
 import pytz
@@ -27,6 +41,9 @@ REVIEW_URL = "https://api.musinsa.com/api2/review/v1/view/list"
 CDN_BASE = "https://image.msscdn.net"
 PAGE_SIZE = 20
 KST = pytz.timezone("Asia/Seoul")
+
+# backfill 재시작 지원용 마커파일
+BACKFILL_MARKER = pathlib.Path.home() / ".uttu_backfill_started"
 
 
 def _supabase_client() -> Client:
@@ -76,6 +93,18 @@ class ReviewScraper(BaseScraper):
         create_date_str = item.get("createDate", "")
         review_date = create_date_str[:10] if create_date_str else None
 
+        # 체형정보 — 닉네임·사용자ID는 절대 수집 금지 (개인정보)
+        profile = item.get("userProfileInfo") or {}
+
+        # 만족도: [{attribute: "사이즈", answer: "정사이즈"}, ...]
+        satisfaction_raw = item.get("reviewSurveySatisfaction") or {}
+        questions = satisfaction_raw.get("questions") or []
+        satisfactions: list[dict] | None = [
+            {"attribute": q["attribute"], "answer": q["answers"][0]["answerShortText"]}
+            for q in questions
+            if q.get("answers")
+        ] or None
+
         return {
             "product_id": product_id,
             "musinsa_review_id": str(item["no"]),
@@ -85,44 +114,48 @@ class ReviewScraper(BaseScraper):
             "helpful_count": item.get("likeCount") or 0,
             "has_image": len(image_urls) > 0,
             "image_urls": image_urls,
+            "purchase_option": item.get("goodsOption") or None,
+            "member_height": profile.get("userHeight") or None,
+            "member_weight": profile.get("userWeight") or None,
+            "member_gender": profile.get("reviewSex") or None,
+            "satisfactions": satisfactions,
+            "is_experience": bool(item.get("specialtyCodes")),
         }
 
     # ── DB 헬퍼 ──────────────────────────────────────────────────────────────
 
-    def _get_products_to_check(self) -> list[dict[str, str]]:
+    def _get_backfill_start(self) -> str:
         """
-        수집 대상 자사 상품 (id, musinsa_no) 반환.
-        - 리뷰 있는 상품: review_checked_at < now() - 1일 (또는 NULL)
-        - 리뷰 없는 상품: review_checked_at < now() - 7일 (또는 NULL)
+        backfill 시작 시각을 마커파일에서 읽거나 신규 생성.
+        재시작 시 이 시각 이후 review_checked_at인 상품은 스킵 (이미 처리됨).
         """
-        now = datetime.now(KST)
-        daily_cutoff = (now - timedelta(days=1)).isoformat()
-        weekly_cutoff = (now - timedelta(days=7)).isoformat()
+        if BACKFILL_MARKER.exists():
+            ts = BACKFILL_MARKER.read_text().strip()
+            logger.info("backfill_resume", backfill_started=ts)
+            return ts
+        ts = datetime.now(KST).isoformat()
+        BACKFILL_MARKER.write_text(ts)
+        logger.info("backfill_start_new", backfill_started=ts)
+        return ts
 
-        # 리뷰가 있는 product_id 집합
-        reviewed_ids: set[str] = set()
-        offset = 0
-        while True:
-            rows = (
-                self.client.table("reviews")
-                .select("product_id")
-                .range(offset, offset + 999)
-                .execute()
-                .data or []
-            )
-            reviewed_ids.update(r["product_id"] for r in rows)
-            if len(rows) < 1000:
-                break
-            offset += 1000
+    def _get_products_backfill(self) -> list[dict]:
+        """
+        backfill 대상: is_own=True 전체 상품.
+        - review_checked_at IS NULL 인 상품 먼저 (미처리)
+        - 그 다음 review_checked_at < backfill_start 인 상품 (이전 daily로 체크됐지만 전수 미수집)
+        - 이미 이번 backfill에서 처리된 상품(checked_at >= backfill_start)은 스킵
+        - review_count 많은 순 정렬
+        """
+        backfill_start = self._get_backfill_start()
 
-        # 자사 상품 전체 조회
         all_products: list[dict] = []
         offset = 0
         while True:
             rows = (
                 self.client.table("products")
-                .select("id, musinsa_no, review_checked_at")
+                .select("id, musinsa_no, name, review_count, review_checked_at")
                 .eq("is_own", True)
+                .or_(f"review_checked_at.is.null,review_checked_at.lt.{backfill_start}")
                 .range(offset, offset + 999)
                 .execute()
                 .data or []
@@ -132,15 +165,65 @@ class ReviewScraper(BaseScraper):
                 break
             offset += 1000
 
-        targets: list[dict] = []
-        for p in all_products:
-            checked = p.get("review_checked_at")
-            has_review = p["id"] in reviewed_ids
-            if has_review and (checked is None or checked < daily_cutoff):
-                targets.append(p)
-            elif not has_review and checked is not None and checked < weekly_cutoff:
-                targets.append(p)
+        # NULL checked_at 먼저, 그 다음 review_count 많은 순
+        all_products.sort(
+            key=lambda p: (
+                0 if p.get("review_checked_at") is None else 1,
+                -(p.get("review_count") or 0),
+            )
+        )
+        return all_products
 
+    def _get_products_daily(self) -> list[dict]:
+        """
+        daily 대상: ranking_snapshots 최근 30일 등장 + is_sold_out=False 자사 상품.
+        review_checked_at 기준 수집 주기 적용 (1일 미경과 상품 스킵).
+        """
+        cutoff_date = (date.today() - timedelta(days=30)).isoformat()
+        now = datetime.now(KST)
+        daily_cutoff = (now - timedelta(days=1)).isoformat()
+
+        # Step 1: 최근 30일 활성 product_id 수집 (is_sold_out=False)
+        active_pids: set[str] = set()
+        offset = 0
+        while True:
+            rows = (
+                self.client.table("ranking_snapshots")
+                .select("product_id")
+                .gte("snapshot_date", cutoff_date)
+                .eq("is_sold_out", False)
+                .range(offset, offset + 999)
+                .execute()
+                .data or []
+            )
+            active_pids.update(r["product_id"] for r in rows)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+
+        if not active_pids:
+            logger.warning("daily_no_active_products_in_ranking")
+            return []
+
+        # Step 2: 자사 상품 필터 + 수집 주기 체크 (500개씩 배치)
+        targets: list[dict] = []
+        pid_list = list(active_pids)
+        for i in range(0, len(pid_list), 500):
+            rows = (
+                self.client.table("products")
+                .select("id, musinsa_no, review_count, review_checked_at")
+                .eq("is_own", True)
+                .in_("id", pid_list[i : i + 500])
+                .execute()
+                .data or []
+            )
+            for p in rows:
+                checked = p.get("review_checked_at")
+                if checked is None or checked < daily_cutoff:
+                    targets.append(p)
+
+        # review_count 많은 순 정렬
+        targets.sort(key=lambda p: p.get("review_count") or 0, reverse=True)
         return targets
 
     def _mark_checked(self, product_id: str) -> None:
@@ -185,14 +268,14 @@ class ReviewScraper(BaseScraper):
 
     # ── 수집 루프 ────────────────────────────────────────────────────────────
 
-    async def run_product(self, product_id: str, musinsa_no: str) -> int:
+    async def run_product(self, product_id: str, musinsa_no: str, full_collect: bool = False) -> int:
         """
         단일 상품 리뷰 수집.
-        - 첫 실행: 전체 페이지 수집
-        - 이후: last_review_date 이후 신규 리뷰만 수집 (당일 포함 중단)
-        반환값: 실제 새로 삽입된 리뷰 수
+        full_collect=True (backfill): last_date 무시, 전체 페이지 수집.
+        full_collect=False (daily):   last_review_date 이후 신규 리뷰만 수집.
+        반환값: 실제 새로 삽입된 리뷰 수.
         """
-        last_date = self._get_last_review_date(product_id)
+        last_date = None if full_collect else self._get_last_review_date(product_id)
         page = 1
         total_inserted = 0
         stop_early = False
@@ -215,8 +298,7 @@ class ReviewScraper(BaseScraper):
                 create_date_str = item.get("createDate", "")
                 review_date = date.fromisoformat(create_date_str[:10]) if create_date_str else None
 
-                # 증분: last_date 이하(당일 포함) 리뷰는 이미 수집했으므로 중단
-                # 당일 리뷰는 ignore_duplicates=True로 중복 스킵되지만, 안전하게 포함
+                # 증분(daily): last_date보다 오래된 리뷰는 이미 수집됨 → 중단
                 if last_date and review_date and review_date < last_date:
                     stop_early = True
                     break
@@ -236,57 +318,149 @@ class ReviewScraper(BaseScraper):
                 musinsa_no=musinsa_no,
                 new_reviews=total_inserted,
                 pages=page,
-                incremental=last_date is not None,
+                mode="backfill" if full_collect else "incremental",
             )
         return total_inserted
 
-    async def run(self, limit: int | None = None) -> int:
+    async def run_backfill(self, limit: int | None = None) -> int:
         """
-        자사 상품 리뷰 수집 (스마트 주기).
-        - 리뷰 있는 상품: 매일 확인
-        - 리뷰 없는 상품: 7일마다 확인
-        limit: 테스트용 상품 수 제한 (None = 전체).
+        전체 수집 모드 (1회성 backfill).
+        - 모든 자사 상품 대상 (style_no, 연도 무관)
+        - NULL review_checked_at 먼저, 이후 나머지 순
+        - 재시작 시 이번 backfill에서 이미 처리된 상품 자동 스킵
+        - 1시간마다 Telegram 진행 상황 알림
+        - 완료 시 마커파일 삭제
         """
         from worker.tasks.notify import send
 
-        products = self._get_products_to_check()
+        products = self._get_products_backfill()
         if limit:
             products = products[:limit]
 
-        logger.info("review_run_start", total_products=len(products))
+        total = len(products)
+        started_at = datetime.now(KST)
+        last_notify_at = started_at
+
+        logger.info("review_backfill_start", total_products=total)
+        send(
+            f"[UTTU] 리뷰 backfill 시작\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"대상 상품: {total:,}개\n"
+            f"시작: {started_at.strftime('%Y-%m-%d %H:%M')}\n"
+            f"예상 소요: 10~16시간"
+        )
 
         grand_total = 0
+        current_no = "-"
+        current_name = "-"
+
         for idx, row in enumerate(products, 1):
             product_id = row["id"]
             musinsa_no = row["musinsa_no"]
-            upserted = await self.run_product(product_id, musinsa_no)
+            current_no = musinsa_no
+            current_name = (row.get("name") or musinsa_no)[:20]
+
+            upserted = await self.run_product(product_id, musinsa_no, full_collect=True)
             self._mark_checked(product_id)
             grand_total += upserted
 
             if idx % 100 == 0:
                 logger.info(
-                    "review_run_progress",
+                    "review_backfill_progress",
                     done=idx,
-                    total=len(products),
+                    total=total,
                     reviews_so_far=grand_total,
                 )
 
-        logger.info("review_run_done", total_products=len(products), total_reviews=grand_total)
+            # 1시간마다 Telegram 알림
+            now = datetime.now(KST)
+            if (now - last_notify_at).total_seconds() >= 3600:
+                last_notify_at = now
+                elapsed = now - started_at
+                pct = idx / total * 100
+                rate_sec = elapsed.total_seconds() / idx
+                remaining = timedelta(seconds=rate_sec * (total - idx))
+                send(
+                    f"[UTTU] 리뷰 backfill 진행 중\n"
+                    f"━━━━━━━━━━━━━━\n"
+                    f"진행: {idx:,}/{total:,}개 ({pct:.1f}%)\n"
+                    f"수집 리뷰: {grand_total:,}건\n"
+                    f"\n"
+                    f"시작: {started_at.strftime('%Y-%m-%d %H:%M')}\n"
+                    f"경과: {_fmt_duration(elapsed)}\n"
+                    f"잔여: {_fmt_duration(remaining)} (예상)\n"
+                    f"\n"
+                    f"현재: {current_no} {current_name}"
+                )
+
+        elapsed_total = datetime.now(KST) - started_at
+        logger.info("review_backfill_done", total_products=total, total_reviews=grand_total)
+        send(
+            f"[UTTU] 리뷰 backfill 완료\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"수집 상품: {total:,}개\n"
+            f"총 리뷰: {grand_total:,}건\n"
+            f"소요 시간: {_fmt_duration(elapsed_total)}"
+        )
+
+        # 완료 후 마커파일 삭제 (다음 backfill 실행 시 새 타임스탬프 생성)
+        if BACKFILL_MARKER.exists():
+            BACKFILL_MARKER.unlink()
+            logger.info("backfill_marker_removed")
+
+        return grand_total
+
+    async def run_daily(self, limit: int | None = None) -> int:
+        """
+        일별 증분 수집.
+        - ranking_snapshots 최근 30일 등장 + is_sold_out=False 자사 상품만
+        - review_checked_at 기준 1일 이내 상품은 스킵
+        """
+        from worker.tasks.notify import send
+
+        products = self._get_products_daily()
+        if limit:
+            products = products[:limit]
+
+        total = len(products)
+        logger.info("review_daily_start", total_products=total)
+
+        grand_total = 0
+        for idx, row in enumerate(products, 1):
+            product_id = row["id"]
+            musinsa_no = row["musinsa_no"]
+            upserted = await self.run_product(product_id, musinsa_no, full_collect=False)
+            self._mark_checked(product_id)
+            grand_total += upserted
+
+            if idx % 100 == 0:
+                logger.info(
+                    "review_daily_progress",
+                    done=idx,
+                    total=total,
+                    reviews_so_far=grand_total,
+                )
+
+        logger.info("review_daily_done", total_products=total, total_reviews=grand_total)
         send(
             f"[UTTU] 리뷰 수집 완료\n"
-            f"확인 상품: {len(products)}개 / 신규 리뷰: {grand_total}건"
+            f"활성 상품: {total}개 / 신규 리뷰: {grand_total:,}건"
         )
         return grand_total
 
 
-async def main(limit: int | None = None) -> None:
+async def main(backfill: bool = False, limit: int | None = None) -> None:
     from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = ReviewScraper(client)
-    tracker = JobTracker(client, script="musinsa_review", label="리뷰 수집")
+    label = "리뷰 전체수집(backfill)" if backfill else "리뷰 증분수집"
+    tracker = JobTracker(client, script="musinsa_review", label=label)
     await tracker.start()
     try:
-        total = await scraper.run(limit=limit)
+        if backfill:
+            total = await scraper.run_backfill(limit=limit)
+        else:
+            total = await scraper.run_daily(limit=limit)
         await tracker.finish(rows_done=total or 0)
     except Exception as e:
         await tracker.error(str(e))
@@ -297,7 +471,17 @@ if __name__ == "__main__":
     import asyncio
     import argparse
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=None, help="테스트용 상품 수 제한")
+    parser = argparse.ArgumentParser(description="무신사 자사 상품 리뷰 수집")
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="전체 수집 모드 (1회성). 모든 자사 상품의 모든 리뷰를 수집."
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="테스트용 상품 수 제한 (두 모드 공통)"
+    )
     args = parser.parse_args()
-    asyncio.run(main(limit=args.limit))
+    asyncio.run(main(backfill=args.backfill, limit=args.limit))

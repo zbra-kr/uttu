@@ -26,8 +26,16 @@ interface PeriodFilterProps {
   to?: string;
   onFromChange?: (v: string) => void;
   onToChange?: (v: string) => void;
+  options?: [string, string][];
 }
-export const PeriodFilter = ({ value, onChange, from, to, onFromChange, onToChange }: PeriodFilterProps) => (
+const DEFAULT_PERIOD_OPTIONS: [string, string][] = [
+  ['all',    '전체'],
+  ['7d',     '7일'],
+  ['30d',    '30일'],
+  ['90d',    '90일'],
+  ['custom', '직접'],
+];
+export const PeriodFilter = ({ value, onChange, from, to, onFromChange, onToChange, options }: PeriodFilterProps) => (
   <div className="fblock">
     <div className="field-lbl-row">
       <span className="field-lbl">기간</span>
@@ -35,13 +43,7 @@ export const PeriodFilter = ({ value, onChange, from, to, onFromChange, onToChan
         <span className="mono dim" style={{ fontSize: 10 }}>{from} ~ {to}</span>
       )}
     </div>
-    <SegGroup value={value} onChange={onChange} options={[
-      ['today', '오늘'],
-      ['7d', '7일'],
-      ['30d', '30일'],
-      ['90d', '90일'],
-      ['custom', '직접'],
-    ]} />
+    <SegGroup value={value} onChange={onChange} options={options ?? DEFAULT_PERIOD_OPTIONS} />
     {value === 'custom' && (
       <div className="daterange">
         <input type="date" className="input-date" value={from} onChange={(e) => onFromChange?.(e.target.value)} />

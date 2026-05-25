@@ -1,9 +1,12 @@
 'use client';
 import React from 'react';
-import { PeriodFilter, FilterBlock, CheckRow, DismissChip, SegGroup } from '@/components/ui/filters';
-import { IcDownload, IcBookmark, IcArrowUR, IcX, IcCheck, IcPlus, IcChevL, IcChevR } from '@/components/ui/icons';
+import { useSearchParams } from 'next/navigation';
+import { PeriodFilter, FilterBlock, CheckRow, DismissChip } from '@/components/ui/filters';
+import { IcDownload, IcBookmark, IcArrowUR, IcX, IcPlus, IcChevL, IcChevR } from '@/components/ui/icons';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
+import NoteDrawer from '@/components/me/NoteDrawer';
+import { fetchNoteCountForEntity } from '@/lib/queries-me';
 
 interface ARow {
   id: string;
@@ -13,10 +16,10 @@ interface ARow {
   severity: string;
   anomaly_type: string;
   entity_type: string | null;
+  entity_id: string | null;
   entity_name: string | null;
   description: string | null;
   meta: Record<string, any> | null;
-  is_read: boolean;
   // computed
   sev: 'hi' | 'md' | 'lo';
   area: string;
@@ -145,32 +148,36 @@ function MetaMetrics({ row }: { row: ARow }) {
   );
 }
 
-function AnomalyDrawer({ item, onClose, onPrev, onNext, onMarkRead }: {
+function AnomalyDrawer({ item, onClose, onPrev, onNext }: {
   item: ARow;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
-  onMarkRead: (id: string) => void;
 }) {
-  const [saving, setSaving] = React.useState(false);
-  const statusLabel = item.is_read ? '해소' : '미해소';
-  const statusSev   = item.is_read ? 'lo' : 'hi';
+  const [noteOpen,   setNoteOpen]   = React.useState(false);
+  const [noteCount,  setNoteCount]  = React.useState(0);
+  const [entityLink, setEntityLink] = React.useState<string | null>(null);
 
-  const handleMarkRead = async () => {
-    if (item.is_read || saving) return;
-    setSaving(true);
-    const { error } = await supabaseBrowser()
-      .from('anomalies')
-      .update({ is_read: true })
-      .eq('id', item.id);
-    setSaving(false);
-    if (!error) onMarkRead(item.id);
-  };
+  React.useEffect(() => {
+    setNoteOpen(false);
+    setEntityLink(null);
+    fetchNoteCountForEntity('anomaly', item.id).then(setNoteCount);
 
-  const handleMarkReadAndNext = async () => {
-    await handleMarkRead();
-    onNext();
-  };
+    if (!item.entity_id || !item.entity_type) return;
+    if (item.entity_type === 'brand') {
+      setEntityLink(`/brand?id=${item.entity_id}`);
+    } else if (item.entity_type === 'product') {
+      const table = item.anomaly_type === 'promo_heavy_discount' ? 'promotion_items' : 'products';
+      supabaseBrowser()
+        .from(table)
+        .select('musinsa_no')
+        .eq('id', item.entity_id)
+        .single()
+        .then(({ data }) => {
+          if (data?.musinsa_no) setEntityLink(`/product?no=${data.musinsa_no}`);
+        });
+    }
+  }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -196,27 +203,17 @@ function AnomalyDrawer({ item, onClose, onPrev, onNext, onMarkRead }: {
             {item.entity_name && (
               <div className="row-flex baseline gap-8" style={{ marginTop: 6 }}>
                 <span className="sec-tag">target</span>
-                <span style={{ fontSize: 13, color: 'var(--f2)' }}>{item.entity_name}</span>
+                {entityLink ? (
+                  <a href={entityLink} style={{ fontSize: 13, color: 'var(--hs)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    {item.entity_name}
+                    <IcArrowUR size={11} />
+                  </a>
+                ) : (
+                  <span style={{ fontSize: 13, color: 'var(--f2)' }}>{item.entity_name}</span>
+                )}
               </div>
             )}
           </div>
-
-          <section className="panel compact">
-            <div className="row-flex between center">
-              <span className="sec-tag">처리 상태</span>
-              <span className={`sev ${statusSev}`}><span className="pip" />{statusLabel}</span>
-            </div>
-            <div className="row-flex gap-4" style={{ marginTop: 10 }}>
-              <button
-                className="btn sm primary"
-                onClick={handleMarkRead}
-                disabled={item.is_read || saving}
-              >
-                <IcCheck /> 해소로 표시
-              </button>
-              <button className="btn sm"><IcPlus /> 메모 추가</button>
-            </div>
-          </section>
 
           <section className="panel compact">
             <div className="sec-head"><h3>핵심 지표</h3></div>
@@ -238,50 +235,56 @@ function AnomalyDrawer({ item, onClose, onPrev, onNext, onMarkRead }: {
               ))}
             </div>
           </section>
-
-          <section>
-            <div className="sec-head"><h3>메모</h3></div>
-            <button className="btn sm"><IcPlus /> 메모 추가</button>
-          </section>
         </div>
 
         <div className="drawer-foot">
           <button className="btn sm icon" onClick={onPrev}><IcChevL /></button>
           <button className="btn sm icon" onClick={onNext}><IcChevR /></button>
           <div className="flex-1" />
-          <button className="btn sm"><IcDownload /> 공유</button>
-          <button
-            className="btn primary sm"
-            onClick={handleMarkReadAndNext}
-            disabled={item.is_read || saving}
-          >
-            <IcCheck /> 해소 + 다음
+          <button className="btn sm" onClick={() => setNoteOpen(true)} style={{ position: 'relative' }}>
+            <IcPlus /> 메모
+            {noteCount > 0 && (
+              <span style={{
+                position: 'absolute', top: -4, right: -4,
+                minWidth: 14, height: 14, borderRadius: 7, padding: '0 3px',
+                background: 'var(--hs)', color: 'var(--bg)',
+                fontSize: 9, fontFamily: 'var(--mono)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                lineHeight: 1, pointerEvents: 'none',
+              }}>
+                {noteCount}
+              </span>
+            )}
           </button>
         </div>
       </aside>
+
+      <NoteDrawer
+        entity_type="anomaly"
+        entity_id={item.id}
+        entity_label={item.entity_name ?? anomalyLabel(item.anomaly_type)}
+        open={noteOpen}
+        onClose={() => setNoteOpen(false)}
+        onCountChange={setNoteCount}
+      />
     </>
   );
 }
 
 export default function AnomalyPage() {
-  const jumpId = React.useMemo(() => {
-    if (typeof window !== 'undefined') return new URLSearchParams(window.location.search).get('id') ?? '';
-    return '';
-  }, []);
+  const params  = useSearchParams();
+  const jumpId  = params.get('id') ?? '';
 
-  const [period,   setPeriod]   = React.useState('7d');
+  const [period,   setPeriod]   = React.useState('today');
   const [fromDate, setFromDate] = React.useState(() => kstDaysAgo(6));
   const [toDate,   setToDate]   = React.useState(kstToday);
 
-  const [sev,    setSev]    = React.useState(() => {
-    if (typeof window !== 'undefined') {
-      const p = new URLSearchParams(window.location.search).get('sev');
-      if (p && ['hi', 'md', 'lo'].includes(p)) return new Set([p]);
-    }
-    return new Set(['hi', 'md', 'lo']);
-  });
+  const [sev, setSev] = React.useState(new Set(['hi', 'md', 'lo']));
+  React.useEffect(() => {
+    const p = params.get('sev');
+    if (p && ['hi', 'md', 'lo'].includes(p)) setSev(new Set([p]));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [area,   setArea]   = React.useState(new Set(ALL_AREAS));
-  const [status, setStatus] = React.useState('open');
   const [detail, setDetail] = React.useState<ARow | null>(null);
 
   const [rows,    setRows]    = React.useState<ARow[]>([]);
@@ -294,7 +297,7 @@ export default function AnomalyPage() {
     if (!jumpId || jumpedRef.current) return;
     supabaseBrowser()
       .from('anomalies')
-      .select('id, detected_at, detection_date, module, severity, anomaly_type, entity_type, entity_name, description, meta, is_read')
+      .select('id, detected_at, detection_date, module, severity, anomaly_type, entity_type, entity_id, entity_name, description, meta')
       .eq('id', jumpId)
       .single()
       .then(({ data }) => {
@@ -302,7 +305,6 @@ export default function AnomalyPage() {
         jumpedRef.current = true;
         const row: ARow = { ...data, sev: sevKey(data.severity), area: areaKey(data.anomaly_type) };
         setSev(new Set(['hi', 'md', 'lo']));
-        setStatus('all');
         setDetail(row);
       });
   }, [jumpId]);
@@ -316,7 +318,7 @@ export default function AnomalyPage() {
       setErrMsg(null);
       const { data, error } = await supabaseBrowser()
         .from('anomalies')
-        .select('id, detected_at, detection_date, module, severity, anomaly_type, entity_type, entity_name, description, meta, is_read')
+        .select('id, detected_at, detection_date, module, severity, anomaly_type, entity_type, entity_id, entity_name, description, meta')
         .gte('detection_date', from)
         .lte('detection_date', to)
         .order('detected_at', { ascending: false })
@@ -340,16 +342,9 @@ export default function AnomalyPage() {
   const toggleSev  = (k: string) => setSev(p  => { const n = new Set(p);  n.has(k) ? n.delete(k) : n.add(k); return n; });
   const toggleArea = (k: string) => setArea(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
-  const handleMarkRead = (id: string) => {
-    setRows(prev => prev.map(r => r.id === id ? { ...r, is_read: true } : r));
-    setDetail(prev => prev?.id === id ? { ...prev, is_read: true } : prev);
-  };
-
   const filtered = rows.filter(r => {
     if (!sev.has(r.sev))   return false;
     if (!area.has(r.area)) return false;
-    if (status === 'open'   &&  r.is_read) return false;
-    if (status === 'closed' && !r.is_read) return false;
     return true;
   });
 
@@ -363,7 +358,6 @@ export default function AnomalyPage() {
     setPeriod('7d');
     setSev(new Set(['hi', 'md', 'lo']));
     setArea(new Set(ALL_AREAS));
-    setStatus('open');
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -374,7 +368,6 @@ export default function AnomalyPage() {
     if (f.toDate !== undefined)    setToDate(f.toDate);
     if (Array.isArray(f.sev))      setSev(new Set(f.sev));
     if (Array.isArray(f.area))     setArea(new Set(f.area));
-    if (f.status !== undefined)    setStatus(f.status);
   };
 
   return (
@@ -382,20 +375,19 @@ export default function AnomalyPage() {
       <div className="page-title">
         <h1>이상탐지</h1>
         <span className="chip mono">{periodLabel}</span>
-        <span className="sub">자동 발견된 특이점 — 영역·심각도·해소 상태로 필터</span>
+        <span className="sub">자동 발견된 특이점 — 영역·심각도로 필터</span>
         <div className="row-flex gap-6" style={{ marginLeft: 'auto' }}>
           <button className="btn sm"><IcDownload /> CSV</button>
           <button className="btn sm"><IcBookmark /> 필터 저장</button>
         </div>
       </div>
 
-      <div className="grid grid-5 gap-8">
+      <div className="grid grid-4 gap-8">
         {([
           ['전체',   loading ? '…' : String(rows.length),                                              periodLabel],
           ['HIGH',   loading ? '…' : String(sevCount('hi')),                                           '심각 신호'],
           ['상품기획',loading ? '…' : String(rows.filter(r => r.module === 'product_planning').length), ''],
           ['CS',     loading ? '…' : String(rows.filter(r => r.module === 'cs').length),               ''],
-          ['미해소',  loading ? '…' : String(rows.filter(r => !r.is_read).length),                     ''],
         ] as [string, string, string][]).map(([l, v, d], i) => (
           <div key={i} className="kpi">
             <span className="label">{l}</span>
@@ -422,7 +414,7 @@ export default function AnomalyPage() {
               page="/anomaly"
               currentFilter={{
                 period, fromDate, toDate,
-                sev: [...sev], area: [...area], status,
+                sev: [...sev], area: [...area],
               }}
               onLoad={handleLoadFilter}
             />
@@ -432,6 +424,13 @@ export default function AnomalyPage() {
               value={period} onChange={setPeriod}
               from={fromDate} to={toDate}
               onFromChange={setFromDate} onToChange={setToDate}
+              options={[
+                ['today',  '오늘'],
+                ['7d',     '7일'],
+                ['30d',    '30일'],
+                ['90d',    '90일'],
+                ['custom', '직접'],
+              ]}
             />
 
             <FilterBlock label="심각도" hint={`${sev.size}/3`}>
@@ -455,15 +454,6 @@ export default function AnomalyPage() {
                 />
               ))}
             </FilterBlock>
-
-            <FilterBlock label="처리 상태">
-              <SegGroup value={status} onChange={setStatus}
-                options={[
-                  ['all',    '전체'],
-                  ['open',   '미해소'],
-                  ['closed', '해소'],
-                ]} />
-            </FilterBlock>
           </div>
         </aside>
 
@@ -481,24 +471,18 @@ export default function AnomalyPage() {
                 영역 {area.size}/{ALL_AREAS.length}
               </DismissChip>
             )}
-            {status !== 'all' && (
-              <DismissChip onDismiss={() => setStatus('all')}>
-                {status === 'open' ? '미해소' : '해소'}
-              </DismissChip>
-            )}
             <div className="flex-1" />
             <span className="mono dim" style={{ fontSize: 12 }}>{filtered.length}건 / {rows.length}</span>
           </div>
 
           <section className="panel" style={{ padding: 0 }}>
             <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
-              <div className="row head" style={{ gridTemplateColumns: '130px 60px 70px 1fr 220px 80px 46px' }}>
+              <div className="row head" style={{ gridTemplateColumns: '130px 60px 70px 1fr 220px 46px' }}>
                 <span>시각</span>
                 <span>sev</span>
                 <span>영역</span>
                 <span>이벤트</span>
                 <span>대상</span>
-                <span>상태</span>
                 <span></span>
               </div>
 
@@ -508,32 +492,24 @@ export default function AnomalyPage() {
                 </div>
               )}
 
-              {!loading && filtered.map((r, i) => {
-                const statusSev = r.is_read ? 'lo' : 'hi';
-                return (
-                  <div key={r.id}
-                    className={`row hover ${i % 2 ? 'alt' : ''}`}
-                    style={{ gridTemplateColumns: '130px 60px 70px 1fr 220px 80px 46px', cursor: 'pointer' }}
-                    onClick={() => setDetail(r)}
-                  >
-                    <span className="mono dim" style={{ fontSize: 11 }}>{formatTs(r.detected_at)}</span>
-                    <span><span className={`sev ${r.sev}`}><span className="pip" />{r.sev.toUpperCase()}</span></span>
-                    <span className="mono" style={{ fontSize: 11, color: 'var(--f2)' }}>{r.area}</span>
-                    <span style={{ fontSize: 12 }}>{eventLabel(r)}</span>
-                    <span className="muted ellip" style={{ fontSize: 12 }}>{r.entity_name || '—'}</span>
-                    <span>
-                      <span className={`sev ${statusSev}`}>
-                        <span className="pip" />{r.is_read ? '해소' : '미해소'}
-                      </span>
-                    </span>
-                    <span>
-                      <button className="btn sm icon" onClick={e => { e.stopPropagation(); setDetail(r); }}>
-                        <IcArrowUR />
-                      </button>
-                    </span>
-                  </div>
-                );
-              })}
+              {!loading && filtered.map((r, i) => (
+                <div key={r.id}
+                  className={`row hover ${i % 2 ? 'alt' : ''}`}
+                  style={{ gridTemplateColumns: '130px 60px 70px 1fr 220px 46px', cursor: 'pointer' }}
+                  onClick={() => setDetail(r)}
+                >
+                  <span className="mono dim" style={{ fontSize: 11 }}>{formatTs(r.detected_at)}</span>
+                  <span><span className={`sev ${r.sev}`}><span className="pip" />{r.sev.toUpperCase()}</span></span>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--f2)' }}>{r.area}</span>
+                  <span style={{ fontSize: 12 }}>{eventLabel(r)}</span>
+                  <span className="muted ellip" style={{ fontSize: 12 }}>{r.entity_name || '—'}</span>
+                  <span>
+                    <button className="btn sm icon" onClick={e => { e.stopPropagation(); setDetail(r); }}>
+                      <IcArrowUR />
+                    </button>
+                  </span>
+                </div>
+              ))}
 
               {!loading && filtered.length === 0 && (
                 <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--f4)' }}>
@@ -558,7 +534,6 @@ export default function AnomalyPage() {
             const i = filtered.indexOf(detail);
             if (i < filtered.length - 1) setDetail(filtered[i + 1]);
           }}
-          onMarkRead={handleMarkRead}
         />
       )}
     </>
