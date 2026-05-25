@@ -1153,7 +1153,7 @@ function PromoStats() {
         .order('snapshot_date', { ascending: true })
         .limit(PROMO_LIMIT),
       sb.from('promotion_items')
-        .select('promotion_id, musinsa_brand_name, discount_rate, snapshot_date, is_sold_out, review_score, musinsa_no', { count: 'exact' })
+        .select('promotion_id, musinsa_brand_name, musinsa_brand_slug, discount_rate, snapshot_date, is_sold_out, review_score, musinsa_no', { count: 'exact' })
         .gte('snapshot_date', fromStr)
         .limit(ITEM_LIMIT),
     ]).then(([pr, ir]) => {
@@ -1164,6 +1164,15 @@ function PromoStats() {
       setLoading(false);
     });
   }, [win]);
+
+  // 브랜드 slug → id 조회 (브랜드 링크용)
+  React.useEffect(() => {
+    if (itemRows.length === 0) return;
+    const slugs = [...new Set(itemRows.map(i => i.musinsa_brand_slug).filter(Boolean) as string[])];
+    if (slugs.length === 0) return;
+    sb.from('brands').select('slug, id').in('slug', slugs).limit(500)
+      .then(({ data }) => setBrandIdMap(new Map((data ?? []).map((b: any) => [b.slug, b.id as string]))));
+  }, [itemRows]);
 
   // ── 집계 ────────────────────────────────────────────────────────
 
