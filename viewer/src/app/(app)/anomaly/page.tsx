@@ -271,7 +271,7 @@ function AnomalyDrawer({ item, onClose, onPrev, onNext }: {
   );
 }
 
-export default function AnomalyPage() {
+function AnomalyPage() {
   const params  = useSearchParams();
   const jumpId  = params.get('id') ?? '';
 
@@ -537,5 +537,13 @@ export default function AnomalyPage() {
         />
       )}
     </>
+  );
+}
+
+export default function AnomalyPageRoot() {
+  return (
+    <React.Suspense>
+      <AnomalyPage />
+    </React.Suspense>
   );
 }

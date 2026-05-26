@@ -3,10 +3,21 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcMore, IcChevL, IcChevR, IcChevD, IcShield, IcUsers, IcSpark, IcBell, IcCalendar } from '../ui/icons';
+import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcMore, IcChevL, IcChevR, IcChevD, IcShield, IcUsers, IcSpark, IcBell, IcCalendar, IcHelp } from '../ui/icons';
 
 
-const ROUTES = [
+const MANUAL_URL = 'https://www.notion.so/36b7af342d908176b629c6343d1c35a7';
+
+type RouteItem = {
+  id: string;
+  path: string;
+  label: string;
+  Icon: React.ComponentType<{ size?: number; style?: React.CSSProperties }>;
+  parent?: string;
+  external?: boolean;
+};
+
+const ROUTES: RouteItem[] = [
   { id: 'home',         path: '/',             label: '홈',        Icon: IcHome         },
   { id: 'ranking',      path: '/ranking',      label: '상품 랭킹',  Icon: IcRanking      },
   { id: 'product',      path: '/product',      label: '상품',      Icon: IcProduct,     parent: 'ranking' },
@@ -20,6 +31,7 @@ const ROUTES = [
   { id: 'magazine',     path: '/magazine',     label: '매거진',     Icon: IcBook         },
   { id: 'reviews',      path: '/reviews',      label: '리뷰',      Icon: IcReview       },
   { id: 'matching',     path: '/matching',     label: '자사 매칭',  Icon: IcLink         },
+  { id: 'manual',       path: MANUAL_URL,      label: '사용 매뉴얼', Icon: IcHelp,       external: true },
 ];
 
 const MANAGE_ROUTES = [
@@ -155,19 +167,34 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
           const isSub    = !!r.parent;
           const isParent = GROUP_PARENTS.has(r.id);
           const isOpen   = open.has(r.id);
+          const isExt    = !!r.external;
           if (isSub && !open.has(r.parent!)) return null;
 
           return (
             <div key={r.id} style={{ position: 'relative' }}>
-              <Link
-                href={r.path}
-                className={`sb-item${isSub ? ' sub' : ''} ${isActive(r.path) ? 'active' : ''}`}
-                title={!show ? r.label : undefined}
-              >
-                <r.Icon size={isSub ? 13 : 16} />
-                {show && <span>{r.label}</span>}
-                {show && navCounts[r.id] ? <span className="num">{navCounts[r.id]}</span> : null}
-              </Link>
+              {isExt ? (
+                <a
+                  href={r.path}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="sb-item"
+                  title={!show ? r.label : undefined}
+                  style={{ display: 'flex', alignItems: 'center', gap: show ? 8 : 0 }}
+                >
+                  <r.Icon size={16} />
+                  {show && <span>{r.label}</span>}
+                </a>
+              ) : (
+                <Link
+                  href={r.path}
+                  className={`sb-item${isSub ? ' sub' : ''} ${isActive(r.path) ? 'active' : ''}`}
+                  title={!show ? r.label : undefined}
+                >
+                  <r.Icon size={isSub ? 13 : 16} />
+                  {show && <span>{r.label}</span>}
+                  {show && navCounts[r.id] ? <span className="num">{navCounts[r.id]}</span> : null}
+                </Link>
+              )}
               {show && isParent && (
                 <button
                   className="sb-toggle"

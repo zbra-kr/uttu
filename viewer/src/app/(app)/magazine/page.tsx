@@ -177,7 +177,7 @@ function MagazineDrawer({
 }
 
 // ── 메인 페이지 ───────────────────────────────────────────────────────────────
-export default function MagazinePage() {
+function MagazinePage() {
   const params = useSearchParams();
   const jumpId = params.get('id') ?? '';
 
@@ -788,5 +788,13 @@ export default function MagazinePage() {
         </div>
       </section>
     </>
+  );
+}
+
+export default function MagazinePageRoot() {
+  return (
+    <React.Suspense>
+      <MagazinePage />
+    </React.Suspense>
   );
 }
