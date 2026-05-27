@@ -447,7 +447,7 @@ function ProductPageInner() {
             {/* Image */}
             <div className="panel compact" style={{ height: 280, background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
               {detail.thumbnail_url ? (
-                <img src={detail.thumbnail_url.startsWith('/') ? `https://image.musinsa.com${detail.thumbnail_url}` : detail.thumbnail_url} alt={detail.name} style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
+                <img src={detail.thumbnail_url} alt={detail.name} style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
               ) : (
                 <span className="mono dim" style={{ fontSize: 11 }}>이미지 없음</span>
               )}

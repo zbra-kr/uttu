@@ -1,6 +1,13 @@
 import { supabaseBrowser } from './supabase/client';
 const supabase = supabaseBrowser();
 
+// 무신사 이미지 CDN 상대경로를 절대 URL로 정규화
+export const normImgUrl = (url: string | null | undefined): string | null => {
+  if (!url) return null;
+  if (url.startsWith('/')) return `https://image.musinsa.com${url}`;
+  return url;
+};
+
 // ── 카테고리 코드 매핑 ──────────────────────────────────────────
 export const CATEGORY_MAP: Record<string, string> = {
   '000': '전체', '001': '상의', '002': '아우터', '003': '바지',
@@ -34,6 +41,7 @@ export interface RankingRow {
   is_own: boolean;
   product_id: string | null;
   rank_change: number | null;  // 전일 대비 순위 변동 (+상승 / -하락 / null=신규)
+  thumbnail_url: string | null;
 }
 
 export async function fetchLatestRanking(opts: {
@@ -54,7 +62,7 @@ export async function fetchLatestRanking(opts: {
         category_code, gender_filter, age_filter,
         list_price, final_price, discount_rate,
         is_sold_out, review_count, review_score, snapshot_date,
-        product_id, products!inner(is_own, brands(companies(corp_name)))`)
+        product_id, products!inner(is_own, thumbnail_url, brands(companies(corp_name)))`)
       .eq('category_code', categoryCode)
       .eq('gender_filter', genderFilter)
       .eq('age_filter', ageFilter)
@@ -124,6 +132,7 @@ export async function fetchLatestRanking(opts: {
         ...r,
         is_own: (r as any).products?.is_own ?? false,
         company_name: (r as any).products?.brands?.companies?.corp_name ?? null,
+        thumbnail_url: normImgUrl((r as any).products?.thumbnail_url),
         rank_change: prevRank !== undefined ? prevRank - (r as any).rank_position : null,
       });
     }
@@ -516,19 +525,32 @@ export async function fetchReviews(opts: {
 export async function fetchReviewStats(days = 30): Promise<{
   total: number; avgRating: number; lowCount: number; ratingDist: number[]; imageCount: number;
 }> {
-  let q = supabase.from('reviews').select('rating, has_image').limit(10000);
-  if (days !== 999) {
-    q = q.gte('review_date', new Date(Date.now() - days * 86400000).toISOString().split('T')[0]);
-  }
-  const { data, error } = await q;
-  if (error) throw error;
-  const rows = (data ?? []) as any[];
-  const total = rows.length;
-  const avgRating = total > 0 ? rows.reduce((s: number, r: any) => s + r.rating, 0) / total : 0;
-  const lowCount = rows.filter((r: any) => r.rating <= 2).length;
-  const ratingDist = [5, 4, 3, 2, 1].map(star => rows.filter((r: any) => r.rating === star).length);
-  const imageCount = rows.filter((r: any) => r.has_image).length;
-  return { total, avgRating: Math.round(avgRating * 100) / 100, lowCount, ratingDist, imageCount };
+  const dateFilter = days !== 999
+    ? new Date(Date.now() - days * 86400000).toISOString().split('T')[0]
+    : null;
+
+  const makeQ = () => {
+    const q = supabase.from('reviews').select('*', { count: 'exact', head: true });
+    return dateFilter ? q.gte('review_date', dateFilter) : q;
+  };
+
+  const [res5, res4, res3, res2, res1, imgRes] = await Promise.all([
+    makeQ().eq('rating', 5),
+    makeQ().eq('rating', 4),
+    makeQ().eq('rating', 3),
+    makeQ().eq('rating', 2),
+    makeQ().eq('rating', 1),
+    makeQ().eq('has_image', true),
+  ]);
+
+  const ratingDist = [res5.count ?? 0, res4.count ?? 0, res3.count ?? 0, res2.count ?? 0, res1.count ?? 0];
+  const total = ratingDist.reduce((s, c) => s + c, 0);
+  const avgRating = total > 0
+    ? [5, 4, 3, 2, 1].reduce((s, star, i) => s + star * ratingDist[i], 0) / total
+    : 0;
+  const lowCount = ratingDist[3] + ratingDist[4]; // ★2 + ★1
+
+  return { total, avgRating: Math.round(avgRating * 100) / 100, lowCount, ratingDist, imageCount: imgRes.count ?? 0 };
 }
 
 export async function fetchOwnBrands(): Promise<{ id: string; name: string }[]> {
@@ -1662,7 +1684,7 @@ export async function fetchProductDetail(musinsaNo: string): Promise<ProductDeta
     labels: p?.labels ?? [],
     colors: p?.colors ?? [],
     sizes: p?.sizes ?? [],
-    thumbnail_url: p?.thumbnail_url ?? null,
+    thumbnail_url: normImgUrl(p?.thumbnail_url),
     ranking_best_records: p?.ranking_best_records ?? [],
   };
 }
@@ -2219,7 +2241,7 @@ export async function fetchOwnProductsWithPrices(opts: {
       name: p.name ?? '—',
       brand_name: (p.brands as any)?.name ?? '—',
       brand_id: (p.brands as any)?.id ?? '',
-      thumbnail_url: p.thumbnail_url ?? null,
+      thumbnail_url: normImgUrl(p.thumbnail_url),
       category_code: p.category_code ?? null,
       category_d2_name: p.category_d2_name ?? null,
       gender: p.gender ?? null,

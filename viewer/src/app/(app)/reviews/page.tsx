@@ -327,6 +327,69 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
   );
 }
 
+// ── 커스텀 레인지 슬라이더 (랭킹 페이지와 동일 스타일) ─────────────────────────
+function RangeSlider({ min, max, value, onChange }: {
+  min: number; max: number; value: [number, number];
+  onChange: (v: [number, number]) => void;
+}) {
+  const trackRef = React.useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = React.useState<null | 0 | 1>(null);
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
+  const onChangeRef = React.useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const getVal = React.useCallback((clientX: number) => {
+    if (!trackRef.current) return null;
+    const rect = trackRef.current.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return Math.round(pct * (max - min) + min);
+  }, [min, max]);
+
+  React.useEffect(() => {
+    if (dragging === null) return;
+    const onMove = (e: MouseEvent | TouchEvent) => {
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const v = getVal(clientX);
+      if (v === null) return;
+      const cur = valueRef.current;
+      if (dragging === 0) onChangeRef.current([Math.min(v, cur[1]), cur[1]]);
+      if (dragging === 1) onChangeRef.current([cur[0], Math.max(v, cur[0])]);
+    };
+    const onUp = () => setDragging(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false } as any);
+    window.addEventListener('touchend', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+  }, [dragging, getVal]);
+
+  const p0 = ((value[0] - min) / (max - min)) * 100;
+  const p1 = ((value[1] - min) / (max - min)) * 100;
+
+  return (
+    <div ref={trackRef} style={{ position: 'relative', height: 28, marginTop: 4, userSelect: 'none' }}>
+      <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 4, background: 'var(--snk)', borderRadius: 2, transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: '50%', left: `${p0}%`, width: `${p1 - p0}%`, height: 4, background: 'var(--f1)', borderRadius: 2, transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+      <div
+        onMouseDown={e => { e.preventDefault(); setDragging(0); }}
+        onTouchStart={e => { e.preventDefault(); setDragging(0); }}
+        style={{ position: 'absolute', top: '50%', left: `${p0}%`, width: 20, height: 20, borderRadius: '50%', background: 'var(--rai)', border: '2px solid var(--f1)', transform: 'translate(-50%, -50%)', cursor: dragging === 0 ? 'grabbing' : 'grab', zIndex: value[0] >= max ? 3 : 1, boxSizing: 'border-box', touchAction: 'none' }}
+      />
+      <div
+        onMouseDown={e => { e.preventDefault(); setDragging(1); }}
+        onTouchStart={e => { e.preventDefault(); setDragging(1); }}
+        style={{ position: 'absolute', top: '50%', left: `${p1}%`, width: 20, height: 20, borderRadius: '50%', background: 'var(--rai)', border: '2px solid var(--f1)', transform: 'translate(-50%, -50%)', cursor: dragging === 1 ? 'grabbing' : 'grab', zIndex: 2, boxSizing: 'border-box', touchAction: 'none' }}
+      />
+    </div>
+  );
+}
+
 // ===========================================================================
 // B · 조회
 // ===========================================================================
@@ -465,21 +528,11 @@ function RvBrowse() {
               <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>별점 범위</span>
               <span className="mono dim" style={{ fontSize: 10 }}>★{ratingFrom} ~ ★{ratingTo}</span>
             </div>
-            <div style={{ position: 'relative', height: 22, marginTop: 2 }}>
-              <div style={{ position: 'absolute', top: 9, left: 0, right: 0, height: 4, background: 'var(--snk)', borderRadius: 2 }} />
-              <div style={{
-                position: 'absolute', top: 9,
-                left: `${((ratingFrom - 1) / 4) * 100}%`,
-                width: `${((ratingTo - ratingFrom) / 4) * 100}%`,
-                height: 4, background: 'var(--f1)', borderRadius: 2,
-              }} />
-              <input type="range" min={1} max={5} step={1} value={ratingFrom}
-                onChange={e => { const v = +e.target.value; setRatingFrom(Math.min(v, ratingTo)); setPage(0); }}
-                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', cursor: 'pointer' }} />
-              <input type="range" min={1} max={5} step={1} value={ratingTo}
-                onChange={e => { const v = +e.target.value; setRatingTo(Math.max(v, ratingFrom)); setPage(0); }}
-                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', cursor: 'pointer' }} />
-            </div>
+            <RangeSlider
+              min={1} max={5}
+              value={[ratingFrom, ratingTo]}
+              onChange={([a, b]) => { setRatingFrom(a); setRatingTo(b); setPage(0); }}
+            />
             <div className="row-flex between">
               <span className="mono dim" style={{ fontSize: 10 }}>★1</span>
               <span className="mono dim" style={{ fontSize: 10 }}>★5</span>
@@ -909,6 +962,7 @@ function RvProductBrowse() {
   const [rvTotal, setRvTotal]   = React.useState(0);
   const [rvPage, setRvPage]     = React.useState(0);
   const [ratingTab, setRatingTab] = React.useState<'all' | 'low' | 'mid' | 'hi'>('all');
+  const [rvSort, setRvSort]       = React.useState<'recent' | 'rating_asc' | 'rating_desc' | 'helpful'>('recent');
   const [rvLoading, setRvLoading] = React.useState(false);
   const [noteReviewId, setNoteReviewId] = React.useState<string | null>(null);
 
@@ -961,7 +1015,7 @@ function RvProductBrowse() {
       dateFrom:   calcDateFrom,
       dateTo:     period === 'custom' ? toDate : undefined,
       keyword:    rvKeyword.trim() || undefined,
-      sort:       'recent',
+      sort:       rvSort,
       limit:      RV_SIZE,
       offset:     rvPage * RV_SIZE,
     }).then(({ rows: r, total: t }) => {
@@ -969,7 +1023,7 @@ function RvProductBrowse() {
     }).catch(console.error)
       .finally(() => { if (!cancelled) setRvLoading(false); });
     return () => { cancelled = true; };
-  }, [selectedProduct, ratingTab, ratingFrom, ratingTo, calcDateFrom, toDate, period, rvKeyword, rvPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedProduct, ratingTab, ratingFrom, ratingTo, calcDateFrom, toDate, period, rvKeyword, rvSort, rvPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleBrand = (id: string) => {
     setSelectedBrandIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -1068,16 +1122,11 @@ function RvProductBrowse() {
               <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>별점 범위</span>
               <span className="mono dim" style={{ fontSize: 10 }}>★{ratingFrom} ~ ★{ratingTo}</span>
             </div>
-            <div style={{ position: 'relative', height: 22, marginTop: 2 }}>
-              <div style={{ position: 'absolute', top: 9, left: 0, right: 0, height: 4, background: 'var(--snk)', borderRadius: 2 }} />
-              <div style={{ position: 'absolute', top: 9, left: `${((ratingFrom - 1) / 4) * 100}%`, width: `${((ratingTo - ratingFrom) / 4) * 100}%`, height: 4, background: 'var(--f1)', borderRadius: 2 }} />
-              <input type="range" min={1} max={5} step={1} value={ratingFrom}
-                onChange={e => { const v = +e.target.value; setRatingFrom(Math.min(v, ratingTo)); setRvPage(0); }}
-                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', cursor: 'pointer' }} />
-              <input type="range" min={1} max={5} step={1} value={ratingTo}
-                onChange={e => { const v = +e.target.value; setRatingTo(Math.max(v, ratingFrom)); setRvPage(0); }}
-                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', cursor: 'pointer' }} />
-            </div>
+            <RangeSlider
+              min={1} max={5}
+              value={[ratingFrom, ratingTo]}
+              onChange={([a, b]) => { setRatingFrom(a); setRatingTo(b); setRvPage(0); }}
+            />
             <div className="row-flex between">
               <span className="mono dim" style={{ fontSize: 10 }}>★1</span>
               <span className="mono dim" style={{ fontSize: 10 }}>★5</span>
@@ -1159,7 +1208,7 @@ function RvProductBrowse() {
                 const isSelected = selectedProduct?.id === p.id;
                 return (
                   <div key={p.id}
-                    onClick={() => { setSelectedProduct(p); setRvPage(0); setRatingTab('all'); }}
+                    onClick={() => { setSelectedProduct(p); setRvPage(0); setRatingTab('all'); setRvSort('recent'); }}
                     style={{
                       display: 'grid',
                       gridTemplateColumns: '48px 1fr 90px 80px 90px 90px 70px 55px 60px 70px',
@@ -1260,7 +1309,7 @@ function RvProductBrowse() {
                 <span className="dim" style={{ fontSize: 12 }}>{selectedProduct.brand_name}</span>
                 <span className="sec-tag">{rvLoading ? '…' : `${rvTotal.toLocaleString()}건`}</span>
               </div>
-              <div className="row-flex gap-4">
+              <div className="row-flex gap-4" style={{ flexWrap: 'wrap' }}>
                 {([
                   ['all', '전체'],
                   ['low', '★1~2'],
@@ -1271,6 +1320,13 @@ function RvProductBrowse() {
                     className={`btn sm ${ratingTab === key ? 'active' : ''}`}
                     onClick={() => { setRatingTab(key); setRvPage(0); }}>
                     {label}
+                  </button>
+                ))}
+                <div style={{ width: 1, background: 'var(--bs)', margin: '0 2px', alignSelf: 'stretch' }} />
+                {(['recent', 'rating_asc', 'rating_desc', 'helpful'] as const).map((s, i) => (
+                  <button key={s} className={`btn sm ${rvSort === s ? 'active' : ''}`}
+                    onClick={() => { setRvSort(s); setRvPage(0); }}>
+                    {['최신순', '평점↑', '평점↓', '도움순'][i]}
                   </button>
                 ))}
                 <a href={`/product?no=${selectedProduct.musinsa_no}`} className="btn sm"

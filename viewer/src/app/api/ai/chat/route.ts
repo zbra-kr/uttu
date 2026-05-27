@@ -59,6 +59,23 @@ function buildSystem(context: string[], route: string, today: string): string {
 
 오늘: ${today} | 현재 화면: ${route} — ${context.join(' · ')}
 
+## 데이터 경계 — 절대 준수 (가장 중요)
+- **아래 DB_SCHEMA에 있는 테이블과 컬럼만 존재한다.** 그 외 데이터는 UTTU에서 수집하지 않는다.
+- **UTTU가 수집하지 않는 것 (절대 언급·생성 금지)**:
+  - 글로벌 랭킹, 해외 판매량, 해외 시장 점유율
+  - SNS 팔로워 수, 인스타그램 좋아요, 유튜브 조회수
+  - 오프라인 매장 매출, 자체몰 매출
+  - 실시간 재고 수량, 창고 데이터
+  - 무신사 외 플랫폼(지그재그, 에이블리, 카카오 등) 데이터
+  - 사용자 개인정보, 다른 사용자의 AI 대화 내용·메모·계정 정보
+- **데이터가 없으면 없다고 명확히 답해야 한다**: "UTTU에서 수집하지 않는 지표입니다"라고 말하라.
+- **실제 query_db 결과 없이 수치·순위·통계를 생성하거나 추정하지 마라.** 어떤 이유로도 데이터를 날조하지 마라.
+- **query_db에서 0행이 반환되면**: "해당 조건의 데이터가 없습니다"라고 그대로 전달하라. 빈 결과를 채우기 위해 내용을 만들어내지 마라.
+
+## 쿼리 금지 테이블
+다음 테이블은 query_db로 절대 조회하지 마라 (시스템이 자동 차단):
+ai_messages, ai_sessions, ai_user_quotas, ai_usage_daily, profiles, user_notes, user_subscriptions, auth.users
+
 ## 행동 규칙
 - 응답은 한국어, 간결하고 명확하게 (마크다운 사용 가능)
 - 금액 컬럼(revenue, operating_income, net_income, total_assets, total_liabilities)은 원(KRW) 단위 → 표시 시 억원으로 변환 (÷100,000,000)
@@ -77,12 +94,27 @@ function buildSystem(context: string[], route: string, today: string): string {
 ${DB_SCHEMA}`;
 }
 
+// 사용자 개인정보 테이블 — AI 쿼리 완전 차단
+const AI_QUERY_BLOCKED_TABLES = [
+  'ai_messages', 'ai_sessions', 'ai_user_quotas', 'ai_usage_daily',
+  'profiles', 'user_notes', 'user_subscriptions', 'user_mention_configs',
+  'auth\\.users', 'auth\\.sessions', 'auth\\.audit_log_entries',
+  'detector_rules',
+];
+
 async function execQueryDb(
   supabase: any,
   sql: string,
 ): Promise<string> {
   if (/\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|CREATE|ALTER|GRANT|REVOKE)\b/i.test(sql)) {
     return 'Error: SELECT 쿼리만 허용됩니다.';
+  }
+  // 사용자 개인정보 테이블 접근 차단
+  const sqlLower = sql.toLowerCase().replace(/\s+/g, ' ');
+  for (const tbl of AI_QUERY_BLOCKED_TABLES) {
+    if (new RegExp(`\\b${tbl}\\b`).test(sqlLower)) {
+      return `Error: '${tbl}' 테이블은 AI 쿼리 접근이 금지되어 있습니다. 이 데이터는 조회할 수 없습니다.`;
+    }
   }
   try {
     const { data, error } = await supabase.rpc('exec_ai_query', { query: sql });

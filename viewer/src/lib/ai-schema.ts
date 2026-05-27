@@ -89,4 +89,10 @@ dart_disclosures.company_id → companies.id
 reviews.product_id → products.id
 promotion_items.product_id → products.id
 snap_products.product_id → products.id
+
+## 수집 범위 한계 — 이 목록에 없는 것은 존재하지 않는다
+UTTU가 수집하는 플랫폼: **무신사(musinsa.com)만** — 다른 플랫폼 데이터 없음
+존재하는 랭킹: ranking_snapshots (무신사 국내 랭킹), brand_ranking_snapshots — **글로벌/해외 랭킹 없음**
+존재하는 재무: dart_financials (상장사 DART 공시 기준) — **비상장사 재무, 분기 데이터 없음**
+존재하지 않는 것: 재고, SNS 지표, 해외 판매, 실시간 가격, 타 플랫폼 순위, 사용자 개인 데이터
 `;

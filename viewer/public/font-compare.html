@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UTTU 폰트 비교</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- 후보 폰트 일괄 로드 -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600&family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Roboto:wght@300;400;500&family=Roboto+Mono:wght@400;500&family=Inter:wght@300;400;500;600&family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #111; color: #e8e8e8; padding: 24px; }
+
+h1 { font-family: system-ui; font-size: 14px; font-weight: 500; color: #888; margin-bottom: 4px; }
+.desc { font-family: system-ui; font-size: 12px; color: #555; margin-bottom: 28px; }
+
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+.card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.card-head {
+  background: #222;
+  padding: 10px 14px;
+  border-bottom: 1px solid #2a2a2a;
+  font-family: system-ui;
+}
+.card-head .fname { font-size: 13px; font-weight: 600; color: #e0e0e0; }
+.card-head .fmeta { font-size: 10px; color: #555; margin-top: 2px; }
+.card-head .badge {
+  display: inline-block; font-size: 9px; padding: 1px 6px;
+  border-radius: 3px; background: #2a3a2a; color: #4caf50;
+  border: 1px solid #3a5a3a; margin-right: 4px; vertical-align: middle;
+}
+.card-head .badge.cur { background: #3a2a2a; color: #ef5350; border-color: #5a3a3a; }
+
+.card-body { padding: 14px; }
+
+/* 각 카드마다 폰트 적용 */
+.f-pretendard { font-family: "Pretendard Variable", Pretendard, sans-serif; }
+.f-notosans   { font-family: "Noto Sans KR", sans-serif; }
+.f-ibmplex    { font-family: "IBM Plex Sans KR", sans-serif; }
+.f-inter      { font-family: "Inter", sans-serif; }
+.f-geist      { font-family: "Geist", sans-serif; }
+.f-roboto     { font-family: "Roboto", sans-serif; }
+
+/* ── 샘플 요소 공통 스타일 ── */
+.section-label {
+  font-size: 9px; font-weight: 600; letter-spacing: 1px;
+  text-transform: uppercase; color: #555;
+  margin: 14px 0 6px;
+}
+.section-label:first-child { margin-top: 0; }
+
+/* KPI 행 */
+.kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 0; }
+.kpi {
+  background: #111; border: 1px solid #222; border-radius: 4px;
+  padding: 7px 10px;
+}
+.kpi .label { font-size: 10px; color: #666; display: block; margin-bottom: 3px; }
+.kpi .val   { font-size: 18px; font-weight: 600; color: #e8e8e8; line-height: 1.1; }
+.kpi .sub   { font-size: 10px; color: #555; margin-top: 2px; }
+
+/* 테이블 */
+.tbl { border: 1px solid #222; border-radius: 4px; overflow: hidden; }
+.tbl-head, .tbl-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 70px 50px 42px;
+  padding: 5px 10px; gap: 0 6px; align-items: center;
+}
+.tbl-head { background: #1e1e1e; border-bottom: 1px solid #222; }
+.tbl-head span { font-size: 10px; color: #555; }
+.tbl-row { border-bottom: 1px solid #1e1e1e; }
+.tbl-row:last-child { border-bottom: none; }
+.tbl-row:nth-child(even) { background: #161616; }
+.rank { font-size: 12px; font-weight: 500; color: #888; }
+.name { font-size: 12px; color: #e0e0e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.name.own { color: #ef5350; font-weight: 500; }
+.price { font-size: 11px; color: #bbb; text-align: right; }
+.disc  { font-size: 10px; color: #ef5350; text-align: right; font-weight: 600; }
+.chg   { font-size: 10px; text-align: right; }
+.chg.up   { color: #4caf50; }
+.chg.down { color: #ef5350; }
+.chg.new  { color: #90caf9; font-size: 9px; }
+
+/* 리뷰 카드 */
+.review { padding: 8px 10px; background: #111; border: 1px solid #222; border-radius: 4px; margin-bottom: 6px; }
+.review-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.stars { font-size: 12px; color: #ef5350; }
+.review-date { font-size: 10px; color: #555; }
+.review-text { font-size: 12px; color: #ccc; line-height: 1.6; }
+
+/* 본문 텍스트 블록 */
+.body-text { font-size: 13px; color: #ccc; line-height: 1.7; }
+.body-text .bold { font-weight: 600; color: #e8e8e8; }
+
+/* 숫자/모노 예시 */
+.mono-demo { background: #111; border: 1px solid #222; border-radius: 4px; padding: 8px 10px; }
+.mono-row  { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; font-size: 11px; }
+.mono-row:last-child { margin-bottom: 0; }
+.mono-row .lbl { color: #555; }
+
+/* 모노 폰트: IBM Plex Mono vs JetBrains Mono */
+.f-pretendard .num, .f-notosans .num, .f-ibmplex .num,
+.f-inter .num, .f-geist .num, .f-roboto .num {
+  font-family: "JetBrains Mono", monospace;
+  letter-spacing: -0.01em;
+}
+.f-plex-mono .num {
+  font-family: "IBM Plex Mono", monospace;
+}
+.f-roboto-mono .num {
+  font-family: "Roboto Mono", monospace;
+}
+
+/* 모노 비교 전용 카드 */
+.f-plex-mono  { font-family: "IBM Plex Sans KR", sans-serif; }
+.f-roboto-mono { font-family: "Roboto", sans-serif; }
+
+hr { border: none; border-top: 1px solid #222; margin: 16px 0 20px; }
+.section-title { font-family: system-ui; font-size: 11px; color: #555; font-weight: 500; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<h1>UTTU · 폰트 가독성 비교</h1>
+<p class="desc">각 카드는 동일한 UI 요소(KPI·랭킹 테이블·리뷰·본문)를 다른 폰트로 렌더링합니다. 현재 적용된 폰트는 <strong style="color:#ef5350">빨간 배지</strong>.</p>
+
+<p class="section-title">── 한글 본문 폰트 후보 ──</p>
+<div class="grid">
+
+  <!-- 1. 현재: Pretendard -->
+  <div class="card">
+    <div class="card-head">
+      <div class="fname">Pretendard Variable <span class="badge cur">현재</span></div>
+      <div class="fmeta">orioncactus · CDN · Variable Weight</div>
+    </div>
+    <div class="card-body f-pretendard">
+      <div class="section-label">KPI</div>
+      <div class="kpi-row">
+        <div class="kpi"><span class="label">신규 리뷰</span><div class="val num">1,284</div><div class="sub">최근 30일</div></div>
+        <div class="kpi"><span class="label">평균 평점</span><div class="val">★ 4.21</div><div class="sub">자사 전체</div></div>
+        <div class="kpi"><span class="label">할인율</span><div class="val num" style="color:#ef5350">38%↓</div><div class="sub">최고 할인</div></div>
+      </div>
+      <div class="section-label">랭킹</div>
+      <div class="tbl">
+        <div class="tbl-head"><span>#</span><span>상품명</span><span style="text-align:right">가격</span><span style="text-align:right">할인</span><span style="text-align:right">변동</span></div>
+        <div class="tbl-row"><span class="rank num">01</span><span class="name own">VLAD 크롭 티셔츠</span><span class="price num">38,000</span><span class="disc num">30%</span><span class="chg up num">▲3</span></div>
+        <div class="tbl-row"><span class="rank num">02</span><span class="name">오리지날 플립플랍</span><span class="price num">24,900</span><span class="disc">—</span><span class="chg down num">▼1</span></div>
+        <div class="tbl-row"><span class="rank num">03</span><span class="name">에코 어드벤처 클로그</span><span class="price num">89,000</span><span class="disc num">15%</span><span class="chg new">NEW</span></div>
+        <div class="tbl-row"><span class="rank num">04</span><span class="name">T-Logo Tee Heather</span><span class="price num">45,000</span><span class="disc">—</span><span class="chg up num">▲2</span></div>
+      </div>
+      <div class="section-label">리뷰</div>
+      <div class="review">
+        <div class="review-meta"><span class="stars">★★★★★</span><span class="review-date num">2026-05-20</span></div>
+        <div class="review-text">핏이 정말 예뻐요. 크롭 기장이 딱 적당하고 소재도 좋습니다. 재구매 의사 있어요!</div>
+      </div>
+      <div class="section-label">본문</div>
+      <div class="body-text"><span class="bold">상품기획팀 인텔리전스</span> — 자사 브랜드 VLAD·RE의 판매가격, 리뷰, 랭킹 추이를 실시간으로 모니터링합니다.</div>
+    </div>
+  </div>
+
+  <!-- 2. Noto Sans KR -->
+  <div class="card">
+    <div class="card-head">
+      <div class="fname">Noto Sans KR <span class="badge">Google Fonts</span></div>
+      <div class="fmeta">Google · fonts.googleapis.com · 자간 넓음</div>
+    </div>
+    <div class="card-body f-notosans">
+      <div class="section-label">KPI</div>
+      <div class="kpi-row">
+        <div class="kpi"><span class="label">신규 리뷰</span><div class="val num">1,284</div><div class="sub">최근 30일</div></div>
+        <div class="kpi"><span class="label">평균 평점</span><div class="val">★ 4.21</div><div class="sub">자사 전체</div></div>
+        <div class="kpi"><span class="label">할인율</span><div class="val num" style="color:#ef5350">38%↓</div><div class="sub">최고 할인</div></div>
+      </div>
+      <div class="section-label">랭킹</div>
+      <div class="tbl">
+        <div class="tbl-head"><span>#</span><span>상품명</span><span style="text-align:right">가격</span><span style="text-align:right">할인</span><span style="text-align:right">변동</span></div>
+        <div class="tbl-row"><span class="rank num">01</span><span class="name own">VLAD 크롭 티셔츠</span><span class="price num">38,000</span><span class="disc num">30%</span><span class="chg up num">▲3</span></div>
+        <div class="tbl-row"><span class="rank num">02</span><span class="name">오리지날 플립플랍</span><span class="price num">24,900</span><span class="disc">—</span><span class="chg down num">▼1</span></div>
+        <div class="tbl-row"><span class="rank num">03</span><span class="name">에코 어드벤처 클로그</span><span class="price num">89,000</span><span class="disc num">15%</span><span class="chg new">NEW</span></div>
+        <div class="tbl-row"><span class="rank num">04</span><span class="name">T-Logo Tee Heather</span><span class="price num">45,000</span><span class="disc">—</span><span class="chg up num">▲2</span></div>
+      </div>
+      <div class="section-label">리뷰</div>
+      <div class="review">
+        <div class="review-meta"><span class="stars">★★★★★</span><span class="review-date num">2026-05-20</span></div>
+        <div class="review-text">핏이 정말 예뻐요. 크롭 기장이 딱 적당하고 소재도 좋습니다. 재구매 의사 있어요!</div>
+      </div>
+      <div class="section-label">본문</div>
+      <div class="body-text"><span class="bold">상품기획팀 인텔리전스</span> — 자사 브랜드 VLAD·RE의 판매가격, 리뷰, 랭킹 추이를 실시간으로 모니터링합니다.</div>
+    </div>
+  </div>
+
+  <!-- 3. IBM Plex Sans KR -->
+  <div class="card">
+    <div class="card-head">
+      <div class="fname">IBM Plex Sans KR <span class="badge">Google Fonts</span></div>
+      <div class="fmeta">IBM · 데이터/엔터프라이즈 UI 전용 설계</div>
+    </div>
+    <div class="card-body f-ibmplex">
+      <div class="section-label">KPI</div>
+      <div class="kpi-row">
+        <div class="kpi"><span class="label">신규 리뷰</span><div class="val num">1,284</div><div class="sub">최근 30일</div></div>
+        <div class="kpi"><span class="label">평균 평점</span><div class="val">★ 4.21</div><div class="sub">자사 전체</div></div>
+        <div class="kpi"><span class="label">할인율</span><div class="val num" style="color:#ef5350">38%↓</div><div class="sub">최고 할인</div></div>
+      </div>
+      <div class="section-label">랭킹</div>
+      <div class="tbl">
+        <div class="tbl-head"><span>#</span><span>상품명</span><span style="text-align:right">가격</span><span style="text-align:right">할인</span><span style="text-align:right">변동</span></div>
+        <div class="tbl-row"><span class="rank num">01</span><span class="name own">VLAD 크롭 티셔츠</span><span class="price num">38,000</span><span class="disc num">30%</span><span class="chg up num">▲3</span></div>
+        <div class="tbl-row"><span class="rank num">02</span><span class="name">오리지날 플립플랍</span><span class="price num">24,900</span><span class="disc">—</span><span class="chg down num">▼1</span></div>
+        <div class="tbl-row"><span class="rank num">03</span><span class="name">에코 어드벤처 클로그</span><span class="price num">89,000</span><span class="disc num">15%</span><span class="chg new">NEW</span></div>
+        <div class="tbl-row"><span class="rank num">04</span><span class="name">T-Logo Tee Heather</span><span class="price num">45,000</span><span class="disc">—</span><span class="chg up num">▲2</span></div>
+      </div>
+      <div class="section-label">리뷰</div>
+      <div class="review">
+        <div class="review-meta"><span class="stars">★★★★★</span><span class="review-date num">2026-05-20</span></div>
+        <div class="review-text">핏이 정말 예뻐요. 크롭 기장이 딱 적당하고 소재도 좋습니다. 재구매 의사 있어요!</div>
+      </div>
+      <div class="section-label">본문</div>
+      <div class="body-text"><span class="bold">상품기획팀 인텔리전스</span> — 자사 브랜드 VLAD·RE의 판매가격, 리뷰, 랭킹 추이를 실시간으로 모니터링합니다.</div>
+    </div>
+  </div>
+
+</div>
+
+<hr>
+<p class="section-title">── 영문/숫자 전용 폰트 (한글 없음 — 숫자 밀도가 높은 테이블 위주) ──</p>
+<div class="grid">
+
+  <!-- 4. Inter -->
+  <div class="card">
+    <div class="card-head">
+      <div class="fname">Inter <span class="badge">Google Fonts</span></div>
+      <div class="fmeta">Rasmus Andersson · UI 특화 · 한글 미지원</div>
+    </div>
+    <div class="card-body f-inter">
+      <div class="section-label">KPI</div>
+      <div class="kpi-row">
+        <div class="kpi"><span class="label">신규 리뷰</span><div class="val num">1,284</div><div class="sub">최근 30일</div></div>
+        <div class="kpi"><span class="label">평균 평점</span><div class="val">★ 4.21</div><div class="sub">자사 전체</div></div>
+        <div class="kpi"><span class="label">할인율</span><div class="val num" style="color:#ef5350">38%↓</div><div class="sub">최고 할인</div></div>
+      </div>
+      <div class="section-label">랭킹 (한글은 시스템 폰트 fallback)</div>
+      <div class="tbl">
+        <div class="tbl-head"><span>#</span><span>상품명</span><span style="text-align:right">가격</span><span style="text-align:right">할인</span><span style="text-align:right">변동</span></div>
+        <div class="tbl-row"><span class="rank num">01</span><span class="name own">VLAD 크롭 티셔츠</span><span class="price num">38,000</span><span class="disc num">30%</span><span class="chg up num">▲3</span></div>
+        <div class="tbl-row"><span class="rank num">02</span><span class="name">오리지날 플립플랍</span><span class="price num">24,900</span><span class="disc">—</span><span class="chg down num">▼1</span></div>
+        <div class="tbl-row"><span class="rank num">03</span><span class="name">에코 어드벤처 클로그</span><span class="price num">89,000</span><span class="disc num">15%</span><span class="chg new">NEW</span></div>
+        <div class="tbl-row"><span class="rank num">04</span><span class="name">T-Logo Tee Heather</span><span class="price num">45,000</span><span class="disc">—</span><span class="chg up num">▲2</span></div>
+      </div>
+      <div class="section-label">본문</div>
+      <div class="body-text"><span class="bold">상품기획팀 인텔리전스</span> — 자사 브랜드 VLAD·RE의 판매가격, 리뷰, 랭킹 추이를 실시간으로 모니터링합니다.</div>
+    </div>
+  </div>
+
+  <!-- 5. Geist -->
+  <div class="card">
+    <div class="card-head">
+      <div class="fname">Geist <span class="badge">Google Fonts</span></div>
+      <div class="fmeta">Vercel · 2023 · 깔끔한 현대적 UI폰트 · 한글 미지원</div>
+    </div>
+    <div class="card-body f-geist">
+      <div class="section-label">KPI</div>
+      <div class="kpi-row">
+        <div class="kpi"><span class="label">신규 리뷰</span><div class="val num">1,284</div><div class="sub">최근 30일</div></div>
+        <div class="kpi"><span class="label">평균 평점</span><div class="val">★ 4.21</div><div class="sub">자사 전체</div></div>
+        <div class="kpi"><span class="label">할인율</span><div class="val num" style="color:#ef5350">38%↓</div><div class="sub">최고 할인</div></div>
+      </div>
+      <div class="section-label">랭킹 (한글은 시스템 폰트 fallback)</div>
+      <div class="tbl">
+        <div class="tbl-head"><span>#</span><span>상품명</span><span style="text-align:right">가격</span><span style="text-align:right">할인</span><span style="text-align:right">변동</span></div>
+        <div class="tbl-row"><span class="rank num">01</span><span class="name own">VLAD 크롭 티셔츠</span><span class="price num">38,000</span><span class="disc num">30%</span><span class="chg up num">▲3</span></div>
+        <div class="tbl-row"><span class="rank num">02</span><span class="name">오리지날 플립플랍</span><span class="price num">24,900</span><span class="disc">—</span><span class="chg down num">▼1</span></div>
+        <div class="tbl-row"><span class="rank num">03</span><span class="name">에코 어드벤처 클로그</span><span class="price num">89,000</span><span class="disc num">15%</span><span class="chg new">NEW</span></div>
+        <div class="tbl-row"><span class="rank num">04</span><span class="name">T-Logo Tee Heather</span><span class="price num">45,000</span><span class="disc">—</span><span class="chg up num">▲2</span></div>
+      </div>
+      <div class="section-label">본문</div>
+      <div class="body-text"><span class="bold">상품기획팀 인텔리전스</span> — 자사 브랜드 VLAD·RE의 판매가격, 리뷰, 랭킹 추이를 실시간으로 모니터링합니다.</div>
+    </div>
+  </div>
+
+  <!-- 6. Roboto -->
+  <div class="card">
+    <div class="card-head">
+      <div class="fname">Roboto <span class="badge">Google Fonts</span></div>
+      <div class="fmeta">Google · 가장 범용적 · Android 기본폰트 · 한글 미지원</div>
+    </div>
+    <div class="card-body f-roboto">
+      <div class="section-label">KPI</div>
+      <div class="kpi-row">
+        <div class="kpi"><span class="label">신규 리뷰</span><div class="val num">1,284</div><div class="sub">최근 30일</div></div>
+        <div class="kpi"><span class="label">평균 평점</span><div class="val">★ 4.21</div><div class="sub">자사 전체</div></div>
+        <div class="kpi"><span class="label">할인율</span><div class="val num" style="color:#ef5350">38%↓</div><div class="sub">최고 할인</div></div>
+      </div>
+      <div class="section-label">랭킹 (한글은 시스템 폰트 fallback)</div>
+      <div class="tbl">
+        <div class="tbl-head"><span>#</span><span>상품명</span><span style="text-align:right">가격</span><span style="text-align:right">할인</span><span style="text-align:right">변동</span></div>
+        <div class="tbl-row"><span class="rank num">01</span><span class="name own">VLAD 크롭 티셔츠</span><span class="price num">38,000</span><span class="disc num">30%</span><span class="chg up num">▲3</span></div>
+        <div class="tbl-row"><span class="rank num">02</span><span class="name">오리지날 플립플랍</span><span class="price num">24,900</span><span class="disc">—</span><span class="chg down num">▼1</span></div>
+        <div class="tbl-row"><span class="rank num">03</span><span class="name">에코 어드벤처 클로그</span><span class="price num">89,000</span><span class="disc num">15%</span><span class="chg new">NEW</span></div>
+        <div class="tbl-row"><span class="rank num">04</span><span class="name">T-Logo Tee Heather</span><span class="price num">45,000</span><span class="disc">—</span><span class="chg up num">▲2</span></div>
+      </div>
+      <div class="section-label">본문</div>
+      <div class="body-text"><span class="bold">상품기획팀 인텔리전스</span> — 자사 브랜드 VLAD·RE의 판매가격, 리뷰, 랭킹 추이를 실시간으로 모니터링합니다.</div>
+    </div>
+  </div>
+
+</div>
+
+<hr>
+<p class="section-title">── 모노스페이스 (숫자 테이블용) 비교 — 현재: JetBrains Mono ──</p>
+<div class="grid" style="grid-template-columns: repeat(3, 1fr)">
+
+  <!-- JetBrains Mono (현재) -->
+  <div class="card">
+    <div class="card-head">
+      <div class="fname">JetBrains Mono <span class="badge cur">현재</span></div>
+      <div class="fmeta">JetBrains · 개발자 특화 · 자간 좁음</div>
+    </div>
+    <div class="card-body">
+      <div class="mono-demo" style="font-family:'JetBrains Mono',monospace; font-size:12px;">
+        <div class="mono-row"><span class="lbl">판매가</span><span>₩ 38,000</span></div>
+        <div class="mono-row"><span class="lbl">소비자가</span><span>₩ 54,000</span></div>
+        <div class="mono-row"><span class="lbl">할인율</span><span style="color:#ef5350">29.6 %↓</span></div>
+        <div class="mono-row"><span class="lbl">리뷰점수</span><span style="color:#4caf50">87 / 100</span></div>
+        <div class="mono-row"><span class="lbl">리뷰수</span><span>1,284</span></div>
+        <div class="mono-row"><span class="lbl">순위변동</span><span style="color:#4caf50">▲ 3</span></div>
+        <div style="border-top:1px solid #222; margin-top:8px; padding-top:8px;">
+          <div style="color:#555; font-size:10px; margin-bottom:4px;">숫자 구분 테스트</div>
+          <div style="font-size:13px; letter-spacing:0.02em">0 1 2 3 4 5 6 7 8 9</div>
+          <div style="font-size:13px; color:#888">Il1 O0 rn</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- IBM Plex Mono -->
+  <div class="card">
+    <div class="card-head">
+      <div class="fname">IBM Plex Mono <span class="badge">Google Fonts</span></div>
+      <div class="fmeta">IBM · 데이터 테이블 최적화 · 자간 균형</div>
+    </div>
+    <div class="card-body">
+      <div class="mono-demo" style="font-family:'IBM Plex Mono',monospace; font-size:12px;">
+        <div class="mono-row"><span class="lbl">판매가</span><span>₩ 38,000</span></div>
+        <div class="mono-row"><span class="lbl">소비자가</span><span>₩ 54,000</span></div>
+        <div class="mono-row"><span class="lbl">할인율</span><span style="color:#ef5350">29.6 %↓</span></div>
+        <div class="mono-row"><span class="lbl">리뷰점수</span><span style="color:#4caf50">87 / 100</span></div>
+        <div class="mono-row"><span class="lbl">리뷰수</span><span>1,284</span></div>
+        <div class="mono-row"><span class="lbl">순위변동</span><span style="color:#4caf50">▲ 3</span></div>
+        <div style="border-top:1px solid #222; margin-top:8px; padding-top:8px;">
+          <div style="color:#555; font-size:10px; margin-bottom:4px;">숫자 구분 테스트</div>
+          <div style="font-size:13px; letter-spacing:0.02em">0 1 2 3 4 5 6 7 8 9</div>
+          <div style="font-size:13px; color:#888">Il1 O0 rn</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Roboto Mono -->
+  <div class="card">
+    <div class="card-head">
+      <div class="fname">Roboto Mono <span class="badge">Google Fonts</span></div>
+      <div class="fmeta">Google · 가장 널리 쓰이는 모노 · 획이 부드러움</div>
+    </div>
+    <div class="card-body">
+      <div class="mono-demo" style="font-family:'Roboto Mono',monospace; font-size:12px;">
+        <div class="mono-row"><span class="lbl">판매가</span><span>₩ 38,000</span></div>
+        <div class="mono-row"><span class="lbl">소비자가</span><span>₩ 54,000</span></div>
+        <div class="mono-row"><span class="lbl">할인율</span><span style="color:#ef5350">29.6 %↓</span></div>
+        <div class="mono-row"><span class="lbl">리뷰점수</span><span style="color:#4caf50">87 / 100</span></div>
+        <div class="mono-row"><span class="lbl">리뷰수</span><span>1,284</span></div>
+        <div class="mono-row"><span class="lbl">순위변동</span><span style="color:#4caf50">▲ 3</span></div>
+        <div style="border-top:1px solid #222; margin-top:8px; padding-top:8px;">
+          <div style="color:#555; font-size:10px; margin-bottom:4px;">숫자 구분 테스트</div>
+          <div style="font-size:13px; letter-spacing:0.02em">0 1 2 3 4 5 6 7 8 9</div>
+          <div style="font-size:13px; color:#888">Il1 O0 rn</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<hr>
+<div style="font-family:system-ui; font-size:11px; color:#444; line-height:1.8;">
+  <div style="margin-bottom:6px; color:#666; font-weight:500;">참고 — Google Fonts 직접 링크</div>
+  <a href="https://fonts.google.com/specimen/Noto+Sans+KR" target="_blank" style="color:#4caf50; margin-right:20px;">Noto Sans KR ↗</a>
+  <a href="https://fonts.google.com/specimen/IBM+Plex+Sans+KR" target="_blank" style="color:#4caf50; margin-right:20px;">IBM Plex Sans KR ↗</a>
+  <a href="https://fonts.google.com/specimen/Inter" target="_blank" style="color:#4caf50; margin-right:20px;">Inter ↗</a>
+  <a href="https://fonts.google.com/specimen/Geist" target="_blank" style="color:#4caf50; margin-right:20px;">Geist ↗</a>
+  <a href="https://fonts.google.com/specimen/IBM+Plex+Mono" target="_blank" style="color:#4caf50; margin-right:20px;">IBM Plex Mono ↗</a>
+  <a href="https://fonts.google.com/specimen/Roboto+Mono" target="_blank" style="color:#4caf50;">Roboto Mono ↗</a>
+</div>
+
+</body>
+</html>

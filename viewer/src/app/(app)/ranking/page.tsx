@@ -242,6 +242,7 @@ export default function RankingPage() {
   const [page,        setPage]      = React.useState<number>(saved?.page ?? 1);
   const [noteCount, setNoteCount] = React.useState(0);
   const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(false);
+  const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
 
   // ── 필터 상태 → localStorage 자동 저장 ───────────────────
   React.useEffect(() => {
@@ -591,12 +592,13 @@ export default function RankingPage() {
             <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
               {(() => {
                 const cols = multiDay
-                  ? '54px 36px 1fr 116px 60px 60px 88px 54px 46px 56px 56px'
-                  : '36px 1fr 116px 60px 60px 88px 54px 46px 56px 56px';
+                  ? '54px 36px 44px 1fr 116px 60px 60px 88px 54px 46px 56px 56px'
+                  : '36px 44px 1fr 116px 60px 60px 88px 54px 46px 56px 56px';
                 return (
                   <div className="row head" style={{ gridTemplateColumns: cols, lineHeight: 1.3 }}>
                     {multiDay && <span>날짜</span>}
                     <span>순위</span>
+                    <span></span>
                     <span>상품명</span>
                     <span>브랜드<br />회사</span>
                     <span>카테고리</span>
@@ -612,8 +614,8 @@ export default function RankingPage() {
 
               {loading ? (
                 Array.from({ length: 10 }).map((_, i) => (
-                  <div key={i} className="row" style={{ gridTemplateColumns: multiDay ? '54px 36px 1fr 116px 60px 60px 88px 54px 46px 56px 56px' : '36px 1fr 116px 60px 60px 88px 54px 46px 56px 56px' }}>
-                    {Array.from({ length: multiDay ? 11 : 10 }).map((_, j) => (
+                  <div key={i} className="row" style={{ gridTemplateColumns: multiDay ? '54px 36px 44px 1fr 116px 60px 60px 88px 54px 46px 56px 56px' : '36px 44px 1fr 116px 60px 60px 88px 54px 46px 56px 56px' }}>
+                    {Array.from({ length: multiDay ? 12 : 11 }).map((_, j) => (
                       <span key={j} style={{ height: 16, background: 'var(--rai)', borderRadius: 3, display: 'block' }} />
                     ))}
                   </div>
@@ -625,8 +627,8 @@ export default function RankingPage() {
                 const aTxt    = AGE_MAP[r.age_filter] || r.age_filter;
                 const chg     = r.rank_change;
                 const cols    = multiDay
-                  ? '54px 36px 1fr 116px 60px 60px 88px 54px 46px 56px 56px'
-                  : '36px 1fr 116px 60px 60px 88px 54px 46px 56px 56px';
+                  ? '54px 36px 44px 1fr 116px 60px 60px 88px 54px 46px 56px 56px'
+                  : '36px 44px 1fr 116px 60px 60px 88px 54px 46px 56px 56px';
                 return (
                   <div key={`${r.snapshot_date}-${r.rank_position}-${i}`}
                     className={`row hover ${i % 2 ? 'alt' : ''}`}
@@ -639,6 +641,19 @@ export default function RankingPage() {
 
                     <span className="mono" style={{ fontWeight: 500, color: r.rank_position <= 10 ? 'var(--f1)' : 'var(--f3)' }}>
                       {String(r.rank_position).padStart(2, '0')}
+                    </span>
+
+                    <span style={{ display: 'flex', alignItems: 'center' }}>
+                      {r.thumbnail_url ? (
+                        <img
+                          src={r.thumbnail_url} alt=""
+                          onClick={e => { e.stopPropagation(); setLightboxUrl(r.thumbnail_url!); }}
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 3, border: '0.5px solid var(--bs)', cursor: 'zoom-in', display: 'block' }}
+                        />
+                      ) : (
+                        <div style={{ width: 36, height: 36, borderRadius: 3, background: 'var(--snk)', border: '0.5px solid var(--bs)' }} />
+                      )}
                     </span>
 
                     <span className="ellip" style={{ fontWeight: r.is_own ? 500 : 400, color: r.is_own ? 'var(--hs)' : 'var(--f1)' }} title={r.product_name}>
@@ -736,6 +751,34 @@ export default function RankingPage() {
           </section>
         </div>
       </div>
+
+      {/* 이미지 라이트박스 */}
+      {lightboxUrl && (
+        <div
+          onClick={() => setLightboxUrl(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.82)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'zoom-out',
+          }}>
+          <img
+            src={lightboxUrl} alt=""
+            onClick={e => e.stopPropagation()}
+            style={{ maxWidth: '80vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: 6 }}
+          />
+          <button
+            onClick={() => setLightboxUrl(null)}
+            style={{
+              position: 'absolute', top: 20, right: 20,
+              background: 'rgba(255,255,255,0.15)', border: 'none',
+              color: '#fff', fontSize: 20, width: 36, height: 36,
+              borderRadius: '50%', cursor: 'pointer', lineHeight: 1,
+            }}>
+            ✕
+          </button>
+        </div>
+      )}
     </>
   );
 }
