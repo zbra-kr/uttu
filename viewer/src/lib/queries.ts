@@ -1538,16 +1538,26 @@ export async function fetchBrandRankingDistribution(brandName: string): Promise<
   const latestDate = (latest as any[])?.[0]?.snapshot_date;
   if (!latestDate) return [];
 
-  const { data } = await supabase
-    .from('ranking_snapshots')
-    .select('category_code, gender_filter, age_filter, rank_position')
-    .eq('brand_name', brandName)
-    .eq('snapshot_date', latestDate)
-    .order('rank_position', { ascending: true })
-    .limit(2000);
+  // PostgREST max-rows(1000) 초과 대응 — 페이지 단위로 전부 수집
+  const PAGE = 1000;
+  let allRows: any[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('ranking_snapshots')
+      .select('category_code, gender_filter, age_filter, rank_position')
+      .eq('brand_name', brandName)
+      .eq('snapshot_date', latestDate)
+      .order('rank_position', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error || !data?.length) break;
+    allRows = allRows.concat(data);
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
 
   const groups = new Map<string, { count: number; best: number }>();
-  for (const r of (data ?? []) as any[]) {
+  for (const r of allRows) {
     const key = `${r.category_code}|${r.gender_filter}|${r.age_filter}`;
     const g = groups.get(key);
     if (!g) groups.set(key, { count: 1, best: r.rank_position });

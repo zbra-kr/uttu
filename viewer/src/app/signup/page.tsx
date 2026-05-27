@@ -73,7 +73,7 @@ export default function SignupPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--f3)' }}>이름</label>
               <input
-                name="full_name" type="text" autoComplete="name"
+                name="full_name" type="text" autoFocus autoComplete="name"
                 placeholder="홍길동"
                 className="input"
                 style={{ width: '100%', height: 38 }}
@@ -82,7 +82,7 @@ export default function SignupPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               <label style={{ fontSize: 11, fontWeight: 500, color: 'var(--f3)' }}>이메일</label>
               <input
-                name="email" type="email" required autoFocus autoComplete="email"
+                name="email" type="email" required autoComplete="email"
                 placeholder="name@bcave.co.kr"
                 className="input mono"
                 style={{ width: '100%', height: 38, fontSize: 12 }}

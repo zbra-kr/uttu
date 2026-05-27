@@ -37,7 +37,7 @@ export async function signUp(
   }
 
   const sb = await supabaseServer();
-  const { error } = await sb.auth.signUp({
+  const { data, error } = await sb.auth.signUp({
     email,
     password,
     options: {
@@ -54,6 +54,24 @@ export async function signUp(
       return { error: '이미 가입된 이메일입니다. 로그인해 주세요.' };
     }
     return { error: error.message };
+  }
+
+  // Email Enumeration Protection ON: 이미 확인된 이메일 → user: null 반환
+  if (!data.user) {
+    return { error: '이미 가입된 이메일입니다. 로그인해 주세요.' };
+  }
+
+  // Email Enumeration Protection OFF: 이미 확인된 이메일 → identities: [] 반환
+  if ((data.user.identities ?? []).length === 0) {
+    return { error: '이미 가입된 이메일입니다. 로그인해 주세요.' };
+  }
+
+  // 미인증 상태에서 재시도 — created_at이 30초 이상 지난 기존 계정
+  if (!data.user.email_confirmed_at) {
+    const ageMs = Date.now() - new Date(data.user.created_at).getTime();
+    if (ageMs > 30_000) {
+      return { error: '이미 인증 메일이 발송된 이메일입니다. 받은편지함을 확인해 주세요.' };
+    }
   }
 
   return { success: '가입 완료! 이메일 인증 후 로그인해 주세요.' };
