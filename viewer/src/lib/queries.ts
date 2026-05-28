@@ -2267,3 +2267,171 @@ export async function fetchOwnProductsWithPrices(opts: {
 
   return { rows, total: count ?? 0 };
 }
+
+// ── 자사매칭 ──────────────────────────────────────────────────────
+
+export type OwnBrand = { id: string; name: string };
+
+export interface CompetitorBrandRow {
+  id: string;
+  own_brand_id: string;
+  brand_id: string;
+  brand_name: string;
+  corp_name: string | null;
+  added_at: string;
+}
+
+export interface BrandSearchRow {
+  id: string;
+  name: string;
+  corp_name: string | null;
+}
+
+export interface ProductMatchRow {
+  id: string;
+  own_product_id: string;
+  competitor_product_id: string;
+  competitor_name: string;
+  competitor_brand: string;
+  competitor_musinsa_no: string;
+  competitor_thumbnail: string | null;
+  competitor_review_count: number;
+  competitor_satisfaction: number | null;
+  competitor_category: string | null;
+  status: 'auto' | 'confirmed' | 'excluded';
+  score: number | null;
+  created_at: string;
+}
+
+export async function fetchCompetitorBrands(ownBrandId: string): Promise<CompetitorBrandRow[]> {
+  const { data, error } = await supabase
+    .from('competitor_brands')
+    .select('id, own_brand_id, brand_id, added_at, brands!competitor_brands_brand_id_fkey(name, companies(corp_name))')
+    .eq('own_brand_id', ownBrandId)
+    .order('added_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    own_brand_id: r.own_brand_id,
+    brand_id: r.brand_id,
+    brand_name: r.brands?.name ?? '—',
+    corp_name: r.brands?.companies?.corp_name ?? null,
+    added_at: r.added_at,
+  }));
+}
+
+export async function searchBrandsForPool(keyword: string, limit = 20): Promise<BrandSearchRow[]> {
+  const kw = keyword.trim();
+  if (!kw) return [];
+  const { data, error } = await supabase
+    .from('brands')
+    .select('id, name, companies(corp_name)')
+    .ilike('name', `%${kw}%`)
+    .order('name')
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    corp_name: (r.companies as any)?.corp_name ?? null,
+  }));
+}
+
+export async function addCompetitorBrand(ownBrandId: string, brandId: string): Promise<void> {
+  const { error } = await supabase
+    .from('competitor_brands')
+    .insert({ own_brand_id: ownBrandId, brand_id: brandId });
+  if (error) throw error;
+}
+
+export async function removeCompetitorBrand(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('competitor_brands')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function fetchProductMatches(ownProductId: string, includeExcluded = false): Promise<ProductMatchRow[]> {
+  let q = supabase
+    .from('product_matches')
+    .select(`
+      id, own_product_id, competitor_product_id, status, score, created_at,
+      products!product_matches_competitor_product_id_fkey(musinsa_no, name, thumbnail_url, review_count, satisfaction_score, category_code, brands(name))
+    `)
+    .eq('own_product_id', ownProductId)
+    .order('score', { ascending: false });
+  if (!includeExcluded) q = q.neq('status', 'excluded');
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r: any) => {
+    const p = r.products ?? {};
+    return {
+      id: r.id,
+      own_product_id: r.own_product_id,
+      competitor_product_id: r.competitor_product_id,
+      competitor_name: p.name ?? '—',
+      competitor_brand: p.brands?.name ?? '—',
+      competitor_musinsa_no: String(p.musinsa_no ?? ''),
+      competitor_thumbnail: normImgUrl(p.thumbnail_url),
+      competitor_review_count: p.review_count ?? 0,
+      competitor_satisfaction: p.satisfaction_score ?? null,
+      competitor_category: p.category_code ?? null,
+      status: r.status,
+      score: r.score,
+      created_at: r.created_at,
+    };
+  });
+}
+
+export async function setMatchStatus(matchId: string, status: 'confirmed' | 'excluded'): Promise<void> {
+  const updates: Record<string, unknown> = { status };
+  if (status === 'confirmed') updates.confirmed_at = new Date().toISOString();
+  const { error } = await supabase
+    .from('product_matches')
+    .update(updates)
+    .eq('id', matchId);
+  if (error) throw error;
+}
+
+export async function runAutoMatch(ownProductId: string): Promise<number> {
+  const { data: own } = await supabase
+    .from('products')
+    .select('category_code, brand_id')
+    .eq('id', ownProductId)
+    .single();
+  if (!own?.category_code || !own?.brand_id) return 0;
+
+  // 해당 자사 브랜드에 등록된 경쟁 브랜드 풀만 사용
+  const { data: pool } = await supabase
+    .from('competitor_brands')
+    .select('brand_id')
+    .eq('own_brand_id', own.brand_id);
+  if (!pool?.length) return 0;
+
+  const brandIds = (pool as any[]).map((r) => r.brand_id);
+
+  const { data: candidates } = await supabase
+    .from('products')
+    .select('id')
+    .in('brand_id', brandIds)
+    .eq('category_code', own.category_code)
+    .neq('is_own', true)
+    .limit(500);
+
+  if (!candidates?.length) return 0;
+
+  const rows = (candidates as any[]).map((c) => ({
+    own_product_id: ownProductId,
+    competitor_product_id: c.id,
+    status: 'auto',
+    score: 100,
+  }));
+
+  const { error } = await supabase
+    .from('product_matches')
+    .upsert(rows, { onConflict: 'own_product_id,competitor_product_id', ignoreDuplicates: true });
+  if (error) throw error;
+
+  return rows.length;
+}

@@ -325,14 +325,14 @@ def detect_promo_anomalies(client: Client, target_date: date) -> list[Anomaly]:
         logger.info(f"promo_anomalies_done date={target_date} anomalies={len(anomalies)}")
         return anomalies
 
-    def _load_own_promo_items(d: date) -> dict[str, str]:
-        """musinsa_no → product_name, 자사 브랜드만."""
-        result: dict[str, str] = {}
+    def _load_own_promo_items(d: date) -> dict[str, tuple[str, str | None]]:
+        """musinsa_no → (product_name, product_id), 자사 브랜드만."""
+        result: dict[str, tuple[str, str | None]] = {}
         offset = 0
         while True:
             batch = (
                 client.table("promotion_items")
-                .select("musinsa_no, product_name, musinsa_brand_slug")
+                .select("musinsa_no, product_name, product_id, musinsa_brand_slug")
                 .eq("snapshot_date", d.isoformat())
                 .in_("musinsa_brand_slug", list(own_slugs))
                 .range(offset, offset + 999)
@@ -340,7 +340,10 @@ def detect_promo_anomalies(client: Client, target_date: date) -> list[Anomaly]:
                 .data or []
             )
             for r in batch:
-                result[r["musinsa_no"]] = r.get("product_name") or r["musinsa_no"]
+                result[r["musinsa_no"]] = (
+                    r.get("product_name") or r["musinsa_no"],
+                    r.get("product_id"),
+                )
             if len(batch) < 1000:
                 break
             offset += 1000
@@ -349,11 +352,11 @@ def detect_promo_anomalies(client: Client, target_date: date) -> list[Anomaly]:
     prev_own = _load_own_promo_items(yesterday)
     today_own = _load_own_promo_items(target_date)
 
-    exited = {no: name for no, name in prev_own.items() if no not in today_own}
-    for musinsa_no, product_name in exited.items():
+    exited = {no: val for no, val in prev_own.items() if no not in today_own}
+    for musinsa_no, (product_name, product_id) in exited.items():
         anomalies.append(Anomaly(
             module=MODULE, severity="medium", anomaly_type="promo_own_exit",
-            entity_type="product", entity_id=musinsa_no, entity_name=product_name,
+            entity_type="product", entity_id=product_id, entity_name=product_name,
             description=f"[자사] {product_name} — 어제 프로모션 노출 → 오늘 이탈",
             meta={"musinsa_no": musinsa_no},
         ))

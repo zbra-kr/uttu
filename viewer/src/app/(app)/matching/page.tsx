@@ -1,164 +1,467 @@
 'use client';
 import React from 'react';
-import { IcDownload, IcEdit, IcPlus, IcCheck, IcX } from '@/components/ui/icons';
-import { fetchOwnProducts, type OwnProduct } from '@/lib/queries';
+import { IcCheck, IcX, IcPlus } from '@/components/ui/icons';
+import {
+  fetchOwnBrands, type OwnBrand,
+  fetchOwnProducts, type OwnProduct,
+  fetchCompetitorBrands, addCompetitorBrand, removeCompetitorBrand,
+  searchBrandsForPool, type CompetitorBrandRow, type BrandSearchRow,
+  fetchProductMatches, setMatchStatus, runAutoMatch, type ProductMatchRow,
+} from '@/lib/queries';
 
-const MATCHES: [string, string, number, number, number[], number, number, string][] = [
-  ['커버낫', '시그니처 로고 스웻셔츠', 79000, 92, [98, 88, 95, 84], 1284, 4.5, '→0'],
-  ['디스이즈네버댓', '베이직 크루 스웻 SS24', 64000, 88, [98, 92, 78, 80], 892, 4.4, '↑3'],
-  ['컨버스', '레터링 스웻', 58000, 78, [96, 84, 62, 70], 432, 4.3, '→0'],
-  ['LMC', '베이직 크루 스웻 (네이비)', 72000, 72, [98, 88, 52, 50], 224, 4.2, '↑2'],
-  ['몬츠', '스웻셔츠 (라운드)', 55000, 68, [92, 76, 58, 48], 142, 4.1, '↓1'],
-];
+// ── 경쟁 브랜드 풀 탭 ─────────────────────────────────────────────
 
-export default function MatchingPage() {
+function BrandPool() {
+  const [ownBrands, setOwnBrands] = React.useState<OwnBrand[]>([]);
+  const [selectedBrandId, setSelectedBrandId] = React.useState<string | null>(null);
+  const [pool, setPool] = React.useState<CompetitorBrandRow[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [keyword, setKeyword] = React.useState('');
+  const [results, setResults] = React.useState<BrandSearchRow[]>([]);
+  const [searching, setSearching] = React.useState(false);
+  const [adding, setAdding] = React.useState<string | null>(null);
+  const [removing, setRemoving] = React.useState<string | null>(null);
+  const searchRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    fetchOwnBrands()
+      .then((brands) => {
+        setOwnBrands(brands);
+        if (brands.length > 0) setSelectedBrandId(brands[0].id);
+      })
+      .catch(console.error);
+  }, []);
+
+  const loadPool = React.useCallback((brandId: string) => {
+    setLoading(true);
+    fetchCompetitorBrands(brandId)
+      .then(setPool)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  React.useEffect(() => {
+    if (!selectedBrandId) return;
+    loadPool(selectedBrandId);
+    setKeyword('');
+    setResults([]);
+  }, [selectedBrandId, loadPool]);
+
+  React.useEffect(() => {
+    if (searchRef.current) clearTimeout(searchRef.current);
+    if (!keyword.trim()) { setResults([]); return; }
+    setSearching(true);
+    searchRef.current = setTimeout(() => {
+      searchBrandsForPool(keyword)
+        .then(setResults)
+        .catch(console.error)
+        .finally(() => setSearching(false));
+    }, 300);
+  }, [keyword]);
+
+  const poolBrandIds = new Set(pool.map((p) => p.brand_id));
+
+  const handleAdd = async (br: BrandSearchRow) => {
+    if (!selectedBrandId || poolBrandIds.has(br.id)) return;
+    setAdding(br.id);
+    try {
+      await addCompetitorBrand(selectedBrandId, br.id);
+      loadPool(selectedBrandId);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAdding(null);
+    }
+  };
+
+  const handleRemove = async (id: string) => {
+    setRemoving(id);
+    try {
+      await removeCompetitorBrand(id);
+      setPool((prev) => prev.filter((p) => p.id !== id));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRemoving(null);
+    }
+  };
+
+  return (
+    <div className="col-flex gap-12">
+      {/* 자사 브랜드 선택 */}
+      <div className="row-flex gap-4" style={{ flexWrap: 'wrap' }}>
+        {ownBrands.map((b) => (
+          <button key={b.id} onClick={() => setSelectedBrandId(b.id)}
+            style={{
+              padding: '5px 14px', fontSize: 12, border: 'none', borderRadius: 20, cursor: 'pointer',
+              background: selectedBrandId === b.id ? 'var(--hs)' : 'var(--snk)',
+              color: selectedBrandId === b.id ? 'var(--bg)' : 'var(--f2)',
+              fontWeight: selectedBrandId === b.id ? 600 : 400,
+            }}>
+            {b.name}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14, alignItems: 'start' }}>
+        {/* 현재 풀 */}
+        <section className="panel" style={{ padding: 0 }}>
+          <div className="row-flex between center" style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 500 }}>
+              {ownBrands.find((b) => b.id === selectedBrandId)?.name ?? '—'} 경쟁 브랜드
+            </h3>
+            <span className="mono dim" style={{ fontSize: 11 }}>{loading ? '…' : `${pool.length}개`}</span>
+          </div>
+          {loading ? (
+            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>불러오는 중…</div>
+          ) : pool.length === 0 ? (
+            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+              등록된 경쟁 브랜드가 없습니다.<br />
+              <span style={{ fontSize: 11, marginTop: 4, display: 'block' }}>오른쪽에서 브랜드를 검색해 추가하세요</span>
+            </div>
+          ) : (
+            <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+              {pool.map((b) => (
+                <div key={b.id} className="row-flex between center"
+                  style={{ padding: '10px 14px', borderBottom: '0.5px dashed var(--bs)' }}>
+                  <div>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--f1)' }}>{b.brand_name}</span>
+                    {b.corp_name && (
+                      <span className="mono dim" style={{ fontSize: 11, marginLeft: 8 }}>{b.corp_name}</span>
+                    )}
+                  </div>
+                  <button onClick={() => handleRemove(b.id)} disabled={removing === b.id}
+                    className="btn sm icon" title="풀에서 제거"
+                    style={{ opacity: removing === b.id ? 0.5 : 1 }}>
+                    <IcX />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* 브랜드 검색 + 추가 */}
+        <section className="panel" style={{ padding: 0 }}>
+          <div style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 500, marginBottom: 10 }}>브랜드 검색</h3>
+            <input type="text" value={keyword} onChange={(e) => setKeyword(e.target.value)}
+              placeholder="브랜드명으로 검색…"
+              className="input"
+              style={{ width: '100%', height: 36, fontSize: 13 }} />
+          </div>
+          <div style={{ maxHeight: 440, overflowY: 'auto' }}>
+            {searching ? (
+              <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>검색 중…</div>
+            ) : keyword && results.length === 0 ? (
+              <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+                "{keyword}"에 해당하는 브랜드가 없습니다
+              </div>
+            ) : (
+              results.map((br) => {
+                const inPool = poolBrandIds.has(br.id);
+                return (
+                  <div key={br.id} className="row-flex between center"
+                    style={{ padding: '10px 14px', borderBottom: '0.5px dashed var(--bs)', background: inPool ? 'var(--snk)' : 'transparent' }}>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: inPool ? 'var(--f3)' : 'var(--f1)' }}>{br.name}</span>
+                      {br.corp_name && (
+                        <span className="mono dim" style={{ fontSize: 11, marginLeft: 8 }}>{br.corp_name}</span>
+                      )}
+                    </div>
+                    {inPool ? (
+                      <span style={{ fontSize: 11, color: 'var(--f4)' }}>추가됨</span>
+                    ) : (
+                      <button onClick={() => handleAdd(br)} disabled={adding === br.id}
+                        className="btn sm" style={{ opacity: adding === br.id ? 0.5 : 1 }}>
+                        <IcPlus /> 추가
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+// ── 상품 매칭 탭 ───────────────────────────────────────────────────
+
+type MatchFilter = 'all' | 'confirmed' | 'auto';
+
+function MatchCard({ m, onConfirm, onExclude }: {
+  m: ProductMatchRow;
+  onConfirm: () => void;
+  onExclude: () => void;
+}) {
+  const confirmed = m.status === 'confirmed';
+  return (
+    <div style={{
+      border: `0.5px solid ${confirmed ? 'var(--hs)' : 'var(--bs)'}`,
+      borderRadius: 8, padding: '10px 12px',
+      background: confirmed ? 'color-mix(in srgb, var(--hs) 6%, var(--sur))' : 'var(--sur)',
+      display: 'flex', gap: 10, alignItems: 'flex-start',
+    }}>
+      <div style={{ width: 48, height: 48, flexShrink: 0, borderRadius: 6, overflow: 'hidden',
+        background: 'var(--snk)', border: '0.5px solid var(--bs)' }}>
+        {m.competitor_thumbnail && (
+          <img src={m.competitor_thumbnail} alt=""
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+        )}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="row-flex between center" style={{ gap: 6 }}>
+          <span className="chip" style={{ fontSize: 10 }}>{m.competitor_brand}</span>
+          {confirmed && (
+            <span className="chip" style={{ background: 'var(--hs)', color: 'var(--bg)', borderColor: 'var(--hs)', fontSize: 10 }}>확정</span>
+          )}
+        </div>
+        <div style={{ fontSize: 13, fontWeight: confirmed ? 500 : 400, color: 'var(--f1)', marginTop: 4,
+          lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {m.competitor_name}
+        </div>
+        <div className="row-flex gap-8" style={{ marginTop: 5 }}>
+          <span className="mono dim" style={{ fontSize: 10 }}>#{m.competitor_musinsa_no}</span>
+          <span className="mono dim" style={{ fontSize: 10 }}>리뷰 {m.competitor_review_count.toLocaleString()}</span>
+          {m.competitor_satisfaction != null && (
+            <span className="mono" style={{ fontSize: 10, color: 'var(--hs)' }}>★{m.competitor_satisfaction}</span>
+          )}
+        </div>
+      </div>
+      <div className="col-flex gap-4" style={{ flexShrink: 0 }}>
+        {!confirmed && (
+          <button onClick={onConfirm} className="btn sm icon" title="경쟁 상품으로 확정"><IcCheck /></button>
+        )}
+        <button onClick={onExclude} className="btn sm icon" title="제외"><IcX /></button>
+      </div>
+    </div>
+  );
+}
+
+function ProductMatching() {
   const [products, setProducts] = React.useState<OwnProduct[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [selected, setSelected] = React.useState(0);
+  const [loadingProds, setLoadingProds] = React.useState(true);
+  const [selectedIdx, setSelectedIdx] = React.useState(0);
+
+  const [matches, setMatches] = React.useState<ProductMatchRow[]>([]);
+  const [loadingMatches, setLoadingMatches] = React.useState(false);
+  const [running, setRunning] = React.useState(false);
+  const [runMsg, setRunMsg] = React.useState<string | null>(null);
+  const [filter, setFilter] = React.useState<MatchFilter>('all');
 
   React.useEffect(() => {
     fetchOwnProducts(100)
       .then(setProducts)
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => setLoadingProds(false));
   }, []);
 
-  const own = products[selected];
+  const own = products[selectedIdx];
+
+  React.useEffect(() => {
+    if (!own) return;
+    setMatches([]);
+    setLoadingMatches(true);
+    setRunMsg(null);
+    fetchProductMatches(own.id)
+      .then(setMatches)
+      .catch(console.error)
+      .finally(() => setLoadingMatches(false));
+  }, [own?.id]);
+
+  const handleAutoMatch = async () => {
+    if (!own) return;
+    setRunning(true);
+    setRunMsg(null);
+    try {
+      const n = await runAutoMatch(own.id);
+      setRunMsg(n > 0 ? `${n}건 후보 생성 완료` : '경쟁 브랜드 풀에 해당 카테고리 상품이 없습니다');
+      const updated = await fetchProductMatches(own.id);
+      setMatches(updated);
+    } catch (e: any) {
+      setRunMsg(`오류: ${e.message}`);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handleStatus = async (matchId: string, status: 'confirmed' | 'excluded') => {
+    await setMatchStatus(matchId, status);
+    if (status === 'excluded') {
+      setMatches((prev) => prev.filter((m) => m.id !== matchId));
+    } else {
+      setMatches((prev) => prev.map((m) => m.id === matchId ? { ...m, status } : m));
+    }
+  };
+
+  const visibleMatches = matches.filter((m) => {
+    if (filter === 'confirmed') return m.status === 'confirmed';
+    if (filter === 'auto') return m.status === 'auto';
+    return true;
+  });
+  const confirmedCount = matches.filter((m) => m.status === 'confirmed').length;
+  const autoCount = matches.filter((m) => m.status === 'auto').length;
 
   return (
-    <>
-      <div className="page-title">
-        <h1>자사 매칭</h1>
-        <span className="sub">자사 SKU와 외부 경쟁 상품의 유사도 비교 · AI 추천 + 수동 확정</span>
-        <div className="row-flex gap-6" style={{ marginLeft: 'auto' }}>
-          <button className="btn sm"><IcDownload /> CSV</button>
+    <div className="grid" style={{ gridTemplateColumns: '300px 1fr', gap: 14, alignItems: 'start' }}>
+      {/* 자사 상품 목록 */}
+      <section className="panel" style={{ padding: 0 }}>
+        <div className="row-flex between center" style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 500 }}>자사 상품</h3>
+          <span className="mono dim" style={{ fontSize: 11 }}>{loadingProds ? '…' : `${products.length}건`}</span>
         </div>
-      </div>
-
-      <div className="grid grid-5 gap-8">
-        {[
-          ['자사 상품', loading ? '…' : products.length.toLocaleString(), '리뷰 있는 상품'],
-          ['확정 매칭', '—', '준비 중'],
-          ['AI 추천 대기', '—', '준비 중'],
-          ['별점', own ? (own.satisfaction_score != null ? `★${own.satisfaction_score}` : '—') : '—', '선택 상품 (5점 만점)'],
-          ['선택 상품 리뷰', own ? own.review_count.toLocaleString() : '—', '누적'],
-        ].map(([l, v, d], i) => (
-          <div key={i} className="kpi">
-            <span className="label">{l}</span>
-            <div className="val">{v}</div>
-            <div className="dlt"><span className="muted">{d}</span></div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid" style={{ gridTemplateColumns: '320px 1fr', gap: 14 }}>
-        <section className="panel" style={{ padding: 0 }}>
-          <div className="row-flex between center" style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--bs)' }}>
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 500 }}>자사 상품</h3>
-            <span className="mono dim" style={{ fontSize: 11 }}>{loading ? '…' : `${products.length}건`}</span>
-          </div>
-          <div className="col-flex" style={{ maxHeight: 560, overflowY: 'auto' }}>
-            {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} style={{ padding: '12px 14px', borderBottom: '0.5px dashed var(--bs)' }}>
-                  <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3, marginBottom: 6, width: '60%' }} />
-                  <div style={{ height: 14, background: 'var(--rai)', borderRadius: 3, width: '80%' }} />
-                </div>
-              ))
-            ) : products.map((p, i) => (
-              <div key={p.id} onClick={() => setSelected(i)}
-                style={{ padding: '12px 14px', background: selected === i ? 'var(--snk)' : 'transparent', borderLeft: selected === i ? '2px solid var(--hs)' : '2px solid transparent', borderBottom: '0.5px dashed var(--bs)', cursor: 'pointer' }}>
-                <div className="row-flex between center" style={{ marginBottom: 3 }}>
-                  <span className="mono dim" style={{ fontSize: 11 }}>#{p.musinsa_no}</span>
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--f2)' }}>{p.brand_name}</span>
-                </div>
-                <div style={{ fontSize: 13, fontWeight: selected === i ? 500 : 400 }}>{p.name}</div>
-                <div className="row-flex between center" style={{ marginTop: 6 }}>
-                  <span className="mono dim" style={{ fontSize: 10 }}>리뷰 {p.review_count.toLocaleString()}</span>
-                  {p.satisfaction_score != null && (
-                    <span className="chip" style={{ background: 'var(--hs-soft)', color: 'var(--hs)', borderColor: 'var(--hs)' }}>★{p.satisfaction_score}</span>
-                  )}
-                </div>
+        <div style={{ maxHeight: 580, overflowY: 'auto' }}>
+          {loadingProds ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} style={{ padding: '12px 14px', borderBottom: '0.5px dashed var(--bs)' }}>
+                <div style={{ height: 10, background: 'var(--rai)', borderRadius: 3, marginBottom: 6, width: '55%' }} />
+                <div style={{ height: 13, background: 'var(--rai)', borderRadius: 3, width: '80%' }} />
               </div>
-            ))}
-          </div>
-        </section>
+            ))
+          ) : products.map((p, i) => (
+            <div key={p.id} onClick={() => setSelectedIdx(i)}
+              style={{
+                padding: '11px 14px',
+                background: selectedIdx === i ? 'var(--snk)' : 'transparent',
+                borderLeft: selectedIdx === i ? '2px solid var(--hs)' : '2px solid transparent',
+                borderBottom: '0.5px dashed var(--bs)', cursor: 'pointer',
+              }}>
+              <div className="row-flex between center" style={{ marginBottom: 2 }}>
+                <span className="mono dim" style={{ fontSize: 10 }}>#{p.musinsa_no}</span>
+                <span className="mono" style={{ fontSize: 10, color: 'var(--f3)' }}>{p.brand_name}</span>
+              </div>
+              <div style={{ fontSize: 12, fontWeight: selectedIdx === i ? 500 : 400, lineHeight: 1.35,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {p.name}
+              </div>
+              <div className="row-flex between center" style={{ marginTop: 5 }}>
+                <span className="mono dim" style={{ fontSize: 10 }}>리뷰 {p.review_count.toLocaleString()}</span>
+                {p.satisfaction_score != null && (
+                  <span style={{ fontSize: 10, color: 'var(--hs)' }}>★{p.satisfaction_score}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
-        <div className="col-flex gap-12">
-          {own ? (
+      {/* 매칭 패널 */}
+      <div className="col-flex gap-12">
+        {own ? (
+          <>
             <section className="panel">
               <div className="row-flex between baseline">
                 <div>
                   <div className="row-flex baseline gap-8">
                     <span className="mono dim" style={{ fontSize: 12 }}>#{own.musinsa_no}</span>
-                    <h2 style={{ margin: 0, fontSize: 20, fontWeight: 500 }}>{own.name}</h2>
+                    <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--f1)' }}>{own.name}</span>
                   </div>
                   <div className="mono dim" style={{ fontSize: 11, marginTop: 4 }}>
                     {own.brand_name} · 리뷰 {own.review_count.toLocaleString()}건
-                    {own.satisfaction_score != null && ` · 별점 ★${own.satisfaction_score}`}
+                    {own.satisfaction_score != null && ` · ★${own.satisfaction_score}`}
                   </div>
                 </div>
-                <div className="row-flex gap-6">
-                  <button className="btn sm"><IcEdit /> 정보 편집</button>
-                  <button className="btn sm">상품 페이지 ↗</button>
+                <div className="row-flex gap-8 center">
+                  {runMsg && <span style={{ fontSize: 11, color: 'var(--f3)' }}>{runMsg}</span>}
+                  <button onClick={handleAutoMatch} disabled={running} className="btn sm"
+                    style={{ opacity: running ? 0.6 : 1 }}>
+                    {running ? '실행 중…' : '자동 매칭 실행'}
+                  </button>
                 </div>
               </div>
             </section>
-          ) : (
-            <section className="panel">
-              <div className="col-flex center" style={{ padding: '20px 0', color: 'var(--f4)', alignItems: 'center' }}>
-                <span style={{ fontSize: 12 }}>좌측에서 상품을 선택하세요</span>
-              </div>
-            </section>
-          )}
 
-          <section className="panel">
-            <div className="sec-head">
-              <h3>매칭 후보 <span className="sub">유사도 ≥60% · AI 추천 (샘플)</span></h3>
-              <button className="btn sm"><IcPlus /> 수동 추가</button>
-            </div>
-            <div className="tbl">
-              <div className="row head" style={{ gridTemplateColumns: '100px 1fr 80px 60px 1fr 60px 60px 70px 90px' }}>
-                <span>브랜드</span><span>상품</span><span className="cell-r">가격</span><span className="cell-r">변동</span><span>유사도 (카·가·이·키)</span><span className="cell-r">★</span><span className="cell-r">리뷰</span><span className="cell-r">종합</span><span></span>
+            <section className="panel" style={{ padding: 0 }}>
+              <div className="row-flex between center" style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+                <div className="row-flex gap-4">
+                  {(['all', 'confirmed', 'auto'] as MatchFilter[]).map((f) => {
+                    const labels: Record<MatchFilter, string> = {
+                      all: `전체 ${matches.length}`,
+                      confirmed: `확정 ${confirmedCount}`,
+                      auto: `후보 ${autoCount}`,
+                    };
+                    return (
+                      <button key={f} onClick={() => setFilter(f)}
+                        style={{
+                          padding: '3px 10px', fontSize: 12, border: 'none', borderRadius: 20, cursor: 'pointer',
+                          background: filter === f ? 'var(--hs)' : 'var(--snk)',
+                          color: filter === f ? 'var(--bg)' : 'var(--f3)',
+                          fontWeight: filter === f ? 600 : 400,
+                        }}>
+                        {labels[f]}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              {MATCHES.map((m, i) => {
-                const confirmed = i === 0;
-                return (
-                  <div key={i} className={`row hover ${i % 2 ? 'alt' : ''}`}
-                    style={{ gridTemplateColumns: '100px 1fr 80px 60px 1fr 60px 60px 70px 90px', background: confirmed ? 'var(--hs-soft)' : undefined }}>
-                    <span><span className="chip">{m[0]}</span></span>
-                    <span style={{ fontWeight: confirmed ? 500 : 400, color: confirmed ? 'var(--hs)' : 'var(--f1)' }}>{m[1]}</span>
-                    <span className="mono muted cell-r">{m[2].toLocaleString()}</span>
-                    <span className={`mono cell-r ${m[7].startsWith('↑') ? 'up' : m[7].startsWith('↓') ? 'dn' : 'dim'}`}>{m[7]}</span>
-                    <span className="row-flex center gap-3">
-                      {m[4].map((v, j) => (
-                        <div key={j} title={['카테고리', '가격대', '이미지', '키워드'][j]}
-                          style={{ width: 18, height: 14, background: 'var(--snk)', borderRadius: 2, position: 'relative', overflow: 'hidden' }}>
-                          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${v}%`, background: v >= 80 ? 'var(--tu)' : v >= 60 ? 'var(--smf)' : 'var(--bd)' }} />
-                        </div>
-                      ))}
-                      <span className="mono dim" style={{ fontSize: 10, marginLeft: 4 }}>{m[4].join('/')}</span>
-                    </span>
-                    <span className="mono muted cell-r">{m[6]}</span>
-                    <span className="mono muted cell-r">{m[5].toLocaleString()}</span>
-                    <span className="mono cell-r" style={{ color: m[3] >= 90 ? 'var(--hs)' : 'var(--f1)', fontWeight: 500 }}>{m[3]}%</span>
-                    <span className="row-flex gap-2">
-                      {confirmed ? (
-                        <span className="chip" style={{ background: 'var(--hs)', color: 'var(--bg)', borderColor: 'var(--hs)' }}>확정</span>
-                      ) : (
-                        <><button className="btn sm icon" title="확정"><IcCheck /></button><button className="btn sm icon" title="제외"><IcX /></button></>
-                      )}
+
+              <div style={{ padding: 14 }}>
+                {loadingMatches ? (
+                  <div style={{ textAlign: 'center', color: 'var(--f4)', fontSize: 12, padding: '24px 0' }}>불러오는 중…</div>
+                ) : visibleMatches.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--f4)', fontSize: 12 }}>
+                    매칭 후보가 없습니다.<br />
+                    <span style={{ fontSize: 11, marginTop: 6, display: 'block' }}>
+                      경쟁 브랜드 풀을 먼저 구성한 뒤 "자동 매칭 실행"을 눌러주세요
                     </span>
                   </div>
-                );
-              })}
-            </div>
-            <div className="row-flex center" style={{ padding: '10px 14px', borderTop: '0.5px solid var(--bs)' }}>
-              <span className="mono dim" style={{ fontSize: 11 }}>경쟁 상품 매칭 데이터 — 수집 개발 예정</span>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
+                    {visibleMatches.map((m) => (
+                      <MatchCard key={m.id} m={m}
+                        onConfirm={() => handleStatus(m.id, 'confirmed')}
+                        onExclude={() => handleStatus(m.id, 'excluded')} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          </>
+        ) : (
+          <section className="panel">
+            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+              좌측에서 자사 상품을 선택하세요
             </div>
           </section>
-        </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+// ── 메인 페이지 ───────────────────────────────────────────────────
+
+type Tab = 'brands' | 'products';
+
+export default function MatchingPage() {
+  const [tab, setTab] = React.useState<Tab>('brands');
+
+  return (
+    <>
+      <div className="page-title">
+        <h1>자사 매칭</h1>
+        <span className="sub">경쟁 브랜드 풀 구성 후 자사 상품과 경쟁 상품을 매칭하세요</span>
+      </div>
+
+      <div className="row-flex gap-4" style={{ marginBottom: 14 }}>
+        {([['brands', '경쟁 브랜드 풀'], ['products', '상품 매칭']] as [Tab, string][]).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            style={{
+              padding: '6px 16px', fontSize: 13, border: 'none', borderRadius: 20, cursor: 'pointer',
+              background: tab === key ? 'var(--hs)' : 'var(--snk)',
+              color: tab === key ? 'var(--bg)' : 'var(--f2)',
+              fontWeight: tab === key ? 600 : 400,
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'brands' ? <BrandPool /> : <ProductMatching />}
     </>
   );
 }

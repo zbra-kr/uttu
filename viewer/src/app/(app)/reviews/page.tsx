@@ -2,6 +2,7 @@
 import React from 'react';
 import NoteDrawer from '@/components/me/NoteDrawer';
 import { IcArrowUR, IcX } from '@/components/ui/icons';
+import { exportBrowseReviews, exportProductReviews } from '@/lib/excel-export';
 import { PeriodFilter, FilterBlock, CheckRow } from '@/components/ui/filters';
 import {
   fetchReviews, fetchReviewStats, fetchOwnProducts, fetchOwnBrands,
@@ -414,6 +415,7 @@ function RvBrowse() {
   const [rows, setRows]   = React.useState<ReviewRow[]>([]);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
+  const [exportMsg, setExportMsg] = React.useState('');
 
   const [noteReviewId, setNoteReviewId] = React.useState<string | null>(null);
 
@@ -472,6 +474,20 @@ function RvBrowse() {
     setPeriod('30d'); setRatingFrom(1); setRatingTo(5);
     setKwInput(''); setKeyword(''); setSort('recent'); setPage(0);
     setSelectedBrandIds(new Set()); setCategories(new Set(ALL_CATEGORY_CODES));
+  };
+
+  const handleExport = async () => {
+    await exportBrowseReviews({
+      ratingMin: ratingFrom,
+      ratingMax: ratingTo,
+      dateFrom: calcDateFrom,
+      dateTo: period === 'custom' ? toDate : undefined,
+      keyword: keyword.trim() || undefined,
+      brandIds: selectedBrandIds.size > 0 ? [...selectedBrandIds] : undefined,
+      categoryCodes: categories.size < ALL_CATEGORY_CODES.size ? [...categories] : undefined,
+      sort,
+    }, msg => setExportMsg(msg));
+    setTimeout(() => setExportMsg(''), 3000);
   };
 
   return (
@@ -592,6 +608,15 @@ function RvBrowse() {
               {['최신순', '평점↑', '평점↓', '도움순'][i]}
             </button>
           ))}
+          <div style={{ width: 1, background: 'var(--bs)', margin: '0 2px', alignSelf: 'stretch' }} />
+          {exportMsg ? (
+            <span className="mono dim" style={{ fontSize: 11 }}>{exportMsg}</span>
+          ) : (
+            <button className="btn sm" onClick={handleExport} disabled={total === 0}
+              title={`현재 필터 전체 ${total.toLocaleString()}건 Excel 다운로드`}>
+              ⬇ Excel
+            </button>
+          )}
         </div>
 
         {/* 리뷰 목록 */}
@@ -965,6 +990,7 @@ function RvProductBrowse() {
   const [rvSort, setRvSort]       = React.useState<'recent' | 'rating_asc' | 'rating_desc' | 'helpful'>('recent');
   const [rvLoading, setRvLoading] = React.useState(false);
   const [noteReviewId, setNoteReviewId] = React.useState<string | null>(null);
+  const [exportMsg, setExportMsg] = React.useState('');
 
   const MASTER_SIZE = 30;
   const RV_SIZE     = 20;
@@ -1038,6 +1064,26 @@ function RvProductBrowse() {
     if (n == null) return '—';
     if (type === 'price') return n.toLocaleString();
     return `${n.toFixed(0)}%`;
+  };
+
+  const handleExport = async () => {
+    if (!selectedProduct) return;
+    const rvRatingMin = ratingTab === 'low' ? 1 : ratingTab === 'hi' ? 4 : ratingTab === 'mid' ? 3 : ratingFrom;
+    const rvRatingMax = ratingTab === 'low' ? 2 : ratingTab === 'mid' ? 3 : ratingTo;
+    await exportProductReviews(
+      selectedProduct.id,
+      selectedProduct.name,
+      {
+        ratingMin: rvRatingMin,
+        ratingMax: rvRatingMax,
+        dateFrom: calcDateFrom,
+        dateTo: period === 'custom' ? toDate : undefined,
+        keyword: rvKeyword.trim() || undefined,
+        sort: rvSort,
+      },
+      msg => setExportMsg(msg),
+    );
+    setTimeout(() => setExportMsg(''), 3000);
   };
 
   return (
@@ -1333,6 +1379,15 @@ function RvProductBrowse() {
                   style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                   상품 페이지 <IcArrowUR size={11} />
                 </a>
+                <div style={{ width: 1, background: 'var(--bs)', margin: '0 2px', alignSelf: 'stretch' }} />
+                {exportMsg ? (
+                  <span className="mono dim" style={{ fontSize: 11 }}>{exportMsg}</span>
+                ) : (
+                  <button className="btn sm" onClick={handleExport}
+                    title={`${selectedProduct.name} 전체 리뷰 Excel 다운로드`}>
+                    ⬇ Excel
+                  </button>
+                )}
               </div>
             </div>
 

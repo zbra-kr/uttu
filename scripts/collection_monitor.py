@@ -35,7 +35,7 @@ def tail_stat(name, keyword):
     return lines[-1].split(" - ")[-1] if lines else "진행중"
 
 # 초기 알림
-tg("🚀 UTTU 수집 시작 (5/26)", "랭킹·브랜드랭킹·이벤트·DART·Full 동시 시작")
+tg("🚀 UTTU 수집 시작", "랭킹·브랜드랭킹·이벤트·DART·Full 동시 시작")
 
 notified = set()
 last_hourly = time.time()
@@ -72,34 +72,17 @@ while True:
                 tg("✅ 이상탐지 완료", saved.split(" - ")[-1] if saved else ret.stdout[-200:])
                 notified.add("detect")
 
-            # full_collection 완료 → 리뷰 시작
-            if "full_collection" in notified and "review" not in notified:
-                tg("📝 리뷰 수집 시작 (25/26년도 ~6,600개)")
-                subprocess.Popen(
-                    ["worker/.venv/bin/python3", "-m", "worker.scrapers.musinsa_review"],
-                    cwd=str(Path(__file__).parent.parent),
-                    stdout=open(LOG_DIR / f"reviews_{DATE}.log", "w"),
-                    stderr=subprocess.STDOUT
-                )
-                notified.add("review_started")
-
-    # 리뷰 완료 감지
-    if "review_started" in notified and "review" not in notified and log_done("reviews"):
-        elapsed = int((now - start_time) / 60)
-        tg(f"✅ 리뷰 수집 완료", f"경과 {elapsed}분")
-        notified.add("review")
-
     # 1시간마다 현황 요약
     if now - last_hourly >= 3600:
-        done = [n for n in ["ranking","brand_ranking","event","dart","full_collection","detect","review"] if n in notified]
-        pending = [n for n in ["ranking","brand_ranking","event","dart","full_collection","detect","review"] if n not in notified]
+        done = [n for n in ["ranking","brand_ranking","event","dart","full_collection","detect"] if n in notified]
+        pending = [n for n in ["ranking","brand_ranking","event","dart","full_collection","detect"] if n not in notified]
         elapsed = int((now - start_time) / 60)
         body = f"경과 {elapsed}분\n✅ 완료: {', '.join(done) or '없음'}\n⏳ 진행중: {', '.join(pending) or '없음'}"
         tg("📊 수집 현황 (1시간 요약)", body)
         last_hourly = now
 
     # 전부 완료
-    all_done = all(n in notified for n in ["ranking","brand_ranking","event","dart","full_collection","detect","review"])
+    all_done = all(n in notified for n in ["ranking","brand_ranking","event","dart","full_collection","detect"])
     if all_done:
         elapsed = int((now - start_time) / 60)
         tg("🎉 전체 수집 완료", f"총 {elapsed}분 소요")
