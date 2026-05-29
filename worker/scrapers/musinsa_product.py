@@ -438,37 +438,22 @@ class ProductScraper(BaseScraper):
                 if (_now - _last_notify_at).total_seconds() >= _NOTIFY_SEC:
                     _last_notify_at = _now
                     _elapsed = _now - _started_at
-                    _idx = success
-                    _pct = _idx / _total_own * 100
-                    _rate = _elapsed.total_seconds() / _idx
-                    _remaining = timedelta(seconds=_rate * (_total_own - _idx))
+                    _rate = _elapsed.total_seconds() / success if success else 0
+                    _remaining = timedelta(seconds=_rate * (_total_own - success))
                     _eh, _erem = divmod(int(_elapsed.total_seconds()), 3600)
                     _em = _erem // 60
                     _elapsed_str = f"{_eh}시간 {_em}분" if _eh else f"{_em}분"
                     _rh, _rrem = divmod(int(_remaining.total_seconds()), 3600)
                     _rm = _rrem // 60
                     _rem_str = f"{_rh}시간 {_rm}분" if _rh else f"{_rm}분"
-                    _send(
-                        f"[UTTU] 자사 상품 재수집 진행 중\n"
-                        f"━━━━━━━━━━━━━━\n"
-                        f"진행: {_idx:,}/{_total_own:,} ({_pct:.1f}%)\n"
-                        f"\n"
-                        f"경과: {_elapsed_str}\n"
-                        f"잔여: {_rem_str} (예상)"
-                    )
+                    _notify("refresh_own", success, _total_own, _elapsed_str, _rem_str)
 
         if refresh_own:
             _elapsed_total = datetime.now(_KST) - _started_at
             _eh, _erem = divmod(int(_elapsed_total.total_seconds()), 3600)
             _em = _erem // 60
             _elapsed_str = f"{_eh}시간 {_em}분" if _eh else f"{_em}분"
-            _send(
-                f"[UTTU] 자사 상품 재수집 완료\n"
-                f"━━━━━━━━━━━━━━\n"
-                f"처리: {success:,}/{_total_own:,}개\n"
-                f"소요: {_elapsed_str}\n"
-                f"→ color_group 수집 시작..."
-            )
+            _notify_done("refresh_own", f"처리 {success:,}/{_total_own:,}개 · 소요 {_elapsed_str}")
 
         logger.info("product_detail_run_done", success=success, total=len(targets))
         return success

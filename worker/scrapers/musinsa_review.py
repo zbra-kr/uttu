@@ -83,19 +83,14 @@ class ReviewScraper(BaseScraper):
 
     def _send_hourly(self) -> None:
         """1시간 경과 체크 후 Telegram 발송. 페이지 루프에서 호출."""
-        from worker.tasks.notify import send
+        from worker.tasks.schedule_notify import send_progress as _notify
         now = datetime.now(KST)
         if self.progress_last_notify_at and (now - self.progress_last_notify_at).total_seconds() < 3600:
             return
         self.progress_last_notify_at = now
 
-        idx    = self.progress_product_idx
-        total  = self.progress_product_total
-        prod_pct = idx / total * 100 if total else 0
-
-        rev_now   = self.progress_review_collected
-        rev_total = self.progress_review_total
-        rev_pct   = rev_now / rev_total * 100 if rev_total else 0
+        idx   = self.progress_product_idx
+        total = self.progress_product_total
 
         elapsed = now - self.progress_started_at if self.progress_started_at else timedelta(0)
         if idx > 0:
@@ -105,19 +100,7 @@ class ReviewScraper(BaseScraper):
         else:
             rem_str = "계산 중"
 
-        send(
-            f"[UTTU] 리뷰 backfill 진행 중\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"상품: {idx:,}/{total:,}개 ({prod_pct:.1f}%)\n"
-            f"누적 리뷰: {self.progress_grand_total:,}건\n"
-            f"\n"
-            f"현재 품번: {self.progress_product_no} {self.progress_product_name}\n"
-            f"리뷰: {rev_now:,}/{rev_total:,}건 ({rev_pct:.1f}%)\n"
-            f"\n"
-            f"시작: {self.progress_started_at.strftime('%m/%d %H:%M') if self.progress_started_at else '-'}\n"
-            f"경과: {_fmt_duration(elapsed)}\n"
-            f"잔여: {rem_str} (예상)"
-        )
+        _notify("backfill", idx, total, _fmt_duration(elapsed), rem_str)
 
     # ── API 호출 ──────────────────────────────────────────────────────────────
 
@@ -518,7 +501,7 @@ class ReviewScraper(BaseScraper):
         - 1시간마다 Telegram 진행 상황 알림
         - 완료 시 마커파일 삭제
         """
-        from worker.tasks.notify import send
+        from worker.tasks.schedule_notify import send_progress as _notify, send_done as _notify_done
 
         products = self._get_products_backfill()
         if limit:
@@ -534,13 +517,7 @@ class ReviewScraper(BaseScraper):
         self.progress_last_notify_at = started_at  # 시작 직후 알림 방지
 
         logger.info("review_backfill_start", total_products=total)
-        send(
-            f"[UTTU] 리뷰 backfill 시작\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"대상 상품: {total:,}개\n"
-            f"시작: {started_at.strftime('%Y-%m-%d %H:%M')}\n"
-            f"예상 소요: 2~4일"
-        )
+        _notify("backfill", 0, total)
 
         grand_total = 0
 
@@ -575,13 +552,7 @@ class ReviewScraper(BaseScraper):
 
         elapsed_total = datetime.now(KST) - started_at
         logger.info("review_backfill_done", total_products=total, total_reviews=grand_total)
-        send(
-            f"[UTTU] 리뷰 backfill 완료\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"수집 상품: {total:,}개\n"
-            f"총 리뷰: {grand_total:,}건\n"
-            f"소요 시간: {_fmt_duration(elapsed_total)}"
-        )
+        _notify_done("backfill", f"상품 {total:,}개 · 리뷰 {grand_total:,}건 · 소요 {_fmt_duration(elapsed_total)}")
 
         # 완료 후 마커파일 삭제 (다음 backfill 실행 시 새 타임스탬프 생성)
         if BACKFILL_MARKER.exists():

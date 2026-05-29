@@ -140,10 +140,10 @@ class ColorGroupScraper(BaseScraper):
     async def run(self, limit: int | None = None) -> None:
         from datetime import datetime, timedelta
         import pytz
-        from worker.tasks.notify import send
+        from worker.tasks.schedule_notify import send_progress as _notify, send_done as _notify_done
 
         KST = pytz.timezone("Asia/Seoul")
-        NOTIFY_INTERVAL_SEC = 30 * 60  # 30분
+        NOTIFY_INTERVAL_SEC = 30 * 60
 
         products = self._get_pending_products(limit=limit)
         total = len(products)
@@ -152,12 +152,7 @@ class ColorGroupScraper(BaseScraper):
         started_at = datetime.now(KST)
         last_notify_at = started_at
 
-        send(
-            f"[UTTU] 색상 그룹 수집 시작\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"대상 상품: {total:,}개\n"
-            f"시작: {started_at.strftime('%H:%M')}"
-        )
+        _notify("color_group", 0, total)
 
         processed = 0
         group_found = 0
@@ -214,34 +209,22 @@ class ColorGroupScraper(BaseScraper):
             if processed % 100 == 0:
                 logger.info(f"progress {processed}/{total} group={group_found} standalone={standalone}")
 
-            # 30분마다 텔레그램 알림
             now = datetime.now(KST)
             if (now - last_notify_at).total_seconds() >= NOTIFY_INTERVAL_SEC:
                 last_notify_at = now
                 elapsed = now - started_at
-                pct = idx / total * 100
                 if idx > 0:
                     rate = elapsed.total_seconds() / idx
                     remaining = timedelta(seconds=rate * (total - idx))
-                    h, rem = divmod(int(remaining.total_seconds()), 3600)
-                    m = rem // 60
-                    rem_str = f"{h}시간 {m}분" if h else f"{m}분"
+                    rh, rrem = divmod(int(remaining.total_seconds()), 3600)
+                    rm = rrem // 60
+                    rem_str = f"{rh}시간 {rm}분" if rh else f"{rm}분"
                 else:
                     rem_str = "계산 중"
-
                 eh, erem = divmod(int(elapsed.total_seconds()), 3600)
                 em = erem // 60
                 elapsed_str = f"{eh}시간 {em}분" if eh else f"{em}분"
-
-                send(
-                    f"[UTTU] 색상 그룹 수집 진행 중\n"
-                    f"━━━━━━━━━━━━━━\n"
-                    f"진행: {idx:,}/{total:,} ({pct:.1f}%)\n"
-                    f"그룹: {group_found:,}개 / 단독: {standalone:,}개\n"
-                    f"\n"
-                    f"경과: {elapsed_str}\n"
-                    f"잔여: {rem_str} (예상)"
-                )
+                _notify("color_group", processed, total, elapsed_str, rem_str)
 
         elapsed_total = datetime.now(KST) - started_at
         eh, erem = divmod(int(elapsed_total.total_seconds()), 3600)
@@ -251,26 +234,12 @@ class ColorGroupScraper(BaseScraper):
         logger.info(
             f"color_group_done processed={processed} group_found={group_found} standalone={standalone}"
         )
-        send(
-            f"[UTTU] 색상 그룹 수집 완료\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"처리: {processed:,}개\n"
-            f"그룹: {group_found:,}개 / 단독: {standalone:,}개\n"
-            f"소요: {elapsed_str}\n"
-            f"\n"
-            f"→ reviews.color_group_id 마이그레이션 시작..."
-        )
 
         # reviews.color_group_id 자동 마이그레이션
         logger.info("reviews_color_group_migration_start")
         migrated = self._migrate_reviews_color_group()
         logger.info(f"reviews_color_group_migration_done groups={migrated}")
-        send(
-            f"[UTTU] reviews 마이그레이션 완료\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"업데이트 그룹: {migrated:,}개\n"
-            f"→ 리뷰 스마트 수집 시작 예정"
-        )
+        _notify_done("color_group", f"처리 {processed:,}개 · 그룹 {group_found:,} · 단독 {standalone:,} · 소요 {elapsed_str}")
 
 
 async def main() -> None:
