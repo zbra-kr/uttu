@@ -233,6 +233,42 @@ class ReviewScraper(BaseScraper):
         )
         return all_products
 
+    def _get_products_smart(self) -> list[dict]:
+        """
+        스마트 수집 대상: is_own=True 전체 상품.
+        - review_checked_at NULL (미수집) 먼저
+        - 이후 review_checked_at 오래된 순 (가장 오래전 체크 상품 우선)
+        - 23시간 이내 체크된 상품은 스킵 (중복 방지)
+        """
+        daily_cutoff = (datetime.now(KST) - timedelta(hours=23)).isoformat()
+
+        all_products: list[dict] = []
+        offset = 0
+        while True:
+            rows = (
+                self.client.table("products")
+                .select("id, musinsa_no, name, review_count, review_checked_at")
+                .eq("is_own", True)
+                .or_(f"review_checked_at.is.null,review_checked_at.lt.{daily_cutoff}")
+                .range(offset, offset + 999)
+                .execute()
+                .data or []
+            )
+            all_products.extend(rows)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+
+        # NULL checked_at 먼저 → 오래된 순 → review_count 많은 순
+        all_products.sort(
+            key=lambda p: (
+                0 if p.get("review_checked_at") is None else 1,
+                p.get("review_checked_at") or "",
+                -(p.get("review_count") or 0),
+            )
+        )
+        return all_products
+
     def _get_products_daily(self) -> list[dict]:
         """
         daily 대상: ranking_snapshots 최근 30일 등장 + is_sold_out=False 자사 상품.
@@ -494,6 +530,57 @@ class ReviewScraper(BaseScraper):
 
         return grand_total
 
+    async def run_smart(self, limit: int | None = None) -> int:
+        """
+        스마트 수집: 전체 자사 상품 대상 + 증분(신규 리뷰만).
+        - ranking 활성 여부 무관, 모든 is_own 상품 커버
+        - 신규 리뷰 없는 상품은 1회 API 호출 후 즉시 skip
+        - review_checked_at 오래된 순 우선 처리
+        """
+        from worker.tasks.notify import send
+
+        products = self._get_products_smart()
+        if limit:
+            products = products[:limit]
+
+        total = len(products)
+        logger.info("review_smart_start", total_products=total)
+
+        grand_total = 0
+        skipped = 0
+        for idx, row in enumerate(products, 1):
+            product_id = row["id"]
+            musinsa_no = row["musinsa_no"]
+            upserted = await self.run_product(product_id, musinsa_no, full_collect=False)
+            self._mark_checked(product_id)
+            if upserted == 0:
+                skipped += 1
+            grand_total += upserted
+
+            if idx % 100 == 0:
+                logger.info(
+                    "review_smart_progress",
+                    done=idx,
+                    total=total,
+                    new_reviews=grand_total,
+                    skipped=skipped,
+                )
+
+        logger.info(
+            "review_smart_done",
+            total_products=total,
+            total_reviews=grand_total,
+            skipped=skipped,
+        )
+        send(
+            f"[UTTU] 리뷰 스마트 수집 완료\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"전체 상품: {total:,}개\n"
+            f"신규 리뷰: {grand_total:,}건\n"
+            f"스킵 (신규 없음): {skipped:,}개"
+        )
+        return grand_total
+
     async def run_daily(self, limit: int | None = None) -> int:
         """
         일별 증분 수집.
@@ -533,16 +620,23 @@ class ReviewScraper(BaseScraper):
         return grand_total
 
 
-async def main(backfill: bool = False, limit: int | None = None) -> None:
+async def main(backfill: bool = False, smart: bool = False, limit: int | None = None) -> None:
     from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = ReviewScraper(client)
-    label = "리뷰 전체수집(backfill)" if backfill else "리뷰 증분수집"
+    if backfill:
+        label = "리뷰 전체수집(backfill)"
+    elif smart:
+        label = "리뷰 스마트수집"
+    else:
+        label = "리뷰 증분수집"
     tracker = JobTracker(client, script="musinsa_review", label=label)
     await tracker.start()
     try:
         if backfill:
             total = await scraper.run_backfill(limit=limit)
+        elif smart:
+            total = await scraper.run_smart(limit=limit)
         else:
             total = await scraper.run_daily(limit=limit)
         await tracker.finish(rows_done=total or 0)
@@ -562,10 +656,16 @@ if __name__ == "__main__":
         help="전체 수집 모드 (1회성). 모든 자사 상품의 모든 리뷰를 수집."
     )
     parser.add_argument(
+        "--smart",
+        action="store_true",
+        help="스마트 수집 모드 (일별 권장). 전체 자사 상품 대상, 신규 리뷰만 증분 수집. "
+             "ranking 활성 여부 무관. 신규 없는 상품은 1회 API 호출 후 즉시 skip."
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="테스트용 상품 수 제한 (두 모드 공통)"
+        help="테스트용 상품 수 제한 (모든 모드 공통)"
     )
     args = parser.parse_args()
-    asyncio.run(main(backfill=args.backfill, limit=args.limit))
+    asyncio.run(main(backfill=args.backfill, smart=args.smart, limit=args.limit))
