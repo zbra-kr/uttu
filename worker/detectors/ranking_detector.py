@@ -139,9 +139,8 @@ def detect_ranking(client: Client, target_date: date) -> list[Anomaly]:
             and (rank_today - rank_prev) >= RANK_DROP_OWN_DELTA
         ):
             delta = rank_today - rank_prev
-            severity = "high" if delta >= 30 else "medium"
             anomalies.append(Anomaly(
-                module=MODULE, severity=severity, anomaly_type="rank_drop_own",
+                module=MODULE, severity="high", anomaly_type="rank_drop_own",
                 entity_type="product", entity_id=pid, entity_name=name,
                 description=f"[자사] {name} — 순위 {rank_prev}위 → {rank_today}위 ({delta}계단 하락)",
                 meta={"rank_today": rank_today, "rank_prev": rank_prev, "delta": delta},
@@ -204,7 +203,7 @@ def detect_ranking(client: Client, target_date: date) -> list[Anomaly]:
             rise_rate = (today["final_price"] - prev["final_price"]) / prev["final_price"]
             if rise_rate >= PRICE_RISE_RATE:
                 label = "[자사] " if today["is_own"] else f"[{brand}] "
-                severity = "medium" if today["is_own"] else "low"
+                severity = "high" if today["is_own"] else "low"
                 anomalies.append(Anomaly(
                     module=MODULE, severity=severity, anomaly_type="price_rise",
                     entity_type="product", entity_id=pid, entity_name=name,
@@ -221,7 +220,7 @@ def detect_ranking(client: Client, target_date: date) -> list[Anomaly]:
         ):
             prev_str = f"{rank_prev}위" if rank_prev else "미진입"
             anomalies.append(Anomaly(
-                module=MODULE, severity="low", anomaly_type="rank_return_own",
+                module=MODULE, severity="high", anomaly_type="rank_return_own",
                 entity_type="product", entity_id=pid, entity_name=name,
                 description=f"[자사] {name} — TOP50 재진입 ({prev_str} → {rank_today}위)",
                 meta={"rank_today": rank_today, "rank_prev": rank_prev},
@@ -355,7 +354,7 @@ def detect_promo_anomalies(client: Client, target_date: date) -> list[Anomaly]:
     exited = {no: val for no, val in prev_own.items() if no not in today_own}
     for musinsa_no, (product_name, product_id) in exited.items():
         anomalies.append(Anomaly(
-            module=MODULE, severity="medium", anomaly_type="promo_own_exit",
+            module=MODULE, severity="high", anomaly_type="promo_own_exit",
             entity_type="product", entity_id=product_id, entity_name=product_name,
             description=f"[자사] {product_name} — 어제 프로모션 노출 → 오늘 이탈",
             meta={"musinsa_no": musinsa_no},

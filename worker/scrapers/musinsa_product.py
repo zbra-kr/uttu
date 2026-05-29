@@ -270,14 +270,46 @@ class ProductScraper(BaseScraper):
         ranking_top_n: int = 50,
         snap_only: bool = False,
         magazine_only: bool = False,
+        refresh_own: bool = False,
     ) -> int:
         """
         detail_fetched_at IS NULL인 stub 상품 수집.
         today_ranking=True면 오늘 랭킹 top_n 이내 상품만 수집 (111k 보류분 제외).
         snap_only=True면 snap_products 에 연결된 상품만 우선 수집.
         magazine_only=True면 magazine_article_products 연결 상품만 우선 수집.
+        refresh_own=True면 is_own=True 전체 강제 재수집 (detail_fetched_at 무시).
         """
-        if magazine_only:
+        if refresh_own:
+            from datetime import timedelta
+            import pytz as _pytz
+            from worker.tasks.schedule_notify import send_progress as _notify, send_done as _notify_done
+
+            _KST = _pytz.timezone("Asia/Seoul")
+            _NOTIFY_SEC = 30 * 60
+
+            targets: list[dict] = []
+            offset = 0
+            while True:
+                rows = (
+                    self.client.table("products")
+                    .select("id, musinsa_no")
+                    .eq("is_own", True)
+                    .order("review_count", desc=True)
+                    .range(offset, offset + 999)
+                    .execute()
+                    .data or []
+                )
+                targets.extend(rows)
+                if len(rows) < 1000:
+                    break
+                offset += 1000
+
+            _total_own = len(targets)
+            _started_at = datetime.now(_KST)
+            _last_notify_at = _started_at
+            logger.info("product_detail_refresh_own_start", targets=_total_own)
+            _notify("refresh_own", 0, _total_own)
+        elif magazine_only:
             product_ids = self._get_magazine_product_ids()
             if not product_ids:
                 logger.info("product_detail_magazine_only_empty")
@@ -401,18 +433,55 @@ class ProductScraper(BaseScraper):
             success += 1
             logger.debug("product_detail_done", musinsa_no=mno, company=company_data and company_data.get("corp_name"))
 
+            if refresh_own:
+                _now = datetime.now(_KST)
+                if (_now - _last_notify_at).total_seconds() >= _NOTIFY_SEC:
+                    _last_notify_at = _now
+                    _elapsed = _now - _started_at
+                    _idx = success
+                    _pct = _idx / _total_own * 100
+                    _rate = _elapsed.total_seconds() / _idx
+                    _remaining = timedelta(seconds=_rate * (_total_own - _idx))
+                    _eh, _erem = divmod(int(_elapsed.total_seconds()), 3600)
+                    _em = _erem // 60
+                    _elapsed_str = f"{_eh}시간 {_em}분" if _eh else f"{_em}분"
+                    _rh, _rrem = divmod(int(_remaining.total_seconds()), 3600)
+                    _rm = _rrem // 60
+                    _rem_str = f"{_rh}시간 {_rm}분" if _rh else f"{_rm}분"
+                    _send(
+                        f"[UTTU] 자사 상품 재수집 진행 중\n"
+                        f"━━━━━━━━━━━━━━\n"
+                        f"진행: {_idx:,}/{_total_own:,} ({_pct:.1f}%)\n"
+                        f"\n"
+                        f"경과: {_elapsed_str}\n"
+                        f"잔여: {_rem_str} (예상)"
+                    )
+
+        if refresh_own:
+            _elapsed_total = datetime.now(_KST) - _started_at
+            _eh, _erem = divmod(int(_elapsed_total.total_seconds()), 3600)
+            _em = _erem // 60
+            _elapsed_str = f"{_eh}시간 {_em}분" if _eh else f"{_em}분"
+            _send(
+                f"[UTTU] 자사 상품 재수집 완료\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"처리: {success:,}/{_total_own:,}개\n"
+                f"소요: {_elapsed_str}\n"
+                f"→ color_group 수집 시작..."
+            )
+
         logger.info("product_detail_run_done", success=success, total=len(targets))
         return success
 
 
-async def main(limit: int = 50, own_only: bool = False, today_ranking: bool = False, ranking_top_n: int = 50, snap_only: bool = False, magazine_only: bool = False) -> None:
+async def main(limit: int = 50, own_only: bool = False, today_ranking: bool = False, ranking_top_n: int = 50, snap_only: bool = False, magazine_only: bool = False, refresh_own: bool = False) -> None:
     from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = ProductScraper(client)
     tracker = JobTracker(client, script="musinsa_product", label="상품 상세")
     await tracker.start()
     try:
-        total = await scraper.run(limit=limit, own_only=own_only, today_ranking=today_ranking, ranking_top_n=ranking_top_n, snap_only=snap_only, magazine_only=magazine_only)
+        total = await scraper.run(limit=limit, own_only=own_only, today_ranking=today_ranking, ranking_top_n=ranking_top_n, snap_only=snap_only, magazine_only=magazine_only, refresh_own=refresh_own)
         await tracker.finish(rows_done=total or 0)
     except Exception as e:
         await tracker.error(str(e))
@@ -430,5 +499,6 @@ if __name__ == "__main__":
     parser.add_argument("--ranking-top-n", type=int, default=50, help="랭킹 몇 위까지 수집할지 (기본 50)")
     parser.add_argument("--snap-only", action="store_true", help="snap_products 연결 상품만 우선 수집 (111k 보류분 제외)")
     parser.add_argument("--magazine-only", action="store_true", help="magazine_article_products 연결 상품만 우선 수집")
+    parser.add_argument("--refresh-own", action="store_true", help="is_own=True 전체 강제 재수집 (detail_fetched_at 무시)")
     args = parser.parse_args()
-    asyncio.run(main(limit=args.limit, own_only=args.own_only, today_ranking=args.today_ranking, ranking_top_n=args.ranking_top_n, snap_only=args.snap_only, magazine_only=args.magazine_only))
+    asyncio.run(main(limit=args.limit, own_only=args.own_only, today_ranking=args.today_ranking, ranking_top_n=args.ranking_top_n, snap_only=args.snap_only, magazine_only=args.magazine_only, refresh_own=args.refresh_own))

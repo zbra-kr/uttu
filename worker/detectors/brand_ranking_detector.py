@@ -159,7 +159,7 @@ def detect_brand_ranking(client: Client, target_date: date) -> list[Anomaly]:
         # brand_rank_drop_own — 자사 브랜드 순위 하락
         if is_own and rank_prev is not None and (rank_today - rank_prev) >= BRAND_DROP_DELTA:
             delta = rank_today - rank_prev
-            severity = "high" if delta >= 15 else "medium"
+            severity = "high"
             anomalies.append(Anomaly(
                 module=MODULE, severity=severity, anomaly_type="brand_rank_drop_own",
                 entity_type="brand", entity_id=slug_to_id.get(slug), entity_name=name,
@@ -236,7 +236,7 @@ def detect_brand_ranking(client: Client, target_date: date) -> list[Anomaly]:
             name = today_map.get(slug, {}).get("brand_name") or slug
             weak_gender = "남성" if rank_m > rank_f else "여성"
             anomalies.append(Anomaly(
-                module=MODULE, severity="low", anomaly_type="brand_rank_gender_diverge",
+                module=MODULE, severity="high", anomaly_type="brand_rank_gender_diverge",
                 entity_type="brand", entity_id=slug_to_id.get(slug), entity_name=name,
                 description=(
                     f"[자사] {name} — 성별 순위 편차 {diverge}위 "

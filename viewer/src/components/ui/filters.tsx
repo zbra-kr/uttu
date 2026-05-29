@@ -29,6 +29,7 @@ interface PeriodFilterProps {
   options?: [string, string][];
 }
 const DEFAULT_PERIOD_OPTIONS: [string, string][] = [
+  ['today',  '오늘'],
   ['all',    '전체'],
   ['7d',     '7일'],
   ['30d',    '30일'],

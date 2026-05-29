@@ -170,7 +170,7 @@ def detect_review(client: Client, target_date: date) -> list[Anomaly]:
         daily_avg_30 = sum(count_by_date.values()) / 30.0 if count_by_date else 0
 
         if daily_avg_30 > 0 and count_today > daily_avg_30 * SURGE_MULTIPLIER:
-            severity = "high" if count_today > daily_avg_30 * 5 else "medium"
+            severity = "high"
             anomalies.append(Anomaly(
                 module=MODULE, severity=severity, anomaly_type="review_count_surge",
                 entity_type="product", entity_id=pid, entity_name=name,
@@ -191,7 +191,7 @@ def detect_review(client: Client, target_date: date) -> list[Anomaly]:
         )
         if daily_avg_30 >= MIN_DAILY_AVG_FOR_ACTIVE and reviews_7d_count == 0:
             anomalies.append(Anomaly(
-                module=MODULE, severity="medium", anomaly_type="review_no_activity",
+                module=MODULE, severity="high", anomaly_type="review_no_activity",
                 entity_type="product", entity_id=pid, entity_name=name,
                 description=(
                     f"[자사] {name} — 최근 7일 리뷰 0건 "

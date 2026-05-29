@@ -14,6 +14,24 @@ import {
 const CATEGORY_ENTRIES = Object.entries(CATEGORY_MAP).filter(([code]) => code !== '000');
 const ALL_CATEGORY_CODES = new Set(CATEGORY_ENTRIES.map(([code]) => code));
 
+const SATISFACTION_ATTRS = [
+  { attribute: '사이즈',  answers: ['조금 작음', '매우 작음', '정사이즈', '조금 큼', '많이 큼'] },
+  { attribute: '퀄리티',  answers: ['매우 나쁨', '나쁨', '보통', '좋음', '매우 좋음'] },
+  { attribute: '신축성',  answers: ['전혀 없음', '거의 없음', '적당함', '강함', '매우 강함'] },
+  { attribute: '두께감',  answers: ['매우 얇음', '얇음', '적당함', '두꺼움', '매우 두꺼움'] },
+  { attribute: '보온성',  answers: ['전혀 없음', '거의 없음', '적당함', '좋음', '매우 좋음'] },
+  { attribute: '무게감',  answers: ['매우 무거움', '무거움', '적당함', '가벼움', '매우 가벼움'] },
+  { attribute: '착용감',  answers: ['조금 불편', '보통', '편함', '매우 편함', '아주 편함'] },
+  { attribute: '색감',    answers: ['어두움', '화면과 비슷', '밝음', '매우 밝음'] },
+];
+const HEIGHT_MIN = 150, HEIGHT_MAX = 195;
+const WEIGHT_MIN = 45, WEIGHT_MAX = 110;
+
+function lsRead<T>(key: string, def: T): T {
+  if (typeof window === 'undefined') return def;
+  try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : def; } catch { return def; }
+}
+
 const CS_LABELS: Record<string, string> = {
   review_rating_drop:    '별점 급락',
   review_negative_surge: '부정 리뷰 급증',
@@ -46,7 +64,7 @@ function ReviewCard({
         borderBottom: '0.5px solid var(--bs)',
       }}>
         {/* 썸네일 */}
-        <div style={{ gridRow: '1 / 3', width: 44, height: 44 }}>
+        <div style={{ gridRow: '1 / 4', width: 44, height: 44 }}>
           {thumb ? (
             <img src={thumb} alt="" onClick={() => setLightboxUrl(thumb)}
               style={{
@@ -101,6 +119,32 @@ function ReviewCard({
         <div style={{ fontSize: 12, color: 'var(--f2)', lineHeight: 1.55, marginTop: 4, minWidth: 0 }}>
           {r.review_text ?? <span className="dim">(리뷰 내용 없음)</span>}
         </div>
+
+        {/* 구매옵션 + 체형 정보 */}
+        {(r.purchase_option || r.member_height || r.member_weight || r.member_gender || r.satisfactions?.length) ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6, gridColumn: 2 }}>
+            {r.purchase_option && (
+              <span style={{ fontSize: 10, background: 'var(--hs)', color: '#fff', padding: '2px 6px', borderRadius: 3, fontWeight: 500 }}>
+                {r.purchase_option}
+              </span>
+            )}
+            {(r.member_height || r.member_weight) && (
+              <span style={{ fontSize: 10, background: 'var(--snk)', padding: '2px 6px', borderRadius: 3, color: 'var(--f3)' }}>
+                {[r.member_height ? `${r.member_height}cm` : null, r.member_weight ? `${r.member_weight}kg` : null].filter(Boolean).join(' · ')}
+              </span>
+            )}
+            {r.member_gender && (
+              <span style={{ fontSize: 10, background: 'var(--snk)', padding: '2px 6px', borderRadius: 3, color: 'var(--f3)' }}>
+                {r.member_gender === 'male' ? '남성' : r.member_gender === 'female' ? '여성' : r.member_gender}
+              </span>
+            )}
+            {r.satisfactions?.map((s, i) => (
+              <span key={i} style={{ fontSize: 10, background: 'var(--snk)', padding: '2px 6px', borderRadius: 3, color: 'var(--f4)' }}>
+                {s.attribute}: <strong style={{ color: 'var(--f3)' }}>{s.answer}</strong>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* 이미지 라이트박스 */}
@@ -135,7 +179,13 @@ function ReviewCard({
 
 // ── 페이지 ────────────────────────────────────────────────────────────────────
 export default function ReviewsPage() {
-  const [tab, setTab] = React.useState<'dash' | 'browse' | 'product-browse' | 'anomaly'>('dash');
+  const [tab, setTab] = React.useState<'dash' | 'browse' | 'product-browse' | 'anomaly'>(
+    () => lsRead('rv_tab', 'dash') as any
+  );
+  const changeTab = (t: typeof tab) => {
+    setTab(t);
+    try { localStorage.setItem('rv_tab', t); } catch {}
+  };
   return (
     <>
       <div className="page-title">
@@ -143,12 +193,12 @@ export default function ReviewsPage() {
         <span className="sub">자사 리뷰 모니터링 · 조회 · 이상탐지</span>
       </div>
       <div className="tabs">
-        <div className={`tab ${tab === 'dash' ? 'active' : ''}`} onClick={() => setTab('dash')}>대시보드</div>
-        <div className={`tab ${tab === 'browse' ? 'active' : ''}`} onClick={() => setTab('browse')}>조회</div>
-        <div className={`tab ${tab === 'product-browse' ? 'active' : ''}`} onClick={() => setTab('product-browse')}>상품별 조회</div>
-        <div className={`tab ${tab === 'anomaly' ? 'active' : ''}`} onClick={() => setTab('anomaly')}>특이점 리뷰</div>
+        <div className={`tab ${tab === 'dash' ? 'active' : ''}`} onClick={() => changeTab('dash')}>대시보드</div>
+        <div className={`tab ${tab === 'browse' ? 'active' : ''}`} onClick={() => changeTab('browse')}>조회</div>
+        <div className={`tab ${tab === 'product-browse' ? 'active' : ''}`} onClick={() => changeTab('product-browse')}>상품별 조회</div>
+        <div className={`tab ${tab === 'anomaly' ? 'active' : ''}`} onClick={() => changeTab('anomaly')}>특이점 리뷰</div>
       </div>
-      {tab === 'dash'           && <RvDashboard onAnomalyRoute={() => setTab('anomaly')} />}
+      {tab === 'dash'           && <RvDashboard onAnomalyRoute={() => changeTab('anomaly')} />}
       {tab === 'browse'         && <RvBrowse />}
       {tab === 'product-browse' && <RvProductBrowse />}
       {tab === 'anomaly'        && <RvAnomalyReviews />}
@@ -301,7 +351,14 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
           {ownProducts.slice(0, 8).map((p, i) => (
             <div key={p.id} className={`row hover ${i % 2 ? 'alt' : ''}`}
               style={{ gridTemplateColumns: '1fr 100px 70px 70px 70px' }}>
-              <span style={{ fontSize: 12 }}>{p.name}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                {(p.style_no || p.erp_style_code) && (
+                  <div className="mono dim" style={{ fontSize: 10, marginTop: 1 }}>
+                    {[p.style_no, p.erp_style_code].filter(Boolean).join(' · ')}
+                  </div>
+                )}
+              </div>
               <span className="dim" style={{ fontSize: 11 }}>{p.brand_name}</span>
               <span className="mono cell-r" style={{ fontSize: 12 }}>{(p.review_count ?? 0).toLocaleString()}</span>
               <span className={`mono cell-r ${(p.satisfaction_score ?? 100) < 60 ? 'hs' : ''}`}
@@ -395,35 +452,79 @@ function RangeSlider({ min, max, value, onChange }: {
 // B · 조회
 // ===========================================================================
 function RvBrowse() {
-  const today     = new Date().toISOString().split('T')[0];
-  const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+  const today = new Date().toISOString().split('T')[0];
+  const s = React.useRef(lsRead<Record<string, any>>('rv_browse_filters', {})).current;
 
-  const [period, setPeriod]       = React.useState('30d');
-  const [fromDate, setFromDate]   = React.useState(thirtyAgo);
-  const [toDate, setToDate]       = React.useState(today);
-  const [ratingFrom, setRatingFrom] = React.useState(1);
-  const [ratingTo, setRatingTo]   = React.useState(5);
-  const [keyword, setKeyword]     = React.useState('');
-  const [kwInput, setKwInput]     = React.useState('');
-  const [sort, setSort]           = React.useState<'recent' | 'rating_asc' | 'rating_desc' | 'helpful'>('recent');
-  const [page, setPage]           = React.useState(0);
+  const [period, setPeriod]         = React.useState<string>(s.period ?? 'today');
+  const [fromDate, setFromDate]     = React.useState<string>(s.fromDate ?? new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]);
+  const [toDate, setToDate]         = React.useState<string>(s.toDate ?? today);
+  const [ratingFrom, setRatingFrom] = React.useState<number>(s.ratingFrom ?? 1);
+  const [ratingTo, setRatingTo]     = React.useState<number>(s.ratingTo ?? 5);
+  const [keyword, setKeyword]       = React.useState<string>(s.keyword ?? '');
+  const [kwInput, setKwInput]       = React.useState<string>(s.keyword ?? '');
+  const [sort, setSort]             = React.useState<'recent' | 'rating_asc' | 'rating_desc' | 'helpful'>(s.sort ?? 'recent');
+  const [page, setPage]             = React.useState(0);
 
-  const [ownBrands, setOwnBrands] = React.useState<{ id: string; name: string }[]>([]);
-  const [selectedBrandIds, setSelectedBrandIds] = React.useState<Set<string>>(new Set());
-  const [categories, setCategories] = React.useState<Set<string>>(new Set(ALL_CATEGORY_CODES));
+  const [ownBrands, setOwnBrands]       = React.useState<{ id: string; name: string }[]>([]);
+  const [selectedBrandIds, setSelectedBrandIds] = React.useState<Set<string>>(new Set(s.brandIds ?? []));
+  const [categories, setCategories]     = React.useState<Set<string>>(new Set(s.categories?.length ? s.categories : [...ALL_CATEGORY_CODES]));
+  const [selectedProducts, setSelectedProducts] = React.useState<Map<string, string>>(new Map(s.products ?? []));
+  const [genders, setGenders]           = React.useState<Set<string>>(new Set(s.genders ?? []));
+  const [heightRange, setHeightRange]   = React.useState<[number, number]>(s.heightRange ?? [HEIGHT_MIN, HEIGHT_MAX]);
+  const [weightRange, setWeightRange]   = React.useState<[number, number]>(s.weightRange ?? [WEIGHT_MIN, WEIGHT_MAX]);
+  const [satFilter, setSatFilter]       = React.useState<Record<string, string>>(s.satFilter ?? {});
+  const [satOpen, setSatOpen]           = React.useState(false);
 
-  const [rows, setRows]   = React.useState<ReviewRow[]>([]);
-  const [total, setTotal] = React.useState(0);
+  const [rows, setRows]     = React.useState<ReviewRow[]>([]);
+  const [total, setTotal]   = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [exportMsg, setExportMsg] = React.useState('');
-
   const [noteReviewId, setNoteReviewId] = React.useState<string | null>(null);
+
+  // product picker
+  const [pQuery, setPQuery]     = React.useState('');
+  const [pDrop, setPDrop]       = React.useState<OwnProductWithPrice[]>([]);
+  const [pSearching, setPSearching] = React.useState(false);
+  const [pOpen, setPOpen]       = React.useState(false);
+  const pRef = React.useRef<HTMLDivElement>(null);
+  const pTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const PAGE_SIZE = 30;
 
+  React.useEffect(() => { fetchOwnBrands().then(setOwnBrands).catch(console.error); }, []);
+
   React.useEffect(() => {
-    fetchOwnBrands().then(setOwnBrands).catch(console.error);
+    const onDoc = (e: MouseEvent) => { if (pRef.current && !pRef.current.contains(e.target as Node)) setPOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
   }, []);
+
+  React.useEffect(() => {
+    if (pTimer.current) clearTimeout(pTimer.current);
+    if (!pQuery.trim()) { setPDrop([]); return; }
+    pTimer.current = setTimeout(async () => {
+      setPSearching(true);
+      try {
+        const { rows: r } = await fetchOwnProductsWithPrices({ keyword: pQuery, limit: 10, offset: 0 });
+        setPDrop(r.filter(p => !selectedProducts.has(p.id)));
+      } catch {}
+      setPSearching(false);
+    }, 300);
+  }, [pQuery, selectedProducts]);
+
+  // persist filters
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('rv_browse_filters', JSON.stringify({
+        period, fromDate, toDate, ratingFrom, ratingTo, keyword, sort,
+        brandIds: [...selectedBrandIds],
+        categories: [...categories],
+        products: [...selectedProducts.entries()],
+        genders: [...genders],
+        heightRange, weightRange, satFilter,
+      }));
+    } catch {}
+  }, [period, fromDate, toDate, ratingFrom, ratingTo, keyword, sort, selectedBrandIds, categories, selectedProducts, genders, heightRange, weightRange, satFilter]);
 
   const calcDateFrom = React.useMemo(() => {
     if (period === 'today') return today;
@@ -433,58 +534,68 @@ function RvBrowse() {
     if (period === 'custom') return fromDate;
     return undefined;
   }, [period, fromDate, today]);
+  const calcDateTo = period === 'today' ? today : period === 'custom' ? toDate : undefined;
 
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
     fetchReviews({
-      ratingMin: ratingFrom,
-      ratingMax: ratingTo,
-      dateFrom: calcDateFrom,
-      dateTo: period === 'custom' ? toDate : undefined,
+      ratingMin: ratingFrom, ratingMax: ratingTo,
+      dateFrom: calcDateFrom, dateTo: calcDateTo,
       keyword: keyword.trim() || undefined,
       brandIds: selectedBrandIds.size > 0 ? [...selectedBrandIds] : undefined,
       categoryCodes: categories.size < ALL_CATEGORY_CODES.size ? [...categories] : undefined,
-      sort,
-      limit: PAGE_SIZE,
-      offset: page * PAGE_SIZE,
+      productIds: selectedProducts.size > 0 ? [...selectedProducts.keys()] : undefined,
+      genders: genders.size > 0 ? [...genders] : undefined,
+      heightMin: heightRange[0] > HEIGHT_MIN ? heightRange[0] : undefined,
+      heightMax: heightRange[1] < HEIGHT_MAX ? heightRange[1] : undefined,
+      weightMin: weightRange[0] > WEIGHT_MIN ? weightRange[0] : undefined,
+      weightMax: weightRange[1] < WEIGHT_MAX ? weightRange[1] : undefined,
+      satisfactionFilter: Object.keys(satFilter).length > 0 ? satFilter : undefined,
+      sort, limit: PAGE_SIZE, offset: page * PAGE_SIZE,
     }).then(({ rows: r, total: t }) => {
       if (cancelled) return;
       setRows(r); setTotal(t);
-    }).catch(console.error)
-      .finally(() => { if (!cancelled) setLoading(false); });
+    }).catch(console.error).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [calcDateFrom, toDate, period, ratingFrom, ratingTo, keyword, selectedBrandIds, categories, sort, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [calcDateFrom, calcDateTo, ratingFrom, ratingTo, keyword, selectedBrandIds, categories, selectedProducts, genders, heightRange, weightRange, satFilter, sort, page]); // eslint-disable-line
 
-  const toggleBrand = (id: string) => {
-    setSelectedBrandIds(prev => {
-      const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
+  const toggleBrand = (id: string) => { setSelectedBrandIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); setPage(0); };
+  const toggleCat   = (code: string) => { setCategories(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; }); setPage(0); };
+  const toggleGender = (g: string) => { setGenders(prev => { const n = new Set(prev); n.has(g) ? n.delete(g) : n.add(g); return n; }); setPage(0); };
+  const toggleSat = (attr: string, ans: string) => {
+    setSatFilter(prev => { const n = { ...prev }; n[attr] === ans ? delete n[attr] : (n[attr] = ans); return n; });
     setPage(0);
   };
-
-  const toggleCat = (code: string) => {
-    setCategories(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; });
-    setPage(0);
+  const addProduct = (p: OwnProductWithPrice) => {
+    setSelectedProducts(prev => { const n = new Map(prev); n.set(p.id, p.name); return n; });
+    setPQuery(''); setPOpen(false); setPage(0);
   };
+  const removeProduct = (id: string) => { setSelectedProducts(prev => { const n = new Map(prev); n.delete(id); return n; }); setPage(0); };
 
   const reset = () => {
-    setPeriod('30d'); setRatingFrom(1); setRatingTo(5);
+    setPeriod('today'); setRatingFrom(1); setRatingTo(5);
     setKwInput(''); setKeyword(''); setSort('recent'); setPage(0);
     setSelectedBrandIds(new Set()); setCategories(new Set(ALL_CATEGORY_CODES));
+    setSelectedProducts(new Map()); setGenders(new Set());
+    setHeightRange([HEIGHT_MIN, HEIGHT_MAX]); setWeightRange([WEIGHT_MIN, WEIGHT_MAX]);
+    setSatFilter({});
   };
 
   const handleExport = async () => {
     await exportBrowseReviews({
-      ratingMin: ratingFrom,
-      ratingMax: ratingTo,
-      dateFrom: calcDateFrom,
-      dateTo: period === 'custom' ? toDate : undefined,
+      ratingMin: ratingFrom, ratingMax: ratingTo,
+      dateFrom: calcDateFrom, dateTo: calcDateTo,
       keyword: keyword.trim() || undefined,
       brandIds: selectedBrandIds.size > 0 ? [...selectedBrandIds] : undefined,
       categoryCodes: categories.size < ALL_CATEGORY_CODES.size ? [...categories] : undefined,
+      productIds: selectedProducts.size > 0 ? [...selectedProducts.keys()] : undefined,
+      genders: genders.size > 0 ? [...genders] : undefined,
+      heightMin: heightRange[0] > HEIGHT_MIN ? heightRange[0] : undefined,
+      heightMax: heightRange[1] < HEIGHT_MAX ? heightRange[1] : undefined,
+      weightMin: weightRange[0] > WEIGHT_MIN ? weightRange[0] : undefined,
+      weightMax: weightRange[1] < WEIGHT_MAX ? weightRange[1] : undefined,
+      satisfactionFilter: Object.keys(satFilter).length > 0 ? satFilter : undefined,
       sort,
     }, msg => setExportMsg(msg));
     setTimeout(() => setExportMsg(''), 3000);
@@ -499,17 +610,6 @@ function RvBrowse() {
           <button className="btn sm" onClick={reset}>초기화</button>
         </div>
         <div className="frb">
-          {/* 회사 고정 */}
-          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
-            <div className="row-flex between center" style={{ marginBottom: 4 }}>
-              <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>회사</span>
-            </div>
-            <span className="chip" style={{
-              background: 'var(--hs-soft, #fff0f0)', color: 'var(--hs)', borderColor: 'var(--hs)',
-              textTransform: 'none', letterSpacing: 0, fontSize: 12,
-            }}>B.CAVE</span>
-          </div>
-
           {/* 브랜드 */}
           <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
             <div className="row-flex between center" style={{ marginBottom: 6 }}>
@@ -522,12 +622,9 @@ function RvBrowse() {
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {ownBrands.map(b => (
-                <button key={b.id}
-                  className={`btn sm ${selectedBrandIds.has(b.id) ? 'active' : ''}`}
+                <button key={b.id} className={`btn sm ${selectedBrandIds.has(b.id) ? 'active' : ''}`}
                   onClick={() => toggleBrand(b.id)}
-                  style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
-                  {b.name}
-                </button>
+                  style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>{b.name}</button>
               ))}
             </div>
           </div>
@@ -544,11 +641,8 @@ function RvBrowse() {
               <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>별점 범위</span>
               <span className="mono dim" style={{ fontSize: 10 }}>★{ratingFrom} ~ ★{ratingTo}</span>
             </div>
-            <RangeSlider
-              min={1} max={5}
-              value={[ratingFrom, ratingTo]}
-              onChange={([a, b]) => { setRatingFrom(a); setRatingTo(b); setPage(0); }}
-            />
+            <RangeSlider min={1} max={5} value={[ratingFrom, ratingTo]}
+              onChange={([a, b]) => { setRatingFrom(a); setRatingTo(b); setPage(0); }} />
             <div className="row-flex between">
               <span className="mono dim" style={{ fontSize: 10 }}>★1</span>
               <span className="mono dim" style={{ fontSize: 10 }}>★5</span>
@@ -558,7 +652,7 @@ function RvBrowse() {
           {/* 카테고리 */}
           <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
             <FilterBlock label="카테고리" hint={`${categories.size}/${ALL_CATEGORY_CODES.size}`}>
-              <div className="check-grid" style={{ maxHeight: 110, overflowY: 'auto' }}>
+              <div className="check-grid">
                 {CATEGORY_ENTRIES.map(([code, label]) => (
                   <CheckRow key={code} on={categories.has(code)} onToggle={() => toggleCat(code)} label={label} />
                 ))}
@@ -568,6 +662,133 @@ function RvBrowse() {
                 <button className="btn sm" onClick={() => { setCategories(new Set()); setPage(0); }}>해제</button>
               </div>
             </FilterBlock>
+          </div>
+
+          {/* 상품 선택 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div className="row-flex between center" style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>
+                상품 {selectedProducts.size > 0 ? `· ${selectedProducts.size}개 선택` : ''}
+              </span>
+              {selectedProducts.size > 0 && (
+                <button className="btn sm" onClick={() => { setSelectedProducts(new Map()); setPage(0); }}>전체</button>
+              )}
+            </div>
+            <div ref={pRef} style={{ position: 'relative' }}>
+              <input type="text" value={pQuery}
+                onChange={e => { setPQuery(e.target.value); setPOpen(true); }}
+                onFocus={() => setPOpen(true)}
+                placeholder="상품명/스타일코드 검색"
+                style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+              {pOpen && pQuery.trim() && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+                  background: 'var(--bg)', border: '0.5px solid var(--bs)', borderRadius: 4,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)', marginTop: 2, maxHeight: 180, overflowY: 'auto',
+                }}>
+                  {pSearching ? (
+                    <div style={{ padding: '8px 10px', fontSize: 12, color: 'var(--f4)' }}>검색 중…</div>
+                  ) : pDrop.length === 0 ? (
+                    <div style={{ padding: '8px 10px', fontSize: 12, color: 'var(--f4)' }}>결과 없음</div>
+                  ) : pDrop.map(p => (
+                    <div key={p.id} className="hover"
+                      onMouseDown={e => { e.preventDefault(); addProduct(p); }}
+                      style={{ padding: '6px 10px', cursor: 'pointer', borderBottom: '0.5px solid var(--bs)' }}>
+                      <div style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                      <div className="mono dim" style={{ fontSize: 10, marginTop: 1 }}>{p.brand_name} · no.{p.musinsa_no}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {selectedProducts.size > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                {[...selectedProducts.entries()].map(([id, name]) => (
+                  <span key={id} style={{ fontSize: 10, background: 'var(--snk)', border: '0.5px solid var(--bs)', padding: '2px 6px', borderRadius: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                    <span onClick={() => removeProduct(id)} style={{ cursor: 'pointer', color: 'var(--f4)', fontSize: 13, lineHeight: 1, flexShrink: 0 }}>×</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 성별 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, marginBottom: 4 }}>성별</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {['남성', '여성'].map(g => (
+                <button key={g} className={`btn sm ${genders.has(g) ? 'active' : ''}`}
+                  onClick={() => toggleGender(g)}
+                  style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>{g}</button>
+              ))}
+              {genders.size > 0 && (
+                <button className="btn sm" onClick={() => { setGenders(new Set()); setPage(0); }}>전체</button>
+              )}
+            </div>
+          </div>
+
+          {/* 신체 정보 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, marginBottom: 6 }}>신체 정보</div>
+            <div style={{ marginBottom: 10 }}>
+              <div className="row-flex between center" style={{ marginBottom: 2 }}>
+                <span className="mono dim" style={{ fontSize: 10 }}>키 (cm)</span>
+                <span className="mono dim" style={{ fontSize: 10 }}>
+                  {heightRange[0] === HEIGHT_MIN && heightRange[1] === HEIGHT_MAX ? '전체' : `${heightRange[0]}~${heightRange[1]}`}
+                </span>
+              </div>
+              <RangeSlider min={HEIGHT_MIN} max={HEIGHT_MAX} value={heightRange}
+                onChange={v => { setHeightRange(v); setPage(0); }} />
+              <div className="row-flex between">
+                <span className="mono dim" style={{ fontSize: 9 }}>{HEIGHT_MIN}</span>
+                <span className="mono dim" style={{ fontSize: 9 }}>{HEIGHT_MAX}</span>
+              </div>
+            </div>
+            <div>
+              <div className="row-flex between center" style={{ marginBottom: 2 }}>
+                <span className="mono dim" style={{ fontSize: 10 }}>몸무게 (kg)</span>
+                <span className="mono dim" style={{ fontSize: 10 }}>
+                  {weightRange[0] === WEIGHT_MIN && weightRange[1] === WEIGHT_MAX ? '전체' : `${weightRange[0]}~${weightRange[1]}`}
+                </span>
+              </div>
+              <RangeSlider min={WEIGHT_MIN} max={WEIGHT_MAX} value={weightRange}
+                onChange={v => { setWeightRange(v); setPage(0); }} />
+              <div className="row-flex between">
+                <span className="mono dim" style={{ fontSize: 9 }}>{WEIGHT_MIN}</span>
+                <span className="mono dim" style={{ fontSize: 9 }}>{WEIGHT_MAX}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 만족도 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <button onClick={() => setSatOpen(o => !o)}
+              style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>
+                만족도 {Object.keys(satFilter).length > 0 && <span style={{ color: 'var(--hs)', fontWeight: 700 }}>· {Object.keys(satFilter).length}개</span>}
+              </span>
+              <span className="mono dim" style={{ fontSize: 10 }}>{satOpen ? '▲' : '▼'}</span>
+            </button>
+            {satOpen && (
+              <div style={{ marginTop: 8 }}>
+                {SATISFACTION_ATTRS.map(({ attribute, answers }) => (
+                  <div key={attribute} style={{ marginBottom: 7 }}>
+                    <div style={{ fontSize: 10, color: 'var(--f4)', marginBottom: 3 }}>{attribute}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                      {answers.map(ans => (
+                        <button key={ans} className={`btn sm ${satFilter[attribute] === ans ? 'active' : ''}`}
+                          onClick={() => toggleSat(attribute, ans)}
+                          style={{ fontSize: 10, padding: '2px 6px', textTransform: 'none', letterSpacing: 0 }}>{ans}</button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {Object.keys(satFilter).length > 0 && (
+                  <button className="btn sm" style={{ marginTop: 4 }} onClick={() => { setSatFilter({}); setPage(0); }}>초기화</button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 키워드 */}
@@ -580,9 +801,7 @@ function RvBrowse() {
                 placeholder="Enter로 검색…"
                 style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
               {keyword && (
-                <button className="btn sm icon" onClick={() => { setKwInput(''); setKeyword(''); setPage(0); }}>
-                  <IcX />
-                </button>
+                <button className="btn sm icon" onClick={() => { setKwInput(''); setKeyword(''); setPage(0); }}><IcX /></button>
               )}
             </div>
           </div>
@@ -956,22 +1175,27 @@ function RvAnomalyReviews() {
 // D · 상품별 조회 (master-detail)
 // ===========================================================================
 function RvProductBrowse() {
-  const today     = new Date().toISOString().split('T')[0];
-  const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+  const today = new Date().toISOString().split('T')[0];
+  const s = React.useRef(lsRead<Record<string, any>>('rv_product_filters', {})).current;
 
   // 필터 상태
-  const [ownBrands, setOwnBrands] = React.useState<{ id: string; name: string }[]>([]);
-  const [selectedBrandIds, setSelectedBrandIds] = React.useState<Set<string>>(new Set());
-  const [categories, setCategories] = React.useState<Set<string>>(new Set(ALL_CATEGORY_CODES));
-  const [productKw, setProductKw]   = React.useState('');
-  const [productKwInput, setProductKwInput] = React.useState('');
-  const [period, setPeriod]         = React.useState('all');
-  const [fromDate, setFromDate]     = React.useState(thirtyAgo);
-  const [toDate, setToDate]         = React.useState(today);
-  const [ratingFrom, setRatingFrom] = React.useState(1);
-  const [ratingTo, setRatingTo]     = React.useState(5);
-  const [rvKeyword, setRvKeyword]   = React.useState('');
-  const [rvKwInput, setRvKwInput]   = React.useState('');
+  const [ownBrands, setOwnBrands]   = React.useState<{ id: string; name: string }[]>([]);
+  const [selectedBrandIds, setSelectedBrandIds] = React.useState<Set<string>>(new Set(s.brandIds ?? []));
+  const [categories, setCategories] = React.useState<Set<string>>(new Set(s.categories?.length ? s.categories : [...ALL_CATEGORY_CODES]));
+  const [productKw, setProductKw]   = React.useState<string>(s.productKw ?? '');
+  const [productKwInput, setProductKwInput] = React.useState<string>(s.productKw ?? '');
+  const [period, setPeriod]         = React.useState<string>(s.period ?? 'today');
+  const [fromDate, setFromDate]     = React.useState<string>(s.fromDate ?? new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]);
+  const [toDate, setToDate]         = React.useState<string>(s.toDate ?? today);
+  const [ratingFrom, setRatingFrom] = React.useState<number>(s.ratingFrom ?? 1);
+  const [ratingTo, setRatingTo]     = React.useState<number>(s.ratingTo ?? 5);
+  const [rvKeyword, setRvKeyword]   = React.useState<string>(s.rvKeyword ?? '');
+  const [rvKwInput, setRvKwInput]   = React.useState<string>(s.rvKeyword ?? '');
+  const [genders, setGenders]       = React.useState<Set<string>>(new Set(s.genders ?? []));
+  const [heightRange, setHeightRange] = React.useState<[number, number]>(s.heightRange ?? [HEIGHT_MIN, HEIGHT_MAX]);
+  const [weightRange, setWeightRange] = React.useState<[number, number]>(s.weightRange ?? [WEIGHT_MIN, WEIGHT_MAX]);
+  const [satFilter, setSatFilter]   = React.useState<Record<string, string>>(s.satFilter ?? {});
+  const [satOpen, setSatOpen]       = React.useState(false);
   const [masterPage, setMasterPage] = React.useState(0);
 
   // 마스터 그리드
@@ -995,9 +1219,18 @@ function RvProductBrowse() {
   const MASTER_SIZE = 30;
   const RV_SIZE     = 20;
 
+  React.useEffect(() => { fetchOwnBrands().then(setOwnBrands).catch(console.error); }, []);
+
+  // persist filters
   React.useEffect(() => {
-    fetchOwnBrands().then(setOwnBrands).catch(console.error);
-  }, []);
+    try {
+      localStorage.setItem('rv_product_filters', JSON.stringify({
+        brandIds: [...selectedBrandIds], categories: [...categories],
+        productKw, period, fromDate, toDate, ratingFrom, ratingTo,
+        rvKeyword, genders: [...genders], heightRange, weightRange, satFilter,
+      }));
+    } catch {}
+  }, [selectedBrandIds, categories, productKw, period, fromDate, toDate, ratingFrom, ratingTo, rvKeyword, genders, heightRange, weightRange, satFilter]);
 
   // 마스터 그리드 로드
   React.useEffect(() => {
@@ -1027,6 +1260,7 @@ function RvProductBrowse() {
     if (period === 'custom') return fromDate;
     return undefined;
   }, [period, fromDate, today]);
+  const calcDateTo = period === 'today' ? today : period === 'custom' ? toDate : undefined;
 
   React.useEffect(() => {
     if (!selectedProduct) return;
@@ -1035,29 +1269,31 @@ function RvProductBrowse() {
     const ratingMin = ratingTab === 'low' ? 1 : ratingTab === 'hi' ? 4 : ratingTab === 'mid' ? 3 : ratingFrom;
     const ratingMax = ratingTab === 'low' ? 2 : ratingTab === 'mid' ? 3 : ratingTo;
     fetchReviews({
-      productId:  selectedProduct.id,
-      ratingMin,
-      ratingMax,
-      dateFrom:   calcDateFrom,
-      dateTo:     period === 'custom' ? toDate : undefined,
-      keyword:    rvKeyword.trim() || undefined,
-      sort:       rvSort,
-      limit:      RV_SIZE,
-      offset:     rvPage * RV_SIZE,
+      productId: selectedProduct.id,
+      ratingMin, ratingMax,
+      dateFrom:  calcDateFrom,
+      dateTo:    calcDateTo,
+      keyword:   rvKeyword.trim() || undefined,
+      genders:   genders.size > 0 ? [...genders] : undefined,
+      heightMin: heightRange[0] > HEIGHT_MIN ? heightRange[0] : undefined,
+      heightMax: heightRange[1] < HEIGHT_MAX ? heightRange[1] : undefined,
+      weightMin: weightRange[0] > WEIGHT_MIN ? weightRange[0] : undefined,
+      weightMax: weightRange[1] < WEIGHT_MAX ? weightRange[1] : undefined,
+      satisfactionFilter: Object.keys(satFilter).length > 0 ? satFilter : undefined,
+      sort: rvSort, limit: RV_SIZE, offset: rvPage * RV_SIZE,
     }).then(({ rows: r, total: t }) => {
       if (!cancelled) { setReviews(r); setRvTotal(t); }
     }).catch(console.error)
       .finally(() => { if (!cancelled) setRvLoading(false); });
     return () => { cancelled = true; };
-  }, [selectedProduct, ratingTab, ratingFrom, ratingTo, calcDateFrom, toDate, period, rvKeyword, rvSort, rvPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedProduct, ratingTab, ratingFrom, ratingTo, calcDateFrom, calcDateTo, rvKeyword, genders, heightRange, weightRange, satFilter, rvSort, rvPage]); // eslint-disable-line
 
-  const toggleBrand = (id: string) => {
-    setSelectedBrandIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-    setMasterPage(0);
-  };
-  const toggleCat = (code: string) => {
-    setCategories(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; });
-    setMasterPage(0);
+  const toggleBrand = (id: string) => { setSelectedBrandIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); setMasterPage(0); };
+  const toggleCat   = (code: string) => { setCategories(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; }); setMasterPage(0); };
+  const toggleGender = (g: string) => { setGenders(prev => { const n = new Set(prev); n.has(g) ? n.delete(g) : n.add(g); return n; }); setRvPage(0); };
+  const toggleSat = (attr: string, ans: string) => {
+    setSatFilter(prev => { const n = { ...prev }; n[attr] === ans ? delete n[attr] : (n[attr] = ans); return n; });
+    setRvPage(0);
   };
 
   const fmt = (n: number | null, type: 'price' | 'pct') => {
@@ -1071,14 +1307,17 @@ function RvProductBrowse() {
     const rvRatingMin = ratingTab === 'low' ? 1 : ratingTab === 'hi' ? 4 : ratingTab === 'mid' ? 3 : ratingFrom;
     const rvRatingMax = ratingTab === 'low' ? 2 : ratingTab === 'mid' ? 3 : ratingTo;
     await exportProductReviews(
-      selectedProduct.id,
-      selectedProduct.name,
+      selectedProduct.id, selectedProduct.name,
       {
-        ratingMin: rvRatingMin,
-        ratingMax: rvRatingMax,
-        dateFrom: calcDateFrom,
-        dateTo: period === 'custom' ? toDate : undefined,
+        ratingMin: rvRatingMin, ratingMax: rvRatingMax,
+        dateFrom: calcDateFrom, dateTo: calcDateTo,
         keyword: rvKeyword.trim() || undefined,
+        genders: genders.size > 0 ? [...genders] : undefined,
+        heightMin: heightRange[0] > HEIGHT_MIN ? heightRange[0] : undefined,
+        heightMax: heightRange[1] < HEIGHT_MAX ? heightRange[1] : undefined,
+        weightMin: weightRange[0] > WEIGHT_MIN ? weightRange[0] : undefined,
+        weightMax: weightRange[1] < WEIGHT_MAX ? weightRange[1] : undefined,
+        satisfactionFilter: Object.keys(satFilter).length > 0 ? satFilter : undefined,
         sort: rvSort,
       },
       msg => setExportMsg(msg),
@@ -1095,8 +1334,10 @@ function RvProductBrowse() {
           <button className="btn sm" onClick={() => {
             setSelectedBrandIds(new Set()); setCategories(new Set(ALL_CATEGORY_CODES));
             setProductKwInput(''); setProductKw(''); setMasterPage(0);
-            setPeriod('all'); setRatingFrom(1); setRatingTo(5);
+            setPeriod('today'); setRatingFrom(1); setRatingTo(5);
             setRvKwInput(''); setRvKeyword(''); setRvPage(0);
+            setGenders(new Set()); setHeightRange([HEIGHT_MIN, HEIGHT_MAX]);
+            setWeightRange([WEIGHT_MIN, WEIGHT_MAX]); setSatFilter({});
           }}>초기화</button>
         </div>
         <div className="frb">
@@ -1125,7 +1366,7 @@ function RvProductBrowse() {
           {/* 카테고리 */}
           <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
             <FilterBlock label="카테고리" hint={`${categories.size}/${ALL_CATEGORY_CODES.size}`}>
-              <div className="check-grid" style={{ maxHeight: 110, overflowY: 'auto' }}>
+              <div className="check-grid">
                 {CATEGORY_ENTRIES.map(([code, label]) => (
                   <CheckRow key={code} on={categories.has(code)} onToggle={() => toggleCat(code)} label={label} />
                 ))}
@@ -1177,6 +1418,84 @@ function RvProductBrowse() {
               <span className="mono dim" style={{ fontSize: 10 }}>★1</span>
               <span className="mono dim" style={{ fontSize: 10 }}>★5</span>
             </div>
+          </div>
+
+          {/* 성별 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, marginBottom: 4 }}>성별</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {['남성', '여성'].map(g => (
+                <button key={g} className={`btn sm ${genders.has(g) ? 'active' : ''}`}
+                  onClick={() => toggleGender(g)}
+                  style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>{g}</button>
+              ))}
+              {genders.size > 0 && (
+                <button className="btn sm" onClick={() => { setGenders(new Set()); setRvPage(0); }}>전체</button>
+              )}
+            </div>
+          </div>
+
+          {/* 신체 정보 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <div style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, marginBottom: 6 }}>신체 정보</div>
+            <div style={{ marginBottom: 10 }}>
+              <div className="row-flex between center" style={{ marginBottom: 2 }}>
+                <span className="mono dim" style={{ fontSize: 10 }}>키 (cm)</span>
+                <span className="mono dim" style={{ fontSize: 10 }}>
+                  {heightRange[0] === HEIGHT_MIN && heightRange[1] === HEIGHT_MAX ? '전체' : `${heightRange[0]}~${heightRange[1]}`}
+                </span>
+              </div>
+              <RangeSlider min={HEIGHT_MIN} max={HEIGHT_MAX} value={heightRange}
+                onChange={v => { setHeightRange(v); setRvPage(0); }} />
+              <div className="row-flex between">
+                <span className="mono dim" style={{ fontSize: 9 }}>{HEIGHT_MIN}</span>
+                <span className="mono dim" style={{ fontSize: 9 }}>{HEIGHT_MAX}</span>
+              </div>
+            </div>
+            <div>
+              <div className="row-flex between center" style={{ marginBottom: 2 }}>
+                <span className="mono dim" style={{ fontSize: 10 }}>몸무게 (kg)</span>
+                <span className="mono dim" style={{ fontSize: 10 }}>
+                  {weightRange[0] === WEIGHT_MIN && weightRange[1] === WEIGHT_MAX ? '전체' : `${weightRange[0]}~${weightRange[1]}`}
+                </span>
+              </div>
+              <RangeSlider min={WEIGHT_MIN} max={WEIGHT_MAX} value={weightRange}
+                onChange={v => { setWeightRange(v); setRvPage(0); }} />
+              <div className="row-flex between">
+                <span className="mono dim" style={{ fontSize: 9 }}>{WEIGHT_MIN}</span>
+                <span className="mono dim" style={{ fontSize: 9 }}>{WEIGHT_MAX}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 만족도 */}
+          <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+            <button onClick={() => setSatOpen(o => !o)}
+              style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>
+                만족도 {Object.keys(satFilter).length > 0 && <span style={{ color: 'var(--hs)', fontWeight: 700 }}>· {Object.keys(satFilter).length}개</span>}
+              </span>
+              <span className="mono dim" style={{ fontSize: 10 }}>{satOpen ? '▲' : '▼'}</span>
+            </button>
+            {satOpen && (
+              <div style={{ marginTop: 8 }}>
+                {SATISFACTION_ATTRS.map(({ attribute, answers }) => (
+                  <div key={attribute} style={{ marginBottom: 7 }}>
+                    <div style={{ fontSize: 10, color: 'var(--f4)', marginBottom: 3 }}>{attribute}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                      {answers.map(ans => (
+                        <button key={ans} className={`btn sm ${satFilter[attribute] === ans ? 'active' : ''}`}
+                          onClick={() => toggleSat(attribute, ans)}
+                          style={{ fontSize: 10, padding: '2px 6px', textTransform: 'none', letterSpacing: 0 }}>{ans}</button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {Object.keys(satFilter).length > 0 && (
+                  <button className="btn sm" style={{ marginTop: 4 }} onClick={() => { setSatFilter({}); setRvPage(0); }}>초기화</button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 리뷰 키워드 */}
@@ -1280,7 +1599,10 @@ function RvProductBrowse() {
                         style={{ fontSize: 12, color: 'var(--hs)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {p.name}
                       </a>
-                      <span className="mono dim" style={{ fontSize: 9, marginTop: 1 }}>no.{p.musinsa_no}{p.season_year ? ` · ${p.season_year}` : ''}</span>
+                      <span className="mono dim" style={{ fontSize: 9, marginTop: 1 }}>
+                        no.{p.musinsa_no}{p.season_year ? ` · ${p.season_year}` : ''}
+                        {(p.style_no || p.erp_style_code) && ` · ${[p.style_no, p.erp_style_code].filter(Boolean).join(' · ')}`}
+                      </span>
                     </div>
                     {/* 브랜드 */}
                     <div style={{ fontSize: 11, display: 'flex', alignItems: 'center', color: 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

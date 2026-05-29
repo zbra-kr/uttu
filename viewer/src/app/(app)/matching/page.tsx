@@ -452,7 +452,7 @@ function MatchCard({ m, onConfirm, onExclude }: {
 }
 
 function ProductMatching() {
-  // 필터 상태
+  // ── 필터 상태 ──
   const [ownBrands, setOwnBrands] = React.useState<OwnBrand[]>([]);
   const [filterBrandIds, setFilterBrandIds] = React.useState<Set<string>>(new Set());
   const [filterGender, setFilterGender] = React.useState('');
@@ -463,20 +463,22 @@ function ProductMatching() {
   const [maxPrice, setMaxPrice] = React.useState('');
   const [productPage, setProductPage] = React.useState(0);
 
-  // 상품 목록
+  // ── 상품 목록 ──
   const [products, setProducts] = React.useState<OwnProductWithPrice[]>([]);
   const [productTotal, setProductTotal] = React.useState(0);
   const [loadingProds, setLoadingProds] = React.useState(true);
-  const [selectedProduct, setSelectedProduct] = React.useState<OwnProductWithPrice | null>(null);
 
-  // 매칭
+  // ── 선택 상품 ──
+  const [selectedProduct, setSelectedProduct] = React.useState<OwnProductWithPrice | null>(null);
   const [matches, setMatches] = React.useState<ProductMatchRow[]>([]);
   const [loadingMatches, setLoadingMatches] = React.useState(false);
+
+  // ── 매칭 관리 ──
   const [running, setRunning] = React.useState(false);
   const [runMsg, setRunMsg] = React.useState<string | null>(null);
   const [matchFilter, setMatchFilter] = React.useState<MatchFilter>('all');
 
-  // 경쟁 상품 검색
+  // ── 경쟁 상품 검색 ──
   const [compKw, setCompKw] = React.useState('');
   const [compResults, setCompResults] = React.useState<CompetitorProductSearchResult[]>([]);
   const [compSearching, setCompSearching] = React.useState(false);
@@ -508,27 +510,32 @@ function ProductMatching() {
     return () => { cancelled = true; };
   }, [filterBrandIds, filterGender, filterCategory, filterKeyword, productPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 가격 필터는 현재 페이지 클라이언트 사이드 적용
+  // 가격 클라이언트 필터
   const displayedProducts = React.useMemo(() => {
+    let rows = products;
     const min = minPrice ? parseInt(minPrice) : null;
     const max = maxPrice ? parseInt(maxPrice) : null;
-    if (!min && !max) return products;
-    return products.filter(p => {
-      const price = p.final_price ?? p.list_price;
-      if (!price) return true;
-      if (min && price < min) return false;
-      if (max && price > max) return false;
-      return true;
-    });
+    if (min || max) {
+      rows = rows.filter(p => {
+        const price = p.final_price ?? p.list_price;
+        if (!price) return !min;
+        if (min && price < min) return false;
+        if (max && price > max) return false;
+        return true;
+      });
+    }
+    return rows;
   }, [products, minPrice, maxPrice]);
 
+  // 매칭 로드
   React.useEffect(() => {
-    if (!selectedProduct) return;
-    setMatches([]);
+    if (!selectedProduct) { setMatches([]); return; }
     setLoadingMatches(true);
-    setRunMsg(null);
-    fetchProductMatches(selectedProduct.id).then(setMatches).catch(console.error).finally(() => setLoadingMatches(false));
-  }, [selectedProduct?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    fetchProductMatches(selectedProduct.id)
+      .then(setMatches)
+      .catch(console.error)
+      .finally(() => setLoadingMatches(false));
+  }, [selectedProduct]);
 
   // 경쟁 상품 검색 디바운스
   React.useEffect(() => {
@@ -540,62 +547,7 @@ function ProductMatching() {
     }, 300);
   }, [compKw]);
 
-  const handleAutoMatch = async (resetExcluded = false) => {
-    if (!selectedProduct) return;
-    setRunning(true);
-    setRunMsg(null);
-    try {
-      const n = resetExcluded
-        ? await resetAndAutoMatch(selectedProduct.id)
-        : await runAutoMatch(selectedProduct.id);
-      if (n > 0) {
-        setRunMsg(`${n}건 후보 생성 완료`);
-        setMatches(await fetchProductMatches(selectedProduct.id));
-        setMatchFilter('a');
-      } else if (n < 0) {
-        setRunMsg(`allExcluded:${-n}`);
-        setMatches(await fetchProductMatches(selectedProduct.id));
-      } else {
-        setRunMsg('none');
-      }
-    } catch (e: any) {
-      setRunMsg(`오류: ${e.message}`);
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  const handleStatus = async (matchId: string, status: 'confirmed' | 'excluded') => {
-    await setMatchStatus(matchId, status);
-    if (status === 'excluded') {
-      setMatches(prev => prev.filter(m => m.id !== matchId));
-    } else {
-      setMatches(prev => prev.map(m => m.id === matchId ? { ...m, status } : m));
-    }
-  };
-
-  const handleAddCompetitor = async (compProductId: string) => {
-    if (!selectedProduct) return;
-    setAddingComp(compProductId);
-    try {
-      await addManualMatch(selectedProduct.id, compProductId);
-      setMatches(await fetchProductMatches(selectedProduct.id));
-      setMatchFilter('confirmed');
-    } catch (e) { console.error(e); }
-    finally { setAddingComp(null); }
-  };
-
-  const toggleBrand = (id: string) => {
-    setFilterBrandIds(prev => {
-      const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
-    setProductPage(0);
-    setSelectedProduct(null);
-  };
-
-  const alreadyMatchedIds = new Set(matches.map(m => m.competitor_product_id));
+  // ── derived ──
   const confirmedCount = matches.filter(m => m.status === 'confirmed').length;
   const aCount = matches.filter(m => m.status === 'auto' && (m.score ?? 0) >= 70).length;
   const bCount = matches.filter(m => m.status === 'auto' && (m.score ?? 0) < 70).length;
@@ -605,14 +557,70 @@ function ProductMatching() {
     if (matchFilter === 'b') return m.status === 'auto' && (m.score ?? 0) < 70;
     return true;
   });
+  const alreadyMatchedIds = new Set(matches.map(m => m.competitor_product_id));
 
-  const fmt = (n: number | null, type: 'price' | 'pct') => {
-    if (n == null) return '—';
-    if (type === 'price') return n.toLocaleString() + '원';
-    return `${n.toFixed(0)}%`;
+  // ── handlers ──
+  const handleAutoMatch = async (resetExcluded = false) => {
+    if (!selectedProduct) return;
+    setRunning(true); setRunMsg(null);
+    try {
+      const n = resetExcluded
+        ? await resetAndAutoMatch(selectedProduct.id)
+        : await runAutoMatch(selectedProduct.id);
+      const updated = await fetchProductMatches(selectedProduct.id);
+      setMatches(updated);
+      if (n > 0)       { setRunMsg(`${n}건 후보 생성 완료`); setMatchFilter('a'); }
+      else if (n < 0)  { setRunMsg(`allExcluded:${-n}`); }
+      else             { setRunMsg('none'); }
+    } catch (e: any)   { setRunMsg(`오류: ${e.message}`); }
+    finally            { setRunning(false); }
+  };
+
+  const handleStatus = async (matchId: string, status: 'confirmed' | 'excluded') => {
+    await setMatchStatus(matchId, status);
+    setMatches(prev => status === 'excluded'
+      ? prev.filter(m => m.id !== matchId)
+      : prev.map(m => m.id === matchId ? { ...m, status } : m));
+  };
+
+  const handleAddCompetitor = async (compProductId: string) => {
+    if (!selectedProduct) return;
+    setAddingComp(compProductId);
+    try {
+      await addManualMatch(selectedProduct.id, compProductId);
+      const updated = await fetchProductMatches(selectedProduct.id);
+      setMatches(updated);
+      setMatchFilter('confirmed');
+    } catch (e) { console.error(e); }
+    finally { setAddingComp(null); }
+  };
+
+  const selectProduct = (p: OwnProductWithPrice) => {
+    setSelectedProduct(prev => prev?.id === p.id ? null : p);
+    setMatchFilter('all');
+    setCompKw('');
+    setCompResults([]);
+    setRunMsg(null);
+  };
+
+  const toggleBrand = (id: string) => {
+    setFilterBrandIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setProductPage(0);
+  };
+
+  const resetFilters = () => {
+    setFilterBrandIds(new Set()); setFilterGender(''); setFilterCategory('');
+    setFilterKwInput(''); setFilterKeyword('');
+    setMinPrice(''); setMaxPrice('');
+    setProductPage(0);
   };
 
   const filterActive = filterBrandIds.size > 0 || filterGender || filterCategory || filterKeyword || minPrice || maxPrice;
+
+  const fmtVal = (n: number | null, type: 'price' | 'pct') => {
+    if (n == null) return '—';
+    return type === 'price' ? n.toLocaleString() + '원' : `${n.toFixed(0)}%`;
+  };
 
   return (
     <>
@@ -629,7 +637,6 @@ function ProductMatching() {
               {b.name}
             </button>
           ))}
-
           <div style={{ width: 1, background: 'var(--bs)', alignSelf: 'stretch', margin: '0 2px' }} />
 
           {/* 성별 */}
@@ -637,23 +644,22 @@ function ProductMatching() {
           {([['', '전체'], ['M', '남성'], ['F', '여성'], ['A', '유니섹스']] as [string, string][]).map(([val, label]) => (
             <button key={val}
               className={`btn sm ${filterGender === val ? 'active' : ''}`}
-              onClick={() => { setFilterGender(val); setProductPage(0); setSelectedProduct(null); }}
+              onClick={() => { setFilterGender(val); setProductPage(0); }}
               style={{ fontSize: 11 }}>
               {label}
             </button>
           ))}
-
           <div style={{ width: 1, background: 'var(--bs)', alignSelf: 'stretch', margin: '0 2px' }} />
 
           {/* 카테고리 */}
           <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, flexShrink: 0 }}>카테고리</span>
           <select
             value={filterCategory}
-            onChange={e => { setFilterCategory(e.target.value); setProductPage(0); setSelectedProduct(null); }}
+            onChange={e => { setFilterCategory(e.target.value); setProductPage(0); }}
             style={{
               fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 6px',
               border: '0.5px solid var(--bs)', borderRadius: 4,
-              background: filterCategory ? 'var(--hs-soft, color-mix(in srgb, var(--hs) 12%, var(--bg)))' : 'var(--bg)',
+              background: filterCategory ? 'color-mix(in srgb, var(--hs) 12%, var(--bg))' : 'var(--bg)',
               color: filterCategory ? 'var(--hs)' : 'var(--f2)',
             }}>
             <option value="">전체</option>
@@ -661,49 +667,28 @@ function ProductMatching() {
               <option key={code} value={code}>{label}</option>
             ))}
           </select>
-
           <div style={{ width: 1, background: 'var(--bs)', alignSelf: 'stretch', margin: '0 2px' }} />
 
           {/* 가격 */}
           <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, flexShrink: 0 }}>가격</span>
-          <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)}
-            placeholder="최소"
-            style={{
-              width: 72, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 6px',
-              border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)',
-            }} />
+          <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="최소"
+            style={{ width: 68, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 6px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
           <span style={{ fontSize: 11, color: 'var(--f4)' }}>~</span>
-          <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)}
-            placeholder="최대"
-            style={{
-              width: 72, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 6px',
-              border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)',
-            }} />
+          <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="최대"
+            style={{ width: 68, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 6px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
           <span style={{ fontSize: 10, color: 'var(--f4)' }}>원</span>
-
           <div style={{ width: 1, background: 'var(--bs)', alignSelf: 'stretch', margin: '0 2px' }} />
 
           {/* 상품명 검색 */}
           <input type="text" value={filterKwInput}
             onChange={e => setFilterKwInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { setFilterKeyword(filterKwInput); setProductPage(0); setSelectedProduct(null); } }}
+            onKeyDown={e => { if (e.key === 'Enter') { setFilterKeyword(filterKwInput); setProductPage(0); } }}
             placeholder="상품명 검색 (Enter)"
-            style={{
-              width: 140, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 8px',
-              border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)',
-            }} />
+            style={{ width: 130, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
 
           {filterActive && (
-            <button className="btn sm"
-              onClick={() => {
-                setFilterBrandIds(new Set()); setFilterGender(''); setFilterCategory('');
-                setFilterKwInput(''); setFilterKeyword(''); setMinPrice(''); setMaxPrice('');
-                setProductPage(0); setSelectedProduct(null);
-              }}>
-              초기화
-            </button>
+            <button className="btn sm" onClick={resetFilters}>초기화</button>
           )}
-
           <span className="mono dim" style={{ fontSize: 10, marginLeft: 'auto' }}>
             {loadingProds ? '…' : `${productTotal.toLocaleString()}개`}
           </span>
@@ -711,16 +696,15 @@ function ProductMatching() {
       </section>
 
       {/* ─── 마스터-디테일 ─── */}
-      <div className="grid" style={{ gridTemplateColumns: '280px 1fr', gap: 14, alignItems: 'start' }}>
+      <div className="grid" style={{ gridTemplateColumns: '300px 1fr', gap: 14, alignItems: 'start' }}>
+
         {/* 자사 상품 목록 */}
         <section className="panel" style={{ padding: 0 }}>
-          <div style={{
-            padding: '8px 12px', borderBottom: '0.5px solid var(--bs)',
-            background: 'var(--snk)', fontSize: 11, color: 'var(--f3)', fontWeight: 500,
-          }}>
-            자사 상품
+          <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--bs)', background: 'var(--snk)' }}>
+            <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500 }}>자사 상품</span>
           </div>
-          <div style={{ maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>
+
+          <div style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
             {loadingProds ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} style={{ padding: '10px 12px', borderBottom: '0.5px solid var(--bs)' }}>
@@ -736,11 +720,11 @@ function ProductMatching() {
               const isSelected = selectedProduct?.id === p.id;
               return (
                 <div key={p.id}
-                  onClick={() => { setSelectedProduct(p); setMatchFilter('all'); setCompKw(''); setCompResults([]); }}
+                  onClick={() => selectProduct(p)}
                   style={{
                     padding: '9px 12px', borderBottom: '0.5px solid var(--bs)',
                     cursor: 'pointer',
-                    background: isSelected ? 'var(--snk)' : undefined,
+                    background: isSelected ? 'color-mix(in srgb, var(--hs) 9%, var(--bg))' : undefined,
                     borderLeft: isSelected ? '2px solid var(--hs)' : '2px solid transparent',
                   }}>
                   <div className="row-flex between center" style={{ marginBottom: 2 }}>
@@ -748,7 +732,7 @@ function ProductMatching() {
                     <span style={{ fontSize: 10, color: 'var(--f3)' }}>{p.brand_name}</span>
                   </div>
                   <div style={{
-                    fontSize: 12, fontWeight: isSelected ? 500 : 400,
+                    fontSize: 12, fontWeight: isSelected ? 600 : 400,
                     lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {p.name}
@@ -758,6 +742,9 @@ function ProductMatching() {
                       <span className="mono dim" style={{ fontSize: 10 }}>
                         리뷰 {(p.review_count ?? 0).toLocaleString()}
                       </span>
+                      {p.satisfaction_score != null && (
+                        <span className="mono" style={{ fontSize: 10, color: 'var(--hs)' }}>★{p.satisfaction_score}</span>
+                      )}
                       {p.final_price && (
                         <span className="mono" style={{ fontSize: 10, color: 'var(--f3)' }}>
                           {p.final_price.toLocaleString()}원
@@ -775,7 +762,7 @@ function ProductMatching() {
             })}
           </div>
 
-          {/* 상품 페이지네이션 */}
+          {/* 페이지네이션 */}
           <div className="row-flex between center"
             style={{ padding: '6px 12px', borderTop: '0.5px solid var(--bs)', background: 'var(--snk)' }}>
             <button className="btn sm" onClick={() => setProductPage(p => Math.max(0, p - 1))} disabled={productPage === 0}>←</button>
@@ -787,210 +774,181 @@ function ProductMatching() {
           </div>
         </section>
 
-        {/* 매칭 패널 */}
+        {/* 우측 패널 */}
         <div className="col-flex gap-10">
           {!selectedProduct ? (
             <section className="panel" style={{ padding: '48px 0', textAlign: 'center' }}>
-              <span style={{ fontSize: 13, color: 'var(--f4)' }}>← 좌측에서 자사 상품을 선택하세요</span>
+              <span style={{ fontSize: 13, color: 'var(--f4)' }}>← 좌측에서 상품을 선택하세요</span>
             </section>
           ) : (
             <>
               {/* 선택 상품 헤더 */}
               <section className="panel" style={{ padding: '12px 14px' }}>
-                <div className="row-flex between center">
-                  <div>
-                    <div className="row-flex center gap-8">
-                      <span className="chip" style={{ fontSize: 11 }}>{selectedProduct.brand_name}</span>
-                      {selectedProduct.category_code && (
-                        <span className="chip" style={{ fontSize: 10, background: 'var(--snk)', color: 'var(--f3)' }}>
-                          {CATEGORY_MAP[selectedProduct.category_code] ?? selectedProduct.category_code}
-                        </span>
-                      )}
-                      {selectedProduct.gender && selectedProduct.gender !== 'A' && (
-                        <span className="chip" style={{ fontSize: 10, background: 'var(--snk)', color: 'var(--f3)' }}>
-                          {selectedProduct.gender === 'M' ? '남성' : selectedProduct.gender === 'F' ? '여성' : selectedProduct.gender}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--f1)', marginTop: 5 }}>
-                      {selectedProduct.name}
-                    </div>
-                    <div className="row-flex center gap-10" style={{ marginTop: 4 }}>
-                      <span className="mono dim" style={{ fontSize: 11 }}>
-                        리뷰 {(selectedProduct.review_count ?? 0).toLocaleString()}건
-                      </span>
-                      {selectedProduct.final_price && (
-                        <span className="mono dim" style={{ fontSize: 11 }}>
-                          {fmt(selectedProduct.final_price, 'price')}
-                          {selectedProduct.discount_rate ? ` (-${fmt(selectedProduct.discount_rate, 'pct')})` : ''}
-                        </span>
-                      )}
-                      {selectedProduct.satisfaction_score != null && (
-                        <span style={{ fontSize: 11, color: 'var(--hs)' }}>★{selectedProduct.satisfaction_score}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="col-flex gap-6" style={{ alignItems: 'flex-end' }}>
-                    {runMsg && runMsg.startsWith('allExcluded:') && (
-                      <div style={{
-                        fontSize: 11, color: 'var(--f3)', textAlign: 'right',
-                        background: 'color-mix(in srgb, #F57C00 8%, var(--bg))',
-                        border: '0.5px solid #F57C00', borderRadius: 6, padding: '5px 10px',
-                      }}>
-                        후보 {runMsg.split(':')[1]}건이 모두 제외 처리됨
-                        <button
-                          onClick={() => handleAutoMatch(true)}
-                          className="btn sm"
-                          style={{ marginLeft: 8, fontSize: 10 }}>
-                          제외 초기화 후 재실행
-                        </button>
-                      </div>
-                    )}
-                    {runMsg && !runMsg.startsWith('allExcluded:') && runMsg !== 'none' && (
-                      <span style={{ fontSize: 11, color: 'var(--f3)' }}>{runMsg}</span>
-                    )}
-                    {runMsg === 'none' && (
-                      <span style={{ fontSize: 11, color: 'var(--f4)' }}>경쟁 브랜드 풀에 해당 카테고리 상품 없음</span>
-                    )}
-                    <div className="row-flex gap-8 center">
-                      <a href={`https://www.musinsa.com/products/${selectedProduct.musinsa_no}`}
-                        target="_blank" rel="noopener noreferrer"
-                        className="btn sm icon" title="무신사에서 보기">
-                        <IcArrowUR size={12} />
-                      </a>
-                      <button onClick={() => handleAutoMatch()} disabled={running} className="btn sm"
-                        style={{ opacity: running ? 0.6 : 1 }}>
-                        {running ? '실행 중…' : '자동 매칭 실행'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              {/* 경쟁 상품 검색 추가 */}
-              <section className="panel" style={{ padding: 0 }}>
-                <div style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--f2)', marginBottom: 6 }}>
-                    경쟁 상품 직접 추가
-                  </div>
-                  <input type="text" value={compKw} onChange={e => setCompKw(e.target.value)}
-                    placeholder="경쟁 상품명으로 검색…"
-                    style={{
-                      width: '100%', fontFamily: 'var(--sans)', fontSize: 12, padding: '6px 10px',
-                      border: '0.5px solid var(--bs)', borderRadius: 6,
-                      background: 'var(--bg)', color: 'var(--f1)', boxSizing: 'border-box',
-                    }} />
-                </div>
-                {(compKw || compSearching) && (
-                  <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-                    {compSearching ? (
-                      <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>검색 중…</div>
-                    ) : compResults.length === 0 ? (
-                      <div style={{ padding: '16px 14px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
-                        "{compKw}"에 해당하는 상품이 없습니다
-                      </div>
-                    ) : compResults.map(p => {
-                      const added = alreadyMatchedIds.has(p.id);
-                      return (
-                        <div key={p.id} className="row-flex between center"
-                          style={{
-                            padding: '8px 14px', borderBottom: '0.5px solid var(--bs)',
-                            background: added ? 'var(--snk)' : undefined,
-                          }}>
-                          <div className="row-flex center gap-8">
-                            {p.thumbnail_url ? (
-                              <img src={p.thumbnail_url} alt=""
-                                style={{ width: 36, height: 36, borderRadius: 4, objectFit: 'cover', border: '0.5px solid var(--bs)', flexShrink: 0 }}
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-                            ) : (
-                              <div style={{ width: 36, height: 36, borderRadius: 4, background: 'var(--snk)', border: '0.5px solid var(--bs)', flexShrink: 0 }} />
-                            )}
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{
-                                fontSize: 12, fontWeight: 500, color: added ? 'var(--f3)' : 'var(--f1)',
-                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260,
-                              }}>
-                                {p.name}
-                              </div>
-                              <div className="row-flex center gap-6" style={{ marginTop: 2 }}>
-                                <span className="mono dim" style={{ fontSize: 10 }}>{p.brand_name}</span>
-                                <span className="mono dim" style={{ fontSize: 10 }}>#{p.musinsa_no}</span>
-                                <span className="mono dim" style={{ fontSize: 10 }}>리뷰 {p.review_count.toLocaleString()}</span>
-                              </div>
-                            </div>
-                          </div>
-                          {added ? (
-                            <span style={{ fontSize: 11, color: 'var(--f4)', flexShrink: 0 }}>추가됨</span>
-                          ) : (
-                            <button onClick={() => handleAddCompetitor(p.id)}
-                              disabled={addingComp === p.id} className="btn sm"
-                              style={{ opacity: addingComp === p.id ? 0.5 : 1, flexShrink: 0 }}>
-                              <IcPlus size={11} /> 추가
-                            </button>
+                    <div className="row-flex between center">
+                      <div>
+                        <div className="row-flex center gap-8">
+                          <span className="chip" style={{ fontSize: 11 }}>{selectedProduct.brand_name}</span>
+                          {selectedProduct.category_code && (
+                            <span className="chip" style={{ fontSize: 10, background: 'var(--snk)', color: 'var(--f3)' }}>
+                              {CATEGORY_MAP[selectedProduct.category_code] ?? selectedProduct.category_code}
+                            </span>
+                          )}
+                          {selectedProduct.gender && selectedProduct.gender !== 'A' && (
+                            <span className="chip" style={{ fontSize: 10, background: 'var(--snk)', color: 'var(--f3)' }}>
+                              {selectedProduct.gender === 'M' ? '남성' : '여성'}
+                            </span>
                           )}
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-
-              {/* 매칭 목록 */}
-              <section className="panel" style={{ padding: 0 }}>
-                <div className="row-flex between center"
-                  style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
-                  <div className="row-flex gap-4">
-                    {([
-                      ['all', `전체 ${matches.length}`],
-                      ['confirmed', `확정 ${confirmedCount}`],
-                      ['a', `A등급 ${aCount}`],
-                      ['b', `B등급 ${bCount}`],
-                    ] as [MatchFilter, string][]).map(([f, label]) => (
-                      <button key={f} onClick={() => setMatchFilter(f)}
-                        className={`btn sm ${matchFilter === f ? 'active' : ''}`}
-                        style={f === 'a' && matchFilter === f ? { background: '#2E7D32', borderColor: '#2E7D32', color: '#fff' }
-                          : f === 'b' && matchFilter === f ? { background: '#1565C0', borderColor: '#1565C0', color: '#fff' }
-                          : undefined}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ padding: 14 }}>
-                  {loadingMatches ? (
-                    <div style={{ textAlign: 'center', color: 'var(--f4)', fontSize: 12, padding: '24px 0' }}>
-                      불러오는 중…
-                    </div>
-                  ) : visibleMatches.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--f4)', fontSize: 12 }}>
-                      {matchFilter === 'all' ? (
-                        <>
-                          매칭 후보가 없습니다<br />
-                          <span style={{ fontSize: 11, marginTop: 6, display: 'block' }}>
-                            "자동 매칭 실행" 또는 위에서 경쟁 상품을 직접 추가하세요
+                        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--f1)', marginTop: 5 }}>
+                          {selectedProduct.name}
+                        </div>
+                        <div className="row-flex center gap-10" style={{ marginTop: 4 }}>
+                          <span className="mono dim" style={{ fontSize: 11 }}>
+                            리뷰 {(selectedProduct.review_count ?? 0).toLocaleString()}건
                           </span>
-                        </>
-                      ) : matchFilter === 'confirmed' ? '확정된 매칭이 없습니다'
-                      : matchFilter === 'a' ? 'A등급 후보가 없습니다 (경쟁 브랜드 풀에 해당 상품 없음)'
-                      : matchFilter === 'b' ? 'B등급 후보가 없습니다'
-                      : '매칭 후보가 없습니다'}
+                          {selectedProduct.final_price && (
+                            <span className="mono dim" style={{ fontSize: 11 }}>
+                              {fmtVal(selectedProduct.final_price, 'price')}
+                              {selectedProduct.discount_rate ? ` (−${fmtVal(selectedProduct.discount_rate, 'pct')})` : ''}
+                            </span>
+                          )}
+                          {selectedProduct.satisfaction_score != null && (
+                            <span style={{ fontSize: 11, color: 'var(--hs)' }}>★{selectedProduct.satisfaction_score}</span>
+                          )}
+                          {selectedProduct.style_no && (
+                            <span className="mono dim" style={{ fontSize: 10 }}>{selectedProduct.style_no}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="col-flex gap-6" style={{ alignItems: 'flex-end' }}>
+                        {runMsg && runMsg.startsWith('allExcluded:') && (
+                          <div style={{ fontSize: 11, color: 'var(--f3)', textAlign: 'right', background: 'color-mix(in srgb, #F57C00 8%, var(--bg))', border: '0.5px solid #F57C00', borderRadius: 6, padding: '5px 10px' }}>
+                            후보 {runMsg.split(':')[1]}건 모두 제외됨
+                            <button onClick={() => handleAutoMatch(true)} className="btn sm" style={{ marginLeft: 8, fontSize: 10 }}>
+                              초기화 후 재실행
+                            </button>
+                          </div>
+                        )}
+                        {runMsg && !runMsg.startsWith('allExcluded:') && runMsg !== 'none' && (
+                          <span style={{ fontSize: 11, color: 'var(--f3)' }}>{runMsg}</span>
+                        )}
+                        {runMsg === 'none' && (
+                          <span style={{ fontSize: 11, color: 'var(--f4)' }}>경쟁 브랜드 풀에 해당 카테고리 상품 없음</span>
+                        )}
+                        <div className="row-flex gap-8 center">
+                          <a href={`https://www.musinsa.com/products/${selectedProduct.musinsa_no}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="btn sm icon" title="무신사에서 보기">
+                            <IcArrowUR size={12} />
+                          </a>
+                          <button onClick={() => handleAutoMatch()} disabled={running} className="btn sm"
+                            style={{ opacity: running ? 0.6 : 1 }}>
+                            {running ? '실행 중…' : '자동 매칭 실행'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                      gap: 10,
-                    }}>
-                      {visibleMatches.map(m => (
-                        <MatchCard key={m.id} m={m}
-                          onConfirm={() => handleStatus(m.id, 'confirmed')}
-                          onExclude={() => handleStatus(m.id, 'excluded')} />
-                      ))}
+                  </section>
+
+                  {/* 경쟁 상품 직접 추가 */}
+                  <section className="panel" style={{ padding: 0 }}>
+                    <div style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--f2)', marginBottom: 6 }}>경쟁 상품 직접 추가</div>
+                      <input type="text" value={compKw} onChange={e => setCompKw(e.target.value)}
+                        placeholder="경쟁 상품명으로 검색…"
+                        style={{ width: '100%', fontFamily: 'var(--sans)', fontSize: 12, padding: '6px 10px', border: '0.5px solid var(--bs)', borderRadius: 6, background: 'var(--bg)', color: 'var(--f1)', boxSizing: 'border-box' }} />
                     </div>
-                  )}
-                </div>
-              </section>
+                    {(compKw || compSearching) && (
+                      <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                        {compSearching ? (
+                          <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>검색 중…</div>
+                        ) : compResults.length === 0 ? (
+                          <div style={{ padding: '16px 14px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>"{compKw}"에 해당하는 상품이 없습니다</div>
+                        ) : compResults.map(p => {
+                          const added = alreadyMatchedIds.has(p.id);
+                          return (
+                            <div key={p.id} className="row-flex between center"
+                              style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)', background: added ? 'var(--snk)' : undefined }}>
+                              <div className="row-flex center gap-8">
+                                {p.thumbnail_url ? (
+                                  <img src={p.thumbnail_url} alt="" style={{ width: 36, height: 36, borderRadius: 4, objectFit: 'cover', border: '0.5px solid var(--bs)', flexShrink: 0 }}
+                                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                                ) : (
+                                  <div style={{ width: 36, height: 36, borderRadius: 4, background: 'var(--snk)', border: '0.5px solid var(--bs)', flexShrink: 0 }} />
+                                )}
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 500, color: added ? 'var(--f3)' : 'var(--f1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280 }}>
+                                    {p.name}
+                                  </div>
+                                  <div className="row-flex center gap-6" style={{ marginTop: 2 }}>
+                                    <span className="mono dim" style={{ fontSize: 10 }}>{p.brand_name}</span>
+                                    <span className="mono dim" style={{ fontSize: 10 }}>#{p.musinsa_no}</span>
+                                    <span className="mono dim" style={{ fontSize: 10 }}>리뷰 {p.review_count.toLocaleString()}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              {added ? (
+                                <span style={{ fontSize: 11, color: 'var(--f4)', flexShrink: 0 }}>추가됨</span>
+                              ) : (
+                                <button onClick={() => handleAddCompetitor(p.id)} disabled={addingComp === p.id}
+                                  className="btn sm" style={{ opacity: addingComp === p.id ? 0.5 : 1, flexShrink: 0 }}>
+                                  <IcPlus size={11} /> 추가
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+
+                  {/* 매칭 목록 */}
+                  <section className="panel" style={{ padding: 0 }}>
+                    <div className="row-flex between center"
+                      style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
+                      <div className="row-flex gap-4">
+                        {([
+                          ['all',       `전체 ${matches.length}`],
+                          ['confirmed', `확정 ${confirmedCount}`],
+                          ['a',         `A등급 ${aCount}`],
+                          ['b',         `B등급 ${bCount}`],
+                        ] as [MatchFilter, string][]).map(([f, label]) => (
+                          <button key={f} onClick={() => setMatchFilter(f)}
+                            className={`btn sm ${matchFilter === f ? 'active' : ''}`}
+                            style={f === 'a' && matchFilter === f ? { background: '#2E7D32', borderColor: '#2E7D32', color: '#fff' }
+                              : f === 'b' && matchFilter === f ? { background: '#1565C0', borderColor: '#1565C0', color: '#fff' }
+                              : undefined}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ padding: 14 }}>
+                      {loadingMatches ? (
+                        <div style={{ textAlign: 'center', color: 'var(--f4)', fontSize: 12, padding: '24px 0' }}>불러오는 중…</div>
+                      ) : visibleMatches.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--f4)', fontSize: 12 }}>
+                          {matchFilter === 'all' ? (
+                            <>매칭 후보가 없습니다<br />
+                              <span style={{ fontSize: 11, marginTop: 6, display: 'block' }}>
+                                "자동 매칭 실행" 또는 위에서 경쟁 상품을 직접 추가하세요
+                              </span>
+                            </>
+                          ) : matchFilter === 'confirmed' ? '확정된 매칭이 없습니다'
+                            : matchFilter === 'a' ? 'A등급 후보가 없습니다'
+                            : 'B등급 후보가 없습니다'}
+                        </div>
+                      ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
+                          {visibleMatches.map(m => (
+                            <MatchCard key={m.id} m={m}
+                              onConfirm={() => handleStatus(m.id, 'confirmed')}
+                              onExclude={() => handleStatus(m.id, 'excluded')} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </section>
             </>
           )}
         </div>

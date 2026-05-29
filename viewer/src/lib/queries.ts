@@ -461,6 +461,23 @@ export interface ReviewRow {
   image_urls: string[];
   product_name: string;
   brand_name: string;
+  member_height: number | null;
+  member_weight: number | null;
+  member_gender: string | null;
+  satisfactions: { attribute: string; answer: string }[] | null;
+  purchase_option: string | null;
+}
+
+export interface BodyStatBucket {
+  label: string;
+  count: number;
+  avgRating: number;
+}
+
+export interface BodyStats {
+  byHeight: BodyStatBucket[];
+  byWeight: BodyStatBucket[];
+  totalSampled: number;
 }
 
 export async function fetchReviews(opts: {
@@ -471,29 +488,52 @@ export async function fetchReviews(opts: {
   keyword?: string;
   ownOnly?: boolean;
   productId?: string;
+  productIds?: string[];
   brandIds?: string[];
   categoryCodes?: string[];
+  genders?: string[];
+  heightMin?: number;
+  heightMax?: number;
+  weightMin?: number;
+  weightMax?: number;
+  satisfactionFilter?: Record<string, string>;
   sort?: 'recent' | 'rating_asc' | 'rating_desc' | 'helpful';
   limit?: number;
   offset?: number;
 }): Promise<{ rows: ReviewRow[]; total: number }> {
-  const { ratingMin = 1, ratingMax = 5, dateFrom, dateTo, keyword, ownOnly = true, productId, brandIds, categoryCodes, sort = 'recent', limit = 30, offset = 0 } = opts;
+  const {
+    ratingMin = 1, ratingMax = 5, dateFrom, dateTo, keyword, ownOnly = true,
+    productId, productIds, brandIds, categoryCodes,
+    genders, heightMin, heightMax, weightMin, weightMax, satisfactionFilter,
+    sort = 'recent', limit = 30, offset = 0,
+  } = opts;
 
   let q = supabase
     .from('reviews')
     .select(`id, product_id, musinsa_review_id, rating, review_text, review_date, helpful_count, has_image, image_urls,
+      member_height, member_weight, member_gender, satisfactions, purchase_option,
       products!inner(name, musinsa_no, is_own, brand_id, category_code, brands(name))`, { count: 'exact' })
     .gte('rating', ratingMin)
     .lte('rating', ratingMax)
     .range(offset, offset + limit - 1);
 
   if (productId) q = q.eq('product_id', productId);
+  else if (productIds && productIds.length > 0) q = q.in('product_id', productIds);
   else if (ownOnly) q = (q as any).eq('products.is_own', true);
   if (brandIds && brandIds.length > 0) q = (q as any).in('products.brand_id', brandIds);
   if (categoryCodes && categoryCodes.length > 0) q = (q as any).in('products.category_code', categoryCodes);
   if (dateFrom) q = q.gte('review_date', dateFrom);
   if (dateTo) q = q.lte('review_date', dateTo);
   if (keyword) q = q.ilike('review_text', `%${keyword}%`);
+  if (genders && genders.length > 0) q = q.in('member_gender', genders);
+  if (heightMin != null) q = q.gte('member_height', heightMin).not('member_height', 'is', null);
+  if (heightMax != null) q = q.lte('member_height', heightMax);
+  if (weightMin != null) q = q.gte('member_weight', weightMin).not('member_weight', 'is', null);
+  if (weightMax != null) q = q.lte('member_weight', weightMax);
+  const satEntries = Object.entries(satisfactionFilter ?? {});
+  for (const [attr, answer] of satEntries) {
+    q = q.filter('satisfactions', 'cs', JSON.stringify([{ attribute: attr, answer }]));
+  }
 
   if (sort === 'recent') q = q.order('review_date', { ascending: false });
   else if (sort === 'rating_asc') q = q.order('rating', { ascending: true });
@@ -517,6 +557,11 @@ export async function fetchReviews(opts: {
       image_urls: r.image_urls ?? [],
       product_name: r.products?.name ?? '—',
       brand_name: r.products?.brands?.name ?? '—',
+      member_height: r.member_height ?? null,
+      member_weight: r.member_weight ?? null,
+      member_gender: r.member_gender ?? null,
+      satisfactions: r.satisfactions ?? null,
+      purchase_option: r.purchase_option ?? null,
     })),
     total: count ?? 0,
   };
@@ -551,6 +596,24 @@ export async function fetchReviewStats(days = 30): Promise<{
   const lowCount = ratingDist[3] + ratingDist[4]; // ★2 + ★1
 
   return { total, avgRating: Math.round(avgRating * 100) / 100, lowCount, ratingDist, imageCount: imgRes.count ?? 0 };
+}
+
+
+export async function fetchBodyStats(productId: string): Promise<BodyStats> {
+  const { data, error } = await supabase.rpc('get_body_stats', { p_product_id: productId });
+  if (error || !data) return { byHeight: [], byWeight: [], totalSampled: 0 };
+
+  const rows = data as { type: string; bucket: string; avg_rating: number; cnt: number }[];
+  const toRow = (r: typeof rows[0]): BodyStatBucket => ({
+    label: r.bucket,
+    count: Number(r.cnt),
+    avgRating: Number(r.avg_rating),
+  });
+  const byHeight = rows.filter(r => r.type === 'height').map(toRow);
+  const byWeight = rows.filter(r => r.type === 'weight').map(toRow);
+  const totalSampled = byHeight.reduce((s, r) => s + r.count, 0);
+
+  return { byHeight, byWeight, totalSampled };
 }
 
 export async function fetchOwnBrands(): Promise<{ id: string; name: string }[]> {
@@ -611,12 +674,14 @@ export interface OwnProduct {
   brand_name: string;
   review_count: number;
   satisfaction_score: number | null;
+  style_no: string | null;
+  erp_style_code: string | null;
 }
 
 export async function fetchOwnProducts(limit = 100): Promise<OwnProduct[]> {
   const { data, error } = await supabase
     .from('products')
-    .select('id, musinsa_no, name, review_count, satisfaction_score, brands(name)')
+    .select('id, musinsa_no, name, review_count, satisfaction_score, style_no, erp_style_code, brands(name)')
     .eq('is_own', true)
     .order('review_count', { ascending: false })
     .limit(limit);
@@ -628,6 +693,8 @@ export async function fetchOwnProducts(limit = 100): Promise<OwnProduct[]> {
     brand_name: r.brands?.name ?? '—',
     review_count: r.review_count ?? 0,
     satisfaction_score: r.satisfaction_score,
+    style_no: r.style_no ?? null,
+    erp_style_code: r.erp_style_code ?? null,
   }));
 }
 
@@ -660,7 +727,7 @@ export async function searchProducts(keyword: string, limit = 20): Promise<Produ
   if (isNum) {
     q = q.eq('musinsa_no', parseInt(kw, 10));
   } else {
-    q = q.or(`name.ilike.%${kw}%,style_no.ilike.%${kw}%`);
+    q = q.or(`name.ilike.%${kw}%,style_no.ilike.%${kw}%,erp_style_code.ilike.%${kw}%`);
   }
 
   const { data: direct } = await q;
@@ -1718,9 +1785,17 @@ export async function fetchProductPriceHistory(musinsaNo: string): Promise<{ dat
 }
 
 // 카테고리별 진입 현황 — 최신 날짜 기준 카테고리별 최고 순위
-export async function fetchProductCategoryRanks(musinsaNo: string): Promise<Array<{
+export interface CategoryRankRow {
   category_code: string; best_rank: number; combo_count: number;
-}>> {
+  best_gender: string; best_age: string;
+  segments: { gender: string; age: string; rank: number }[];
+}
+export interface CategoryRanksResult {
+  snapshot_date: string;
+  rows: CategoryRankRow[];
+}
+
+export async function fetchProductCategoryRanks(musinsaNo: string): Promise<CategoryRanksResult> {
   const no = parseInt(musinsaNo, 10);
   const { data: latestRow } = await supabase
     .from('ranking_snapshots')
@@ -1728,25 +1803,42 @@ export async function fetchProductCategoryRanks(musinsaNo: string): Promise<Arra
     .eq('musinsa_no', no)
     .order('snapshot_date', { ascending: false })
     .limit(1);
-  if (!latestRow?.length) return [];
+  if (!latestRow?.length) return { snapshot_date: '', rows: [] };
   const latestDate = (latestRow[0] as any).snapshot_date;
 
   const { data } = await supabase
     .from('ranking_snapshots')
-    .select('category_code, rank_position')
+    .select('category_code, rank_position, gender_filter, age_filter')
     .eq('musinsa_no', no)
     .eq('snapshot_date', latestDate)
     .order('rank_position', { ascending: true });
 
-  const groups = new Map<string, { best: number; count: number }>();
+  const GENDER_ORDER: Record<string, number> = { A: 0, M: 1, F: 2 };
+  const AGE_ORDER: Record<string, number> = {
+    AGE_BAND_ALL: 0, AGE_BAND_MINOR: 1, AGE_BAND_20: 2, AGE_BAND_25: 3,
+    AGE_BAND_30: 4, AGE_BAND_35: 5, AGE_BAND_40: 6,
+  };
+  const segSort = (a: { gender: string; age: string }, b: { gender: string; age: string }) =>
+    (GENDER_ORDER[a.gender] ?? 9) - (GENDER_ORDER[b.gender] ?? 9) ||
+    (AGE_ORDER[a.age] ?? 9) - (AGE_ORDER[b.age] ?? 9);
+
+  const groups = new Map<string, { best: number; gender: string; age: string; segments: { gender: string; age: string; rank: number }[] }>();
   for (const r of (data ?? []) as any[]) {
     const g = groups.get(r.category_code);
-    if (!g) groups.set(r.category_code, { best: r.rank_position, count: 1 });
-    else { g.count++; }
+    if (!g) {
+      groups.set(r.category_code, { best: r.rank_position, gender: r.gender_filter, age: r.age_filter, segments: [{ gender: r.gender_filter, age: r.age_filter, rank: r.rank_position }] });
+    } else {
+      g.segments.push({ gender: r.gender_filter, age: r.age_filter, rank: r.rank_position });
+    }
   }
-  return [...groups.entries()]
-    .map(([code, v]) => ({ category_code: code, best_rank: v.best, combo_count: v.count }))
-    .sort((a, b) => a.best_rank - b.best_rank);
+  const rows = [...groups.entries()]
+    .map(([code, v]) => ({
+      category_code: code, best_rank: v.best, combo_count: v.segments.length,
+      best_gender: v.gender, best_age: v.age,
+      segments: v.segments.sort(segSort),
+    }))
+    .sort((a, b) => a.category_code.localeCompare(b.category_code));
+  return { snapshot_date: latestDate, rows };
 }
 
 export async function fetchProductRankHistory(musinsaNo: string): Promise<{ date: string; rank: number; category: string }[]> {
@@ -2193,6 +2285,8 @@ export interface OwnProductWithPrice {
   final_price: number | null;
   discount_rate: number | null;
   is_sold_out: boolean;
+  style_no: string | null;
+  erp_style_code: string | null;
 }
 
 export async function fetchOwnProductsWithPrices(opts: {
@@ -2208,17 +2302,18 @@ export async function fetchOwnProductsWithPrices(opts: {
   let q = supabase
     .from('products')
     .select(
-      'id, musinsa_no, name, thumbnail_url, category_code, category_d2_name, gender, season_year, review_count, satisfaction_score, brands(id, name)',
+      'id, musinsa_no, name, style_no, erp_style_code, thumbnail_url, category_code, category_d2_name, gender, season_year, review_count, satisfaction_score, brands(id, name)',
       { count: 'exact' }
     )
     .eq('is_own', true)
-    .order('review_count', { ascending: false })
-    .range(offset, offset + limit - 1);
+    .order('review_count', { ascending: false });
+
+  q = (q as any).range(offset, offset + limit - 1);
 
   if (brandIds && brandIds.length > 0) q = (q as any).in('brand_id', brandIds);
   if (categoryCodes && categoryCodes.length > 0) q = (q as any).in('category_code', categoryCodes);
   if (gender) q = (q as any).eq('gender', gender);
-  if (keyword) q = q.ilike('name', `%${keyword}%`);
+  if (keyword) q = (q as any).or(`name.ilike.%${keyword}%,style_no.ilike.%${keyword}%,erp_style_code.ilike.%${keyword}%`);
 
   const { data, error, count } = await q;
   if (error) throw error;
@@ -2264,6 +2359,8 @@ export async function fetchOwnProductsWithPrices(opts: {
       final_price: snap?.final_price ?? null,
       discount_rate: snap?.discount_rate ?? null,
       is_sold_out: snap?.is_sold_out ?? false,
+      style_no: p.style_no ?? null,
+      erp_style_code: p.erp_style_code ?? null,
     };
   });
 
@@ -2589,7 +2686,7 @@ export async function searchCompetitorProducts(keyword: string, limit = 20): Pro
     .from('products')
     .select('id, musinsa_no, name, thumbnail_url, review_count, satisfaction_score, category_code, brands(name)')
     .eq('is_own', false)
-    .ilike('name', `%${kw}%`)
+    .or(`name.ilike.%${kw}%,style_no.ilike.%${kw}%,erp_style_code.ilike.%${kw}%`)
     .order('review_count', { ascending: false })
     .limit(limit);
   if (error) throw error;

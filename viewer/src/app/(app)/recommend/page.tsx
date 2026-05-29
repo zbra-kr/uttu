@@ -1,7 +1,16 @@
 'use client';
 import React from 'react';
 import { useRouter } from 'next/navigation';
-import { BarChart, Bar, Cell as RCell, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  BarChart, Bar, Cell as RCell, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  LineChart, Line,
+  AreaChart, Area,
+  ComposedChart,
+  PieChart, Pie,
+  ScatterChart, Scatter, ZAxis,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  CartesianGrid,
+} from 'recharts';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { HBar } from '@/components/ui/charts';
 
@@ -44,6 +53,7 @@ interface RecItem {
 
 type Tab = 'hub' | 'stats' | 'effect';
 type StatsWin = '7D' | '30D' | '90D';
+type DateMode = 'today' | 'yesterday' | '3d' | '7d' | '30d' | 'custom';
 type GenderFilter = 'A' | 'M' | 'F';
 
 const GF_LABEL: Record<GenderFilter, string> = { A: '전체', M: '남성', F: '여성' };
@@ -59,70 +69,199 @@ const TOOLTIP_STYLE = {
   itemStyle:    { color: 'var(--f1)' },
 };
 
-const MODULE_GRID = '28px 1fr 44px 40px 40px';
-const ITEM_GRID   = '28px 110px 1fr 72px 46px 44px 44px';
+const HUB_MOD_GRID  = '20px 24px 1fr 46px 36px 38px';
+const HUB_ITEM_GRID = '20px 24px 110px 1fr 64px 64px 44px 40px 40px 44px';
+const KPI_COLORS = [
+  'color-mix(in srgb, #F57C00 80%, var(--f3))',
+  'var(--hs)',
+  'var(--f3)',
+];
 
 // ──────────────────────────────────────────────────────────────────────────────
 // RecommendHub — 분석 탭
 // ──────────────────────────────────────────────────────────────────────────────
 function RecommendHub() {
   const router = useRouter();
-  const [date, setDate]         = React.useState(kstDateStr());
+  const [dateMode, setDateMode]   = React.useState<DateMode>('today');
+  const [customFrom, setCustomFrom] = React.useState(kstDateStr(-6));
+  const [customTo, setCustomTo]   = React.useState(kstDateStr());
+  const { fromDate, toDate } = React.useMemo(() => {
+    if (dateMode === 'today')     return { fromDate: kstDateStr(),    toDate: kstDateStr() };
+    if (dateMode === 'yesterday') return { fromDate: kstDateStr(-1),  toDate: kstDateStr(-1) };
+    if (dateMode === '3d')        return { fromDate: kstDateStr(-2),  toDate: kstDateStr() };
+    if (dateMode === '7d')        return { fromDate: kstDateStr(-6),  toDate: kstDateStr() };
+    if (dateMode === '30d')       return { fromDate: kstDateStr(-29), toDate: kstDateStr() };
+    return { fromDate: customFrom, toDate: customTo };
+  }, [dateMode, customFrom, customTo]);
   const [gender, setGender]     = React.useState<GenderFilter>('A');
   const [modules, setModules]   = React.useState<RecModule[]>([]);
   const [items, setItems]       = React.useState<RecItem[]>([]);
-  const [selModule, setSelModule] = React.useState<string | null>(null);
-  const [loading, setLoading]       = React.useState(false);
+  const [selModules, setSelModules] = React.useState<Set<string>>(new Set());
+  const [selItems, setSelItems]     = React.useState<Set<string>>(new Set());
+  const [loading, setLoading]           = React.useState(false);
   const [loadingItems, setLoadingItems] = React.useState(false);
+
+  const [rankMap, setRankMap] = React.useState<Map<string, { rank: number | null; delta: number | null }>>(new Map());
+
+  // 추가 필터
+  const [filterModType, setFilterModType]         = React.useState<'all' | 'tab' | 'regular'>('all');
+  const [filterBrandKw, setFilterBrandKw]         = React.useState('');
+  const [filterProdKw, setFilterProdKw]           = React.useState('');
+  const [filterMinDiscount, setFilterMinDiscount] = React.useState('');
+  const [filterHideSoldOut, setFilterHideSoldOut] = React.useState(false);
 
   // 모듈 로드
   React.useEffect(() => {
     setLoading(true);
-    setSelModule(null);
+    setSelModules(new Set());
     setItems([]);
+    setSelItems(new Set());
+    setRankMap(new Map());
     sb.from('recommend_modules')
       .select('*')
-      .eq('snapshot_date', date)
+      .gte('snapshot_date', fromDate)
+      .lte('snapshot_date', toDate)
       .eq('gender_filter', gender)
       .order('position', { ascending: true })
-      .limit(100)
+      .limit(300)
       .then(({ data, error }) => {
         setLoading(false);
         if (error) { console.error('[recommend] modules', error); return; }
         setModules(data ?? []);
       });
-  }, [date, gender]);
+  }, [fromDate, toDate, gender]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 아이템 로드 (선택 모듈)
+  // 아이템 로드 (멀티 모듈)
   React.useEffect(() => {
-    if (!selModule) { setItems([]); return; }
+    if (selModules.size === 0) { setItems([]); setSelItems(new Set()); return; }
     setLoadingItems(true);
     sb.from('recommend_items')
       .select('*')
-      .eq('module_id', selModule)
+      .in('module_id', [...selModules])
       .order('position', { ascending: true })
-      .limit(200)
+      .limit(1000)
       .then(({ data, error }) => {
         setLoadingItems(false);
         if (error) { console.error('[recommend] items', error); return; }
         setItems(data ?? []);
+        setSelItems(new Set());
       });
-  }, [selModule]);
+  }, [selModules]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── 차트 계산 ─────────────────────────────────────────────────
+  // 랭킹 데이터 (아이템 로드 후)
+  React.useEffect(() => {
+    if (items.length === 0) { setRankMap(new Map()); return; }
+    const nos = [...new Set(items.map(it => it.musinsa_no))];
+    // 추천판 수집일 기준 ±5일 범위
+    const refDate = toDate;
+    const rankFrom = (() => { const d = new Date(refDate); d.setDate(d.getDate() - 5); return d.toISOString().slice(0, 10); })();
+    sb.from('ranking_snapshots')
+      .select('musinsa_no, rank_position, snapshot_date')
+      .in('musinsa_no', nos.slice(0, 300))
+      .gte('snapshot_date', rankFrom)
+      .lte('snapshot_date', refDate)
+      .order('snapshot_date', { ascending: true })
+      .limit(10000)
+      .then(({ data }) => {
+        const byNo: Record<string, { date: string; rank: number }[]> = {};
+        for (const row of (data ?? [])) {
+          if (row.rank_position == null) continue;
+          if (!byNo[row.musinsa_no]) byNo[row.musinsa_no] = [];
+          byNo[row.musinsa_no].push({ date: row.snapshot_date, rank: row.rank_position });
+        }
+        const m = new Map<string, { rank: number | null; delta: number | null }>();
+        for (const [no, rows] of Object.entries(byNo)) {
+          const sorted = rows.sort((a, b) => a.date.localeCompare(b.date));
+          const latest = sorted[sorted.length - 1]?.rank ?? null;
+          const oldest = sorted[0]?.rank ?? null;
+          const delta = (latest != null && oldest != null && sorted.length > 1) ? oldest - latest : null;
+          m.set(no, { rank: latest, delta });
+        }
+        setRankMap(m);
+      });
+  }, [items, toDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 모듈 타입 필터
+  const displayedModules = React.useMemo(() => {
+    if (filterModType === 'all') return modules;
+    const isTab = filterModType === 'tab';
+    return modules.filter(m => (m.module_type === 'CAROUSEL_TWOROW_DYNAMIC_TAB') === isTab);
+  }, [modules, filterModType]);
+
+  // 아이템 클라이언트 필터
+  const displayedItems = React.useMemo(() => {
+    let res = items;
+    const bq = filterBrandKw.trim().toLowerCase();
+    const pq = filterProdKw.trim().toLowerCase();
+    if (bq) res = res.filter(it => (it.brand_name ?? '').toLowerCase().includes(bq));
+    if (pq) res = res.filter(it => (it.product_name ?? '').toLowerCase().includes(pq));
+    if (filterMinDiscount) res = res.filter(it => (it.discount_rate ?? 0) >= parseInt(filterMinDiscount));
+    if (filterHideSoldOut) res = res.filter(it => !it.is_sold_out);
+    return res;
+  }, [items, filterBrandKw, filterProdKw, filterMinDiscount, filterHideSoldOut]);
+
+  // 20 KPI 카드
+  const kpiCards = React.useMemo(() => {
+    if (selModules.size === 0) return [];
+    const src = selItems.size > 0 ? displayedItems.filter(it => selItems.has(it.id)) : displayedItems;
+    const selMods = modules.filter(m => selModules.has(m.id));
+    const brandSet = new Set(src.map(it => it.brand_name).filter(Boolean));
+    const withScore = src.filter(it => it.review_score != null);
+    const withPrice = src.filter(it => it.final_price != null);
+    const discList  = src.map(it => it.discount_rate ?? 0);
+    const avgScore  = withScore.length > 0 ? Math.round(withScore.reduce((s, it) => s + it.review_score!, 0) / withScore.length) : null;
+    const maxScore  = withScore.length > 0 ? Math.max(...withScore.map(it => it.review_score!)) : null;
+    const avgPrice  = withPrice.length > 0 ? Math.round(withPrice.reduce((s, it) => s + it.final_price!, 0) / withPrice.length) : null;
+    const minPriceV = withPrice.length > 0 ? Math.min(...withPrice.map(it => it.final_price!)) : null;
+    const maxPriceV = withPrice.length > 0 ? Math.max(...withPrice.map(it => it.final_price!)) : null;
+    const avgDisc   = src.length > 0 ? Math.round(discList.reduce((s, v) => s + v, 0) / src.length) : null;
+    const maxDisc   = src.length > 0 ? Math.max(...discList) : null;
+    const soldOutCnt  = src.filter(it => it.is_sold_out).length;
+    const noReviewCnt = src.filter(it => it.review_score == null).length;
+    const totalReviews = src.reduce((s, it) => s + (it.review_count ?? 0), 0);
+    const avgReviews   = src.length > 0 ? Math.round(totalReviews / src.length) : null;
+    const tabMods     = selMods.filter(m => m.module_type === 'CAROUSEL_TWOROW_DYNAMIC_TAB').length;
+    const avgPerBrand = brandSet.size > 0 ? (src.length / brandSet.size).toFixed(1) : null;
+    const fmtW   = (v: number | null) => v == null ? '—' : v >= 10000 ? `${(v / 10000).toFixed(1)}만` : v.toLocaleString();
+    const fmtPct = (v: number | null) => v == null ? '—' : `${v}%`;
+    return [
+      { g: 0, label: '선택 모듈',     value: selMods.length.toString(),                                                    sub: `${src.length}개 상품` },
+      { g: 0, label: '노출 브랜드',   value: brandSet.size.toString(),                                                     sub: avgPerBrand ? `평균 ${avgPerBrand}개/브랜드` : '' },
+      { g: 0, label: '탭 모듈',       value: tabMods.toString(),                                                           sub: `/ ${selMods.length}개` },
+      { g: 0, label: '일반 모듈',     value: (selMods.length - tabMods).toString(),                                        sub: `/ ${selMods.length}개` },
+      { g: 0, label: '품절 상품',     value: soldOutCnt.toString(),                                                        sub: src.length > 0 ? `${Math.round(soldOutCnt / src.length * 100)}%` : '' },
+      { g: 0, label: '브랜드당 상품', value: avgPerBrand ?? '—',                                                           sub: '평균' },
+      { g: 1, label: '평균 리뷰점수', value: fmtPct(avgScore),                                                             sub: `${withScore.length}개 집계` },
+      { g: 1, label: '최고 리뷰점수', value: fmtPct(maxScore),                                                             sub: '' },
+      { g: 1, label: '90점+ 상품',    value: src.filter(it => (it.review_score ?? 0) >= 90).length.toString(),            sub: `/ ${withScore.length}개` },
+      { g: 1, label: '리뷰없는 상품', value: noReviewCnt.toString(),                                                       sub: src.length > 0 ? `${Math.round(noReviewCnt / src.length * 100)}%` : '' },
+      { g: 1, label: '총 리뷰 수',    value: totalReviews.toLocaleString(),                                                sub: '합계' },
+      { g: 1, label: '평균 리뷰 수',  value: avgReviews?.toLocaleString() ?? '—',                                         sub: '상품당' },
+      { g: 2, label: '평균 판매가',   value: fmtW(avgPrice),                                                               sub: '원' },
+      { g: 2, label: '최저 판매가',   value: fmtW(minPriceV),                                                              sub: '원' },
+      { g: 2, label: '최고 판매가',   value: fmtW(maxPriceV),                                                              sub: '원' },
+      { g: 2, label: '평균 할인율',   value: fmtPct(avgDisc),                                                              sub: '' },
+      { g: 2, label: '최대 할인율',   value: fmtPct(maxDisc),                                                              sub: '' },
+      { g: 2, label: '무할인 상품',   value: src.filter(it => (it.discount_rate ?? 0) === 0).length.toString(),           sub: `/ ${src.length}개` },
+      { g: 2, label: '30%+ 할인',     value: src.filter(it => (it.discount_rate ?? 0) >= 30).length.toString(),           sub: `/ ${src.length}개` },
+      { g: 2, label: '품절율',        value: src.length > 0 ? `${Math.round(soldOutCnt / src.length * 100)}%` : '—',     sub: `${soldOutCnt}개` },
+    ].map(k => ({ ...k, color: KPI_COLORS[k.g] }));
+  }, [displayedItems, selItems, selModules, modules]);
+
+  // 차트 계산 (displayedItems 기반)
   const brandCounts = React.useMemo(() => {
     const m: Record<string, number> = {};
-    for (const it of items) {
+    for (const it of displayedItems) {
       if (!it.brand_name) continue;
       m[it.brand_name] = (m[it.brand_name] ?? 0) + 1;
     }
     return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  }, [items]);
+  }, [displayedItems]);
 
   const discountDist = React.useMemo(() => {
     const bins = [0, 0, 0, 0, 0, 0];
     const labels = ['0%', '~10%', '~20%', '~30%', '~40%', '40%+'];
-    for (const it of items) {
+    for (const it of displayedItems) {
       const dr = it.discount_rate ?? 0;
       if      (dr === 0)   bins[0]++;
       else if (dr < 10)    bins[1]++;
@@ -132,11 +271,11 @@ function RecommendHub() {
       else                 bins[5]++;
     }
     return labels.map((name, i) => ({ name, count: bins[i] }));
-  }, [items]);
+  }, [displayedItems]);
 
   const reviewDist = React.useMemo(() => {
     const bins = [0, 0, 0, 0, 0];
-    for (const it of items) {
+    for (const it of displayedItems) {
       if (it.review_score == null) continue;
       const s = it.review_score;
       if      (s < 60) bins[0]++;
@@ -146,11 +285,11 @@ function RecommendHub() {
       else             bins[4]++;
     }
     return ['<60', '60~70', '70~80', '80~90', '90+'].map((name, i) => ({ name, count: bins[i] }));
-  }, [items]);
+  }, [displayedItems]);
 
   const soldOutByBrand = React.useMemo(() => {
     const m: Record<string, { total: number; sold: number }> = {};
-    for (const it of items) {
+    for (const it of displayedItems) {
       if (!it.brand_name) continue;
       if (!m[it.brand_name]) m[it.brand_name] = { total: 0, sold: 0 };
       m[it.brand_name].total++;
@@ -161,73 +300,223 @@ function RecommendHub() {
       .map(([name, { total, sold }]) => ({ name, pct: Math.round(sold / total * 100), total }))
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 8);
-  }, [items]);
+  }, [displayedItems]);
 
-  const selMod = modules.find(m => m.id === selModule);
+  // ── 추가 차트용 데이터 ──────────────────────────────────────────────
+
+  // 도넛1: 할인율 구간 비중
+  const discountPie = React.useMemo(() =>
+    discountDist.filter(d => d.count > 0), [discountDist]);
+
+  // 도넛2: 품절/정상 비중
+  const soldOutPie = React.useMemo(() => {
+    const soldOut = displayedItems.filter(it => it.is_sold_out).length;
+    return [{ name: '정상', value: displayedItems.length - soldOut }, { name: '품절', value: soldOut }];
+  }, [displayedItems]);
+
+  // 꺾은선: 포지션별 리뷰점수 + 할인율 (상위 30개)
+  const positionLine = React.useMemo(() =>
+    displayedItems.slice(0, 30).map(it => ({
+      pos: it.position,
+      score: it.review_score,
+      disc: it.discount_rate ?? 0,
+    })), [displayedItems]);
+
+  // 수평 막대: 브랜드별 평균 리뷰점수
+  const brandAvgScore = React.useMemo(() => {
+    const m: Record<string, { sum: number; cnt: number }> = {};
+    for (const it of displayedItems) {
+      if (!it.brand_name || it.review_score == null) continue;
+      if (!m[it.brand_name]) m[it.brand_name] = { sum: 0, cnt: 0 };
+      m[it.brand_name].sum += it.review_score;
+      m[it.brand_name].cnt++;
+    }
+    return Object.entries(m)
+      .map(([name, { sum, cnt }]) => ({ name, avg: Math.round(sum / cnt) }))
+      .sort((a, b) => b.avg - a.avg)
+      .slice(0, 8);
+  }, [displayedItems]);
+
+  // 복합: 브랜드별 상품 수 + 평균 할인율
+  const brandComposed = React.useMemo(() => {
+    const m: Record<string, { count: number; discSum: number }> = {};
+    for (const it of displayedItems) {
+      if (!it.brand_name) continue;
+      if (!m[it.brand_name]) m[it.brand_name] = { count: 0, discSum: 0 };
+      m[it.brand_name].count++;
+      m[it.brand_name].discSum += it.discount_rate ?? 0;
+    }
+    return Object.entries(m)
+      .map(([name, { count, discSum }]) => ({ name, count, avgDisc: Math.round(discSum / count) }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [displayedItems]);
+
+  // 스택 막대: 브랜드별 할인/무할인
+  const brandDiscStack = React.useMemo(() => {
+    const m: Record<string, { disc: number; none: number }> = {};
+    for (const it of displayedItems) {
+      if (!it.brand_name) continue;
+      if (!m[it.brand_name]) m[it.brand_name] = { disc: 0, none: 0 };
+      if ((it.discount_rate ?? 0) > 0) m[it.brand_name].disc++;
+      else m[it.brand_name].none++;
+    }
+    return Object.entries(m)
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => (b.disc + b.none) - (a.disc + a.none))
+      .slice(0, 8);
+  }, [displayedItems]);
+
+  // 면적: 가격대별 상품 수
+  const priceBuckets = React.useMemo(() => {
+    const withPrice = displayedItems.filter(it => it.final_price != null);
+    if (withPrice.length === 0) return [];
+    const maxP = Math.max(...withPrice.map(it => it.final_price!));
+    const step = Math.ceil(maxP / 8 / 10000) * 10000 || 10000;
+    const buckets: Record<number, number> = {};
+    for (const it of withPrice) {
+      const bucket = Math.floor(it.final_price! / step) * step;
+      buckets[bucket] = (buckets[bucket] ?? 0) + 1;
+    }
+    return Object.entries(buckets)
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([price, count]) => ({
+        price: Number(price) >= 10000 ? `${Number(price) / 10000}만` : String(price),
+        count,
+      }));
+  }, [displayedItems]);
+
+  // 산점도: 판매가 vs 리뷰점수
+  const scatterData = React.useMemo(() =>
+    displayedItems
+      .filter(it => it.final_price != null && it.review_score != null)
+      .slice(0, 120)
+      .map(it => ({ x: it.final_price!, y: it.review_score! })),
+    [displayedItems]);
+
+  // 레이더: 상위 3개 브랜드 다차원 비교
+  const radarChart = React.useMemo(() => {
+    const m: Record<string, { count: number; scoreSum: number; scoreCnt: number; discSum: number; soldOut: number }> = {};
+    for (const it of displayedItems) {
+      if (!it.brand_name) continue;
+      if (!m[it.brand_name]) m[it.brand_name] = { count: 0, scoreSum: 0, scoreCnt: 0, discSum: 0, soldOut: 0 };
+      const s = m[it.brand_name];
+      s.count++;
+      if (it.review_score != null) { s.scoreSum += it.review_score; s.scoreCnt++; }
+      s.discSum += it.discount_rate ?? 0;
+      if (it.is_sold_out) s.soldOut++;
+    }
+    const top = Object.entries(m).sort((a, b) => b[1].count - a[1].count).slice(0, 3);
+    if (top.length < 2) return null;
+    const maxCnt = Math.max(...top.map(([, v]) => v.count), 1);
+    const data = [
+      { subject: '노출수', ...Object.fromEntries(top.map(([n, v]) => [n, Math.round(v.count / maxCnt * 100)])) },
+      { subject: '리뷰점수', ...Object.fromEntries(top.map(([n, v]) => [n, v.scoreCnt > 0 ? Math.round(v.scoreSum / v.scoreCnt) : 0])) },
+      { subject: '할인율', ...Object.fromEntries(top.map(([n, v]) => [n, Math.round(v.discSum / v.count)])) },
+      { subject: '품절(역)', ...Object.fromEntries(top.map(([n, v]) => [n, 100 - Math.round(v.soldOut / v.count * 100)])) },
+      { subject: '다양성', ...Object.fromEntries(top.map(([n, v]) => [n, Math.min(100, v.count * 10)])) },
+    ];
+    return { data, brands: top.map(([n]) => n) };
+  }, [displayedItems]);
+
+  const PIE_COLORS = ['var(--hs)', 'var(--f3)', 'var(--f2)', 'var(--f4)',
+    'color-mix(in srgb, var(--hs) 60%, var(--f3))', 'color-mix(in srgb, var(--hs) 30%, var(--f3))'];
+  const RADAR_COLORS = ['var(--hs)', 'var(--f2)', 'var(--f3)'];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
       {/* 필터 바 */}
-      <div className="panel" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px' }}>
+      <div className="panel" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '8px 12px' }}>
         <label style={{ fontSize: 11, color: 'var(--f4)', flexShrink: 0 }}>날짜</label>
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          style={{
-            fontSize: 12, padding: '3px 8px',
-            border: '1px solid var(--bd)', borderRadius: 4,
-            background: 'var(--bg)', color: 'var(--f1)', cursor: 'pointer',
-          }}
-        />
-        <div style={{ width: 1, height: 16, background: 'var(--bd)' }} />
+        {([['today', '오늘'], ['yesterday', '어제'], ['3d', '3일'], ['7d', '7일'], ['30d', '30일'], ['custom', '직접']] as [DateMode, string][]).map(([m, l]) => (
+          <button key={m} className={`btn sm ${dateMode === m ? 'active' : ''}`} onClick={() => setDateMode(m)}>{l}</button>
+        ))}
+        {dateMode === 'custom' && (
+          <>
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+              style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--bd)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+            <span style={{ fontSize: 11, color: 'var(--f4)' }}>~</span>
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+              style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--bd)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+          </>
+        )}
+        <div style={{ width: 1, height: 16, background: 'var(--bd)', flexShrink: 0 }} />
+
         <label style={{ fontSize: 11, color: 'var(--f4)', flexShrink: 0 }}>성별</label>
         <div style={{ display: 'flex', gap: 4 }}>
           {(['A', 'M', 'F'] as GenderFilter[]).map(g => (
-            <button key={g} className={`btn sm ${gender === g ? 'active' : ''}`} onClick={() => setGender(g)}>
-              {GF_LABEL[g]}
-            </button>
+            <button key={g} className={`btn sm ${gender === g ? 'active' : ''}`} onClick={() => setGender(g)}>{GF_LABEL[g]}</button>
           ))}
         </div>
+        <div style={{ width: 1, height: 16, background: 'var(--bd)', flexShrink: 0 }} />
+
+        <label style={{ fontSize: 11, color: 'var(--f4)', flexShrink: 0 }}>모듈</label>
+        {([['all', '전체'], ['tab', '탭'], ['regular', '일반']] as ['all' | 'tab' | 'regular', string][]).map(([v, l]) => (
+          <button key={v} className={`btn sm ${filterModType === v ? 'active' : ''}`} onClick={() => setFilterModType(v)}>{l}</button>
+        ))}
+        <div style={{ width: 1, height: 16, background: 'var(--bd)', flexShrink: 0 }} />
+
+        <input type="text" value={filterBrandKw} onChange={e => setFilterBrandKw(e.target.value)}
+          placeholder="브랜드 검색"
+          style={{ width: 100, fontSize: 11, padding: '3px 7px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+        <input type="text" value={filterProdKw} onChange={e => setFilterProdKw(e.target.value)}
+          placeholder="상품명 검색"
+          style={{ width: 110, fontSize: 11, padding: '3px 7px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+
+        <label style={{ fontSize: 11, color: 'var(--f4)', flexShrink: 0 }}>할인</label>
+        <input type="number" value={filterMinDiscount} onChange={e => setFilterMinDiscount(e.target.value)}
+          placeholder="최소%" min={0} max={100}
+          style={{ width: 52, fontSize: 11, padding: '3px 6px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+        <span style={{ fontSize: 10, color: 'var(--f4)' }}>%+</span>
+
+        <button className={`btn sm ${filterHideSoldOut ? 'active' : ''}`} onClick={() => setFilterHideSoldOut(v => !v)}>
+          품절제외
+        </button>
+
         {modules.length > 0 && (
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--f4)' }}>
-            모듈 {modules.length}개 · 상품 {modules.reduce((s, m) => s + m.items_count, 0)}개
+            {selModules.size > 0 ? <span style={{ color: 'var(--hs)', fontWeight: 500 }}>{selModules.size}개 선택 · </span> : null}
+            모듈 {displayedModules.length}개
           </span>
         )}
       </div>
 
       {/* 모듈 + 아이템 그리드 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 12 }}>
 
         {/* ── 모듈 목록 ── */}
         <div className="panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{
-            display: 'grid', gridTemplateColumns: MODULE_GRID, gap: 4,
-            padding: '7px 12px', borderBottom: '1px solid var(--bd)',
-            background: 'var(--snk)',
+            display: 'grid', gridTemplateColumns: HUB_MOD_GRID, gap: 4, alignItems: 'center',
+            padding: '6px 12px', borderBottom: '1px solid var(--bd)', background: 'var(--snk)',
           }}>
-            {['#', '제목', '타입', '탭', '상품'].map(h => (
+            {['', '#', '제목', '타입', '탭', '상품'].map(h => (
               <span key={h} style={{ fontSize: 10, color: 'var(--f4)', fontWeight: 500 }}>{h}</span>
             ))}
           </div>
-          <div style={{ overflowY: 'auto', flex: 1, maxHeight: 500 }}>
+          <div style={{ display: 'flex', gap: 4, padding: '4px 12px', borderBottom: '1px solid var(--bd)', background: 'var(--snk)', alignItems: 'center' }}>
+            <button className="btn sm" style={{ fontSize: 10 }} onClick={() => setSelModules(new Set(displayedModules.map(m => m.id)))}>전체선택</button>
+            <button className="btn sm" style={{ fontSize: 10 }} onClick={() => setSelModules(new Set())}>해제</button>
+            {selModules.size > 0 && <span style={{ fontSize: 10, color: 'var(--hs)', marginLeft: 4 }}>{selModules.size}개</span>}
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1, maxHeight: 460 }}>
             {loading ? (
               <div style={{ padding: 32, textAlign: 'center', fontSize: 12, color: 'var(--f4)' }}>로딩중…</div>
-            ) : modules.length === 0 ? (
+            ) : displayedModules.length === 0 ? (
               <div style={{ padding: 32, textAlign: 'center', fontSize: 12, color: 'var(--f4)' }}>
                 해당 날짜 데이터 없음
                 <br /><span style={{ fontSize: 11, marginTop: 4, display: 'block' }}>다른 날짜를 선택해 주세요</span>
               </div>
-            ) : modules.map(m => {
+            ) : displayedModules.map(m => {
               const badge = MODULE_TYPE_BADGE[m.module_type];
-              const isSel = selModule === m.id;
+              const isSel = selModules.has(m.id);
               return (
                 <div
                   key={m.id}
-                  onClick={() => setSelModule(isSel ? null : m.id)}
+                  onClick={() => setSelModules(prev => { const n = new Set(prev); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n; })}
                   style={{
-                    display: 'grid', gridTemplateColumns: MODULE_GRID, gap: 4,
+                    display: 'grid', gridTemplateColumns: HUB_MOD_GRID, gap: 4, alignItems: 'center',
                     padding: '6px 12px', cursor: 'pointer',
                     background: isSel ? 'color-mix(in srgb, var(--hs) 8%, transparent)' : 'transparent',
                     borderBottom: '1px solid var(--bd)',
@@ -237,11 +526,17 @@ function RecommendHub() {
                   onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = 'var(--snk)'; }}
                   onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = 'transparent'; }}
                 >
+                  <div style={{
+                    width: 14, height: 14, borderRadius: 3,
+                    border: `1px solid ${isSel ? 'var(--hs)' : 'var(--bd)'}`,
+                    background: isSel ? 'var(--hs)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'var(--bg)', fontSize: 9, fontWeight: 700, flexShrink: 0,
+                  }}>
+                    {isSel && '✓'}
+                  </div>
                   <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', paddingTop: 1 }}>{m.position}</span>
-                  <span
-                    style={{ fontSize: 11, color: 'var(--f1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                    title={m.title ?? undefined}
-                  >
+                  <span style={{ fontSize: 11, color: 'var(--f1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.title ?? undefined}>
                     {m.title ?? <span style={{ color: 'var(--f4)' }}>—</span>}
                   </span>
                   <span style={{
@@ -267,90 +562,132 @@ function RecommendHub() {
         {/* ── 아이템 목록 ── */}
         <div className="panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{
-            display: 'grid', gridTemplateColumns: ITEM_GRID, gap: 4,
-            padding: '7px 12px', borderBottom: '1px solid var(--bd)',
-            background: 'var(--snk)',
+            display: 'grid', gridTemplateColumns: HUB_ITEM_GRID, gap: 4, alignItems: 'center',
+            padding: '6px 12px', borderBottom: '1px solid var(--bd)', background: 'var(--snk)',
           }}>
-            {['#', '브랜드', '상품명', '판매가', '할인', '평점', '품절'].map(h => (
+            {['', '#', '브랜드', '상품명', '정가', '할인가', '할인율', '평점', '랭킹', '변동'].map(h => (
               <span key={h} style={{ fontSize: 10, color: 'var(--f4)', fontWeight: 500 }}>{h}</span>
             ))}
           </div>
-          {selMod && (
-            <div style={{
-              padding: '5px 12px', background: 'var(--snk)',
-              borderBottom: '1px solid var(--bd)', fontSize: 11, color: 'var(--f2)',
-            }}>
-              {selMod.title ?? selMod.module_type}
-              {selMod.brand_tabs?.length > 0 && (
-                <span style={{ marginLeft: 8, color: 'var(--f4)', fontSize: 10 }}>
-                  탭: {selMod.brand_tabs.join(' · ')}
-                </span>
-              )}
+          {selModules.size > 0 && (
+            <div style={{ display: 'flex', gap: 4, padding: '4px 12px', borderBottom: '1px solid var(--bd)', background: 'var(--snk)', alignItems: 'center' }}>
+              <button className="btn sm" style={{ fontSize: 10 }} onClick={() => setSelItems(new Set(displayedItems.map(it => it.id)))}>전체선택</button>
+              <button className="btn sm" style={{ fontSize: 10 }} onClick={() => setSelItems(new Set())}>해제</button>
+              {selItems.size > 0 && <span style={{ fontSize: 10, color: 'var(--hs)', marginLeft: 4 }}>{selItems.size}개 선택</span>}
+              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--f4)' }}>
+                {selModules.size > 1 ? `${selModules.size}개 모듈 · ` : ''}{displayedItems.length}개
+              </span>
             </div>
           )}
-          <div style={{ overflowY: 'auto', flex: 1, maxHeight: selMod ? 476 : 500 }}>
-            {!selModule ? (
+          <div style={{ overflowY: 'auto', flex: 1, maxHeight: 500 }}>
+            {!selModules.size ? (
               <div style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--f4)' }}>
                 왼쪽에서 모듈을 클릭하면 상품 목록이 표시됩니다
               </div>
             ) : loadingItems ? (
               <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--f4)' }}>로딩중…</div>
-            ) : items.length === 0 ? (
+            ) : displayedItems.length === 0 ? (
               <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--f4)' }}>상품 없음</div>
-            ) : items.map(it => (
-              <div
-                key={it.id}
-                style={{
-                  display: 'grid', gridTemplateColumns: ITEM_GRID, gap: 4,
-                  padding: '5px 12px', borderBottom: '1px solid var(--bd)',
-                  cursor: 'pointer', transition: 'background 80ms',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--snk)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                onClick={() => router.push(`/product?no=${it.musinsa_no}`)}
-              >
-                <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', paddingTop: 1 }}>{it.position}</span>
-                <span style={{ fontSize: 11, color: 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  title={it.brand_name}>{it.brand_name || '—'}</span>
-                <span style={{ fontSize: 11, color: 'var(--f1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  title={it.product_name}>{it.product_name || '—'}</span>
-                <span style={{ fontSize: 11, color: 'var(--f1)', fontFamily: 'var(--mono)', textAlign: 'right' }}>
-                  {it.final_price != null ? it.final_price.toLocaleString() : '—'}
-                </span>
-                <span style={{
-                  fontSize: 11, fontFamily: 'var(--mono)', textAlign: 'right',
-                  color: (it.discount_rate ?? 0) >= 30 ? 'var(--dn)' : 'var(--f3)',
-                  fontWeight: (it.discount_rate ?? 0) >= 30 ? 600 : 400,
-                }}>
-                  {it.discount_rate ? `−${it.discount_rate}%` : '—'}
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--f2)', fontFamily: 'var(--mono)', textAlign: 'right' }}>
-                  {it.review_score != null ? `${it.review_score}%` : '—'}
-                </span>
-                <span style={{
-                  fontSize: 10, textAlign: 'center', paddingTop: 1,
-                  color: it.is_sold_out ? 'var(--dn)' : 'var(--f4)',
-                }}>
-                  {it.is_sold_out ? '품절' : ''}
-                </span>
-              </div>
-            ))}
+            ) : displayedItems.map(it => {
+              const isSel = selItems.has(it.id);
+              return (
+                <div
+                  key={it.id}
+                  onClick={() => setSelItems(prev => { const n = new Set(prev); if (n.has(it.id)) n.delete(it.id); else n.add(it.id); return n; })}
+                  style={{
+                    display: 'grid', gridTemplateColumns: HUB_ITEM_GRID, gap: 4, alignItems: 'center',
+                    padding: '5px 12px', borderBottom: '1px solid var(--bd)',
+                    cursor: 'pointer', transition: 'background 80ms',
+                    background: isSel ? 'color-mix(in srgb, var(--hs) 7%, transparent)' : 'transparent',
+                    borderLeft: isSel ? '2px solid var(--hs)' : '2px solid transparent',
+                  }}
+                  onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = 'var(--snk)'; }}
+                  onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = isSel ? 'color-mix(in srgb, var(--hs) 7%, transparent)' : 'transparent'; }}
+                >
+                  <div style={{
+                    width: 14, height: 14, borderRadius: 3,
+                    border: `1px solid ${isSel ? 'var(--hs)' : 'var(--bd)'}`,
+                    background: isSel ? 'var(--hs)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'var(--bg)', fontSize: 9, fontWeight: 700, flexShrink: 0,
+                  }}>
+                    {isSel && '✓'}
+                  </div>
+                  <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', paddingTop: 1 }}>{it.position}</span>
+                  <span style={{ fontSize: 11, color: 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={it.brand_name}>{it.brand_name || '—'}</span>
+                  <span
+                    style={{ fontSize: 11, color: 'var(--f1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title={it.product_name}
+                    onClick={e => { e.stopPropagation(); router.push(`/product?no=${it.musinsa_no}`); }}
+                  >
+                    {it.product_name || '—'}
+                  </span>
+                  <span style={{ fontSize: 10, color: 'var(--f3)', fontFamily: 'var(--mono)', textAlign: 'right' }}>
+                    {it.list_price != null ? it.list_price.toLocaleString() : '—'}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--f1)', fontFamily: 'var(--mono)', textAlign: 'right', fontWeight: 500 }}>
+                    {it.final_price != null ? it.final_price.toLocaleString() : '—'}
+                  </span>
+                  <span style={{
+                    fontSize: 11, fontFamily: 'var(--mono)', textAlign: 'right',
+                    color: (it.discount_rate ?? 0) >= 30 ? 'var(--dn)' : 'var(--f3)',
+                    fontWeight: (it.discount_rate ?? 0) >= 30 ? 600 : 400,
+                  }}>
+                    {it.discount_rate ? `${it.discount_rate}%` : '—'}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--f2)', fontFamily: 'var(--mono)', textAlign: 'right' }}>
+                    {it.review_score != null ? `${it.review_score}%` : '—'}
+                  </span>
+                  {(() => {
+                    const ri = rankMap.get(it.musinsa_no);
+                    return (
+                      <>
+                        <span style={{ fontSize: 11, color: 'var(--f1)', fontFamily: 'var(--mono)', textAlign: 'right' }}>
+                          {ri?.rank != null ? ri.rank.toLocaleString() : '—'}
+                        </span>
+                        <span style={{
+                          fontSize: 10, fontFamily: 'var(--mono)', textAlign: 'right',
+                          color: ri?.delta == null ? 'var(--f4)' : ri.delta > 0 ? 'var(--tu)' : ri.delta < 0 ? 'var(--td)' : 'var(--f4)',
+                          fontWeight: ri?.delta != null && ri.delta !== 0 ? 600 : 400,
+                        }}>
+                          {ri?.delta == null ? '—' : ri.delta > 0 ? `▲${ri.delta}` : ri.delta < 0 ? `▼${Math.abs(ri.delta)}` : '–'}
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* ── 차트 섹션 (아이템 로드됐을 때) ── */}
-      {items.length > 0 && (
+      {/* ── KPI 지표 요약 (선택 그리드 아래) ── */}
+      {kpiCards.length > 0 && (
+        <section className="panel" style={{ padding: '10px 14px' }}>
+          <div style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, marginBottom: 8 }}>
+            지표 요약{selItems.size > 0 ? ` — 선택 ${selItems.size}개 상품 기준` : ''}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+            {kpiCards.map((k, i) => (
+              <div key={i} style={{ padding: '7px 10px', borderRadius: 5, background: 'var(--snk)', borderLeft: `2px solid ${k.color}` }}>
+                <div style={{ fontSize: 9, color: 'var(--f4)', marginBottom: 2 }}>{k.label}</div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--f1)', fontFamily: 'var(--mono)' }}>{k.value}</div>
+                {k.sub && <div style={{ fontSize: 9, color: 'var(--f4)', marginTop: 1 }}>{k.sub}</div>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── 차트 섹션 ── */}
+      {displayedItems.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
 
-          {/* 브랜드 분포 */}
+          {/* 1. 막대 — 브랜드 분포 (노출 상품 수) */}
           <section className="panel">
-            <div className="sec-head">
-              <h3>브랜드 분포 <span className="sub">노출 상품 수 · TOP 8</span></h3>
-            </div>
-            {brandCounts.length === 0 ? (
-              <span className="dim" style={{ fontSize: 12 }}>데이터 없음</span>
-            ) : brandCounts.map(([name, count], i) => (
+            <div className="sec-head"><h3>브랜드 분포 <span className="sub">노출 수 · TOP 8</span></h3></div>
+            {brandCounts.map(([name, count], i) => (
               <div key={name} className="row-flex center gap-8" style={{ padding: '3px 0' }}>
                 <span style={{ width: 14, fontSize: 10, color: 'var(--f4)', textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
                 <span style={{ flex: 1, fontSize: 11, color: 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
@@ -360,63 +697,219 @@ function RecommendHub() {
             ))}
           </section>
 
-          {/* 할인율 분포 */}
+          {/* 2. 막대 — 리뷰점수 분포 */}
           <section className="panel">
-            <div className="sec-head">
-              <h3>할인율 분포 <span className="sub">{items.length}개 상품</span></h3>
-            </div>
-            <div style={{ width: '100%', height: 120 }}>
-              {(() => {
-                const maxV = Math.max(...discountDist.map(d => d.count), 1);
-                return (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={discountDist} margin={{ top: 4, right: 0, left: -22, bottom: 0 }}>
-                      <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                      <YAxis hide />
-                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [`${v}개`, '상품 수']} />
-                      <Bar dataKey="count" radius={[2, 2, 0, 0]}>
-                        {discountDist.map((entry, idx) => (
-                          <RCell key={idx} fill={entry.count === maxV && maxV > 0 ? 'var(--hs)' : 'var(--f3)'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                );
-              })()}
+            <div className="sec-head"><h3>리뷰점수 분포 <span className="sub">{displayedItems.filter(i => i.review_score != null).length}개</span></h3></div>
+            <div style={{ width: '100%', height: 130 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={reviewDist} margin={{ top: 4, right: 0, left: -22, bottom: 0 }}>
+                  <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis hide />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [`${v}개`, '상품 수']} />
+                  <Bar dataKey="count" radius={[2, 2, 0, 0]}>
+                    {reviewDist.map((entry, idx) => {
+                      const maxV = Math.max(...reviewDist.map(d => d.count), 1);
+                      return <RCell key={idx} fill={entry.count === maxV && maxV > 0 ? 'var(--hs)' : 'var(--f3)'} />;
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </section>
 
-          {/* 리뷰점수 분포 */}
+          {/* 3. 도넛 — 할인율 구간 비중 */}
           <section className="panel">
-            <div className="sec-head">
-              <h3>리뷰점수 분포 <span className="sub">{items.filter(i => i.review_score != null).length}개</span></h3>
-            </div>
-            <div style={{ width: '100%', height: 120 }}>
-              {(() => {
-                const maxV = Math.max(...reviewDist.map(d => d.count), 1);
-                return (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={reviewDist} margin={{ top: 4, right: 0, left: -22, bottom: 0 }}>
-                      <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                      <YAxis hide />
-                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [`${v}개`, '상품 수']} />
-                      <Bar dataKey="count" radius={[2, 2, 0, 0]}>
-                        {reviewDist.map((entry, idx) => (
-                          <RCell key={idx} fill={entry.count === maxV && maxV > 0 ? 'var(--hs)' : 'var(--f3)'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                );
-              })()}
+            <div className="sec-head"><h3>할인율 구간 비중 <span className="sub">도넛</span></h3></div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 130, height: 130, flexShrink: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={discountPie} dataKey="count" nameKey="name" cx="50%" cy="50%"
+                      innerRadius={36} outerRadius={58} paddingAngle={2}>
+                      {discountPie.map((_, idx) => (
+                        <RCell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [`${v}개`, '상품 수']} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {discountPie.map((d, idx) => (
+                  <div key={d.name} className="row-flex center gap-6">
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: PIE_COLORS[idx % PIE_COLORS.length], flexShrink: 0 }} />
+                    <span style={{ fontSize: 10, color: 'var(--f2)' }}>{d.name}</span>
+                    <span className="mono" style={{ fontSize: 10, color: 'var(--f4)' }}>{d.count}개</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
 
-          {/* 브랜드별 품절율 */}
+          {/* 4. 도넛 — 품절/정상 비중 */}
           <section className="panel">
-            <div className="sec-head">
-              <h3>브랜드별 품절율 <span className="sub">2개+ 노출 기준</span></h3>
+            <div className="sec-head"><h3>품절 비중 <span className="sub">도넛</span></h3></div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 130, height: 130, flexShrink: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={soldOutPie} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                      innerRadius={36} outerRadius={58} paddingAngle={3}>
+                      <RCell fill="var(--hs)" />
+                      <RCell fill="var(--dn)" />
+                    </Pie>
+                    <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [`${v}개`]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {soldOutPie.map((d, idx) => (
+                  <div key={d.name} className="row-flex center gap-6">
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: idx === 0 ? 'var(--hs)' : 'var(--dn)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, color: 'var(--f2)' }}>{d.name}</span>
+                    <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--f1)' }}>{d.value}개</span>
+                    <span className="mono dim" style={{ fontSize: 10 }}>
+                      {displayedItems.length > 0 ? `${Math.round(d.value / displayedItems.length * 100)}%` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
+          </section>
+
+          {/* 5. 꺾은선 — 포지션별 리뷰점수 */}
+          <section className="panel">
+            <div className="sec-head"><h3>포지션별 리뷰점수 <span className="sub">상위 30개 · 꺾은선</span></h3></div>
+            <div style={{ width: '100%', height: 130 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={positionLine} margin={{ top: 4, right: 8, left: -22, bottom: 0 }}>
+                  <XAxis dataKey="pos" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} domain={[0, 100]} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [`${v}%`, '리뷰점수']} />
+                  <CartesianGrid stroke="var(--bd)" strokeDasharray="2 3" vertical={false} />
+                  <Line type="monotone" dataKey="score" stroke="var(--hs)" strokeWidth={1.5}
+                    dot={false} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* 6. 꺾은선 — 포지션별 할인율 */}
+          <section className="panel">
+            <div className="sec-head"><h3>포지션별 할인율 <span className="sub">상위 30개 · 꺾은선</span></h3></div>
+            <div style={{ width: '100%', height: 130 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={positionLine} margin={{ top: 4, right: 8, left: -22, bottom: 0 }}>
+                  <XAxis dataKey="pos" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} unit="%" />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [`${v}%`, '할인율']} />
+                  <CartesianGrid stroke="var(--bd)" strokeDasharray="2 3" vertical={false} />
+                  <Line type="monotone" dataKey="disc" stroke="var(--f2)" strokeWidth={1.5} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* 7. 수평 막대 — 브랜드별 평균 리뷰점수 */}
+          <section className="panel">
+            <div className="sec-head"><h3>브랜드별 평균 리뷰점수 <span className="sub">수평 막대</span></h3></div>
+            <div style={{ width: '100%', height: 170 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={brandAvgScore} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
+                  <XAxis type="number" tick={AXIS_TICK} axisLine={false} tickLine={false} domain={[0, 100]} unit="%" />
+                  <YAxis type="category" dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} width={64} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [`${v}%`, '평균 리뷰점수']} />
+                  <Bar dataKey="avg" radius={[0, 2, 2, 0]}>
+                    {brandAvgScore.map((_, idx) => (
+                      <RCell key={idx} fill={idx === 0 ? 'var(--hs)' : 'var(--f3)'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* 8. 복합 — 브랜드별 상품 수 + 평균 할인율 */}
+          <section className="panel">
+            <div className="sec-head"><h3>브랜드별 상품 수 / 평균 할인율 <span className="sub">복합 차트</span></h3></div>
+            <div style={{ width: '100%', height: 170 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={brandComposed} margin={{ top: 4, right: 24, left: -22, bottom: 0 }}>
+                  <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="l" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="r" orientation="right" tick={AXIS_TICK} axisLine={false} tickLine={false} unit="%" />
+                  <Tooltip {...TOOLTIP_STYLE} />
+                  <CartesianGrid stroke="var(--bd)" strokeDasharray="2 3" vertical={false} />
+                  <Bar yAxisId="l" dataKey="count" fill="var(--f3)" radius={[2, 2, 0, 0]} name="상품 수" />
+                  <Line yAxisId="r" type="monotone" dataKey="avgDisc" stroke="var(--hs)"
+                    strokeWidth={2} dot={{ r: 3, fill: 'var(--hs)' }} name="평균 할인율" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* 9. 스택 막대 — 브랜드별 할인/무할인 */}
+          <section className="panel">
+            <div className="sec-head"><h3>브랜드별 할인/무할인 <span className="sub">스택 막대</span></h3></div>
+            <div style={{ width: '100%', height: 160 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={brandDiscStack} margin={{ top: 4, right: 0, left: -22, bottom: 0 }}>
+                  <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <Tooltip {...TOOLTIP_STYLE} />
+                  <Bar dataKey="disc" stackId="a" fill="var(--hs)" name="할인" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="none" stackId="a" fill="var(--f3)" name="무할인" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* 10. 면적 — 가격대별 상품 수 */}
+          <section className="panel">
+            <div className="sec-head"><h3>가격대별 상품 수 <span className="sub">면적 차트</span></h3></div>
+            <div style={{ width: '100%', height: 160 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={priceBuckets} margin={{ top: 4, right: 8, left: -22, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="priceAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--hs)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--hs)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="price" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [`${v}개`, '상품 수']} />
+                  <CartesianGrid stroke="var(--bd)" strokeDasharray="2 3" vertical={false} />
+                  <Area type="monotone" dataKey="count" stroke="var(--hs)" strokeWidth={1.5}
+                    fill="url(#priceAreaGrad)" dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* 11. 막대 — 할인율 분포 */}
+          <section className="panel">
+            <div className="sec-head"><h3>할인율 분포 <span className="sub">{displayedItems.length}개 상품</span></h3></div>
+            <div style={{ width: '100%', height: 130 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={discountDist} margin={{ top: 4, right: 0, left: -22, bottom: 0 }}>
+                  <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis hide />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v: any) => [`${v}개`, '상품 수']} />
+                  <Bar dataKey="count" radius={[2, 2, 0, 0]}>
+                    {discountDist.map((entry, idx) => {
+                      const maxV = Math.max(...discountDist.map(d => d.count), 1);
+                      return <RCell key={idx} fill={entry.count === maxV && maxV > 0 ? 'var(--hs)' : 'var(--f3)'} />;
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* 12. 막대 — 브랜드별 품절율 */}
+          <section className="panel">
+            <div className="sec-head"><h3>브랜드별 품절율 <span className="sub">2개+ 노출 기준</span></h3></div>
             {soldOutByBrand.length === 0 ? (
               <span className="dim" style={{ fontSize: 12 }}>품절 없음</span>
             ) : soldOutByBrand.map(({ name, pct, total }, i) => (
@@ -428,6 +921,58 @@ function RecommendHub() {
               </div>
             ))}
           </section>
+
+          {/* 13. 산점도 — 판매가 vs 리뷰점수 */}
+          {scatterData.length > 0 && (
+            <section className="panel">
+              <div className="sec-head"><h3>판매가 vs 리뷰점수 <span className="sub">산점도</span></h3></div>
+              <div style={{ width: '100%', height: 160 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                    <XAxis type="number" dataKey="x" name="판매가" tick={AXIS_TICK} axisLine={false} tickLine={false}
+                      tickFormatter={v => v >= 10000 ? `${Math.round(v / 10000)}만` : String(v)} />
+                    <YAxis type="number" dataKey="y" name="리뷰점수" tick={AXIS_TICK} axisLine={false} tickLine={false}
+                      domain={[0, 100]} unit="%" />
+                    <ZAxis range={[20, 20]} />
+                    <Tooltip {...TOOLTIP_STYLE}
+                      formatter={(v: any, name: any) => [name === '판매가' ? `${v.toLocaleString()}원` : `${v}%`, name]} />
+                    <CartesianGrid stroke="var(--bd)" strokeDasharray="2 3" />
+                    <Scatter data={scatterData} fill="var(--hs)" fillOpacity={0.5} />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          )}
+
+          {/* 14. 레이더 — 상위 브랜드 비교 */}
+          {radarChart && (
+            <section className="panel">
+              <div className="sec-head"><h3>브랜드 다차원 비교 <span className="sub">레이더 · TOP {radarChart.brands.length}</span></h3></div>
+              <div style={{ width: '100%', height: 200 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={radarChart.data} margin={{ top: 8, right: 24, left: 24, bottom: 8 }}>
+                    <PolarGrid stroke="var(--bd)" />
+                    <PolarAngleAxis dataKey="subject" tick={AXIS_TICK} />
+                    {radarChart.brands.map((brand, idx) => (
+                      <Radar key={brand} name={brand} dataKey={brand}
+                        stroke={RADAR_COLORS[idx % RADAR_COLORS.length]}
+                        fill={RADAR_COLORS[idx % RADAR_COLORS.length]}
+                        fillOpacity={0.1} strokeWidth={1.5} />
+                    ))}
+                    <Tooltip {...TOOLTIP_STYLE} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="row-flex center gap-10" style={{ marginTop: 4 }}>
+                {radarChart.brands.map((brand, idx) => (
+                  <div key={brand} className="row-flex center gap-4">
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: RADAR_COLORS[idx % RADAR_COLORS.length] }} />
+                    <span style={{ fontSize: 10, color: 'var(--f3)' }}>{brand}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
         </div>
       )}

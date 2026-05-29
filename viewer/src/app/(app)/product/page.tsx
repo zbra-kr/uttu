@@ -12,7 +12,7 @@ import { IcSearch, IcEdit } from '@/components/ui/icons';
 import BookmarkToggle from '@/components/me/BookmarkToggle';
 import NoteDrawer from '@/components/me/NoteDrawer';
 import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
-import { searchProducts, fetchProductDetail, fetchProductPriceHistory, fetchProductRankHistory, fetchProductCategoryRanks, fetchReviews, CATEGORY_MAP, type ProductDetail, type ReviewRow, type ProductSearchResult } from '@/lib/queries';
+import { searchProducts, fetchProductDetail, fetchProductPriceHistory, fetchProductRankHistory, fetchProductCategoryRanks, fetchReviews, fetchBodyStats, CATEGORY_MAP, AGE_MAP, type ProductDetail, type ReviewRow, type ProductSearchResult, type BodyStats, type CategoryRankRow } from '@/lib/queries';
 
 function ProductSearch({ onSelect }: { onSelect: (no: string) => void }) {
   const [query, setQuery] = React.useState('');
@@ -243,6 +243,26 @@ const GENDER_LABEL: Record<string, string> = {
   M: '남성', F: '여성', A: '공용', U: '공용',
 };
 
+function StarRating({ rating, color }: { rating: number; color: string }) {
+  return (
+    <span style={{ display: 'inline-flex', gap: 1, fontSize: 17, flexShrink: 0 }}>
+      {[1, 2, 3, 4, 5].map(i => {
+        const full = i <= Math.floor(rating);
+        const frac = rating % 1;
+        const partial = !full && i === Math.ceil(rating) && frac > 0;
+        if (full) return <span key={i} style={{ color }}>★</span>;
+        if (partial) return (
+          <span key={i} style={{
+            background: `linear-gradient(90deg, ${color} ${frac * 100}%, var(--bs) ${frac * 100}%)`,
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+          }}>★</span>
+        );
+        return <span key={i} style={{ color: 'var(--bs)' }}>★</span>;
+      })}
+    </span>
+  );
+}
+
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="row-flex between" style={{ padding: '3px 0' }}>
@@ -269,8 +289,10 @@ function ProductPageInner() {
   const [detail, setDetail] = React.useState<ProductDetail | null>(null);
   const [priceHistory,   setPriceHistory]   = React.useState<{ date: string; price: number; discount_rate: number | null }[]>([]);
   const [rankHistory,    setRankHistory]    = React.useState<{ date: string; rank: number; category: string }[]>([]);
-  const [categoryRanks,  setCategoryRanks]  = React.useState<{ category_code: string; best_rank: number; combo_count: number }[]>([]);
+  const [categoryRanks,  setCategoryRanks]  = React.useState<CategoryRankRow[]>([]);
+  const [categoryRanksDate, setCategoryRanksDate] = React.useState<string>('');
   const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
+  const [bodyStats, setBodyStats] = React.useState<BodyStats | null>(null);
   const [loading, setLoading] = React.useState(!!noFromUrl);
   const [noteCount, setNoteCount] = React.useState(0);
   const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(
@@ -294,6 +316,7 @@ function ProductPageInner() {
     setReviews([]);
     setRankHistory([]);
     setCategoryRanks([]);
+    setCategoryRanksDate('');
     Promise.all([
       fetchProductDetail(selectedNo),
       fetchProductPriceHistory(selectedNo),
@@ -312,10 +335,15 @@ function ProductPageInner() {
       }
       setPriceHistory(ph);
       setRankHistory(rh);
-      setCategoryRanks(cr);
-      if (d) {
-        const rv = await fetchReviews({ productId: d.id, sort: 'recent', limit: 10, offset: 0 });
+      setCategoryRanks(cr.rows);
+      setCategoryRanksDate(cr.snapshot_date);
+      if (d?.is_own) {
+        const [rv, bs] = await Promise.all([
+          fetchReviews({ productId: d.id, sort: 'recent', limit: 10, offset: 0 }),
+          fetchBodyStats(d.id),
+        ]);
         setReviews(rv.rows);
+        setBodyStats(bs);
       }
       setLoading(false);
     }).catch(e => { console.error(e); setLoading(false); });
@@ -709,24 +737,53 @@ function ProductPageInner() {
                       {categoryRanks.reduce((s, r) => s + r.combo_count, 0)}개 콤보 동시 진입
                     </span>
                   </h3>
+                  {categoryRanksDate && (
+                    <span className="mono" style={{ fontSize: 11, color: 'var(--f4)' }}>{categoryRanksDate} 기준</span>
+                  )}
                 </div>
                 <div className="tbl" style={{ border: 'none', borderRadius: 0, marginTop: 4 }}>
-                  <div className="row head" style={{ gridTemplateColumns: '1fr 64px 60px' }}>
+                  <div className="row head" style={{ gridTemplateColumns: '80px 1fr 110px' }}>
                     <span>카테고리</span>
+                    <span>진입 세그먼트</span>
                     <span className="cell-r">최고순위</span>
-                    <span className="cell-r">콤보수</span>
                   </div>
-                  {categoryRanks.map((r, i) => (
+                  {categoryRanks.map((r, i) => {
+                    const genderLabel = r.best_gender === 'M' ? '남' : r.best_gender === 'F' ? '여' : '전체';
+                    const ageLabel = r.best_age && r.best_age !== 'AGE_BAND_ALL' ? AGE_MAP[r.best_age] ?? r.best_age : '전체';
+                    return (
                     <div key={i} className={`row ${i % 2 ? 'alt' : ''}`}
-                      style={{ gridTemplateColumns: '1fr 64px 60px' }}>
+                      style={{ gridTemplateColumns: '80px 1fr 110px', alignItems: 'flex-start', padding: '6px 8px' }}>
                       <span style={{ fontSize: 12 }}>{CATEGORY_MAP[r.category_code] ?? r.category_code}</span>
-                      <span className="mono cell-r" style={{
-                        fontWeight: r.best_rank <= 10 ? 600 : 400,
-                        color: r.best_rank === 1 ? 'var(--hs)' : r.best_rank <= 10 ? 'var(--slf)' : 'var(--f2)',
-                      }}>#{r.best_rank}</span>
-                      <span className="mono cell-r dim" style={{ fontSize: 11 }}>{r.combo_count}</span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                        {r.segments.map((s, j) => {
+                          const sg = s.gender === 'M' ? '남' : s.gender === 'F' ? '여' : '전체';
+                          const sa = s.age && s.age !== 'AGE_BAND_ALL' ? AGE_MAP[s.age] ?? s.age : '전체';
+                          const isBest = s.gender === r.best_gender && s.age === r.best_age;
+                          return (
+                            <span key={j} style={{
+                              fontSize: 10, padding: '1px 5px', borderRadius: 3,
+                              background: isBest ? 'var(--hs)' : 'var(--snk)',
+                              color: isBest ? '#fff' : 'var(--f3)',
+                              fontWeight: isBest ? 600 : 400,
+                            }}>
+                              {sg}·{sa} #{s.rank}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                        <span className="mono" style={{
+                          fontWeight: r.best_rank <= 10 ? 600 : 400,
+                          color: r.best_rank === 1 ? 'var(--hs)' : r.best_rank <= 10 ? 'var(--slf)' : 'var(--f2)',
+                          fontSize: 12,
+                        }}>#{r.best_rank}</span>
+                        <span style={{ fontSize: 10, color: 'var(--f4)' }}>
+                          {genderLabel}·{ageLabel}
+                        </span>
+                      </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
@@ -780,6 +837,50 @@ function ProductPageInner() {
               </section>
             )}
 
+            {/* 체형별 리뷰 통계 — 자사 상품만 */}
+            {detail.is_own && bodyStats && (bodyStats.byHeight.length > 0 || bodyStats.byWeight.length > 0) && (
+              <section className="panel">
+                <div className="sec-head">
+                  <h3>체형별 평균 별점</h3>
+                  <span className="sub" style={{ fontSize: 11, color: 'var(--f4)' }}>
+                    체형 입력 리뷰 {bodyStats.totalSampled.toLocaleString()}건 기준 · 3건 미만 구간 제외
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: bodyStats.byHeight.length > 0 && bodyStats.byWeight.length > 0 ? '1fr 1fr' : '1fr', gap: 20 }}>
+                  {[
+                    { title: '키', buckets: bodyStats.byHeight },
+                    { title: '몸무게', buckets: bodyStats.byWeight },
+                  ].filter(g => g.buckets.length > 0).map(group => (
+                    <div key={group.title}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 10, letterSpacing: '0.03em' }}>
+                        {group.title}
+                      </div>
+                      {group.buckets.map(b => {
+                        const starColor = b.avgRating >= 4 ? 'var(--warn, #f0a500)' : b.avgRating >= 3 ? 'var(--f3)' : 'var(--dn)';
+                        return (
+                          <div key={b.label} style={{
+                            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7,
+                            padding: '5px 8px', borderRadius: 6, background: 'var(--snk)',
+                          }}>
+                            <span style={{ width: 58, fontSize: 10, color: 'var(--f4)', flexShrink: 0, textAlign: 'right' }}>
+                              {b.label}
+                            </span>
+                            <StarRating rating={b.avgRating} color={starColor} />
+                            <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 600, color: 'var(--f1)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                              {b.avgRating.toFixed(1)}
+                            </span>
+                            <span style={{ fontSize: 10, color: 'var(--f4)', flexShrink: 0 }}>
+                              {b.count}건
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* Reviews — 자사 상품만 */}
             <section className="panel">
               <div className="sec-head"><h3>최근 리뷰 <span className="sub">{detail.is_own ? '최신 10건' : '자사 상품만 수집'}</span></h3></div>
@@ -807,6 +908,30 @@ function ProductPageInner() {
                           ? r.review_text.slice(0, 200) + (r.review_text.length > 200 ? '…' : '')
                           : <span className="dim">내용 없음</span>}
                       </div>
+                      {(r.purchase_option || r.member_height || r.member_weight || r.member_gender || r.satisfactions?.length) ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+                          {r.purchase_option && (
+                            <span style={{ fontSize: 10, background: 'var(--hs)', color: '#fff', padding: '1px 5px', borderRadius: 3, fontWeight: 500 }}>
+                              {r.purchase_option}
+                            </span>
+                          )}
+                          {(r.member_height || r.member_weight) && (
+                            <span style={{ fontSize: 10, background: 'var(--snk)', padding: '1px 5px', borderRadius: 3, color: 'var(--f3)' }}>
+                              {[r.member_height ? `${r.member_height}cm` : null, r.member_weight ? `${r.member_weight}kg` : null].filter(Boolean).join(' · ')}
+                            </span>
+                          )}
+                          {r.member_gender && (
+                            <span style={{ fontSize: 10, background: 'var(--snk)', padding: '1px 5px', borderRadius: 3, color: 'var(--f3)' }}>
+                              {r.member_gender === 'male' ? '남성' : r.member_gender === 'female' ? '여성' : r.member_gender}
+                            </span>
+                          )}
+                          {r.satisfactions?.slice(0, 3).map((s, i) => (
+                            <span key={i} style={{ fontSize: 10, background: 'var(--snk)', padding: '1px 5px', borderRadius: 3, color: 'var(--f4)' }}>
+                              {s.attribute}: <strong style={{ color: 'var(--f3)' }}>{s.answer}</strong>
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                       {r.helpful_count > 0 && (
                         <div className="mono dim" style={{ fontSize: 10, marginTop: 4 }}>도움됨 {r.helpful_count}</div>
                       )}

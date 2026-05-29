@@ -445,6 +445,31 @@ function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null;
   }
   const overlaps = [...overlapMap.values()].filter(v => v.promoIds.length >= 2);
 
+  // 성별 × 카테고리 히트맵 (선택 상품 기준)
+  const genderCatHeatmapHub = React.useMemo(() => {
+    if (detailItems.length === 0 || enrichMap.size === 0) return null;
+    const catCounts: Record<string, number> = {};
+    for (const item of detailItems) {
+      const enrich = enrichMap.get(item.id);
+      const cat = enrich?.category_d2_name ?? '미분류';
+      catCounts[cat] = (catCounts[cat] ?? 0) + 1;
+    }
+    const topCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 7).map(([k]) => k);
+    const GENDERS = ['M', 'F', 'A', 'null'];
+    const GENDER_LABELS: Record<string, string> = { M: '남성', F: '여성', A: '전체', 'null': '미확인' };
+    const matrix: Record<string, Record<string, number>> = {};
+    for (const item of detailItems) {
+      const enrich = enrichMap.get(item.id);
+      const cat = enrich?.category_d2_name ?? '미분류';
+      if (!topCats.includes(cat)) continue;
+      const gKey = enrich?.gender ?? 'null';
+      if (!matrix[gKey]) matrix[gKey] = {};
+      matrix[gKey][cat] = (matrix[gKey][cat] ?? 0) + 1;
+    }
+    const hmMax = Math.max(...GENDERS.flatMap(g => topCats.map(c => matrix[g]?.[c] ?? 0)), 1);
+    return { topCats, GENDERS, GENDER_LABELS, matrix, hmMax };
+  }, [detailItems, enrichMap]);
+
   if (error) return <div className="panel" style={{ padding: 24, color: 'var(--f3)' }}>오류: {error}</div>;
 
   const periodLabel = period === 'today' ? '오늘'
@@ -939,6 +964,54 @@ function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null;
           </section>
 
         </div>{/* grid-3 */}
+
+        {/* 성별 × 카테고리 히트맵 */}
+        {genderCatHeatmapHub && (
+          <section className="panel">
+            <div className="sec-head">
+              <h3>성별 × 카테고리 히트맵 <span className="sub">{detailItems.length}건 기준</span></h3>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: '4px 8px', color: 'var(--f4)', fontWeight: 400, textAlign: 'left', fontSize: 10, minWidth: 60 }} />
+                    {genderCatHeatmapHub.topCats.map(cat => (
+                      <th key={cat} style={{ padding: '4px 6px', color: 'var(--f3)', fontWeight: 400, textAlign: 'center', fontSize: 10, whiteSpace: 'nowrap' }}>{cat}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {genderCatHeatmapHub.GENDERS.map(g => {
+                    const row = genderCatHeatmapHub.matrix[g] ?? {};
+                    const rowTotal = genderCatHeatmapHub.topCats.reduce((s, c) => s + (row[c] ?? 0), 0);
+                    if (rowTotal === 0) return null;
+                    return (
+                      <tr key={g}>
+                        <td style={{ padding: '3px 8px', color: 'var(--f3)', fontWeight: 500, fontSize: 11, whiteSpace: 'nowrap' }}>
+                          {genderCatHeatmapHub.GENDER_LABELS[g]}
+                        </td>
+                        {genderCatHeatmapHub.topCats.map(cat => {
+                          const val = row[cat] ?? 0;
+                          const intensity = val > 0 ? Math.max(0.1, val / genderCatHeatmapHub.hmMax) : 0;
+                          return (
+                            <td key={cat} style={{ padding: '2px 4px', textAlign: 'center', position: 'relative', minWidth: 52 }}>
+                              {val > 0 && <div style={{ position: 'absolute', inset: 2, background: 'var(--hs)', opacity: intensity, borderRadius: 3 }} />}
+                              <span style={{ position: 'relative', zIndex: 1, fontSize: 10, fontFamily: 'var(--mono)', color: intensity > 0.5 ? 'var(--bg)' : 'var(--f2)' }}>
+                                {val > 0 ? val.toLocaleString() : '—'}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
       </div>{/* col-flex 우측 */}
     </div>/* grid 240px 1fr */
   );
@@ -950,8 +1023,11 @@ interface CalPopup { day: number; dateStr: string; evts: CalEvt[]; }
 
 function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshotDate: string) => void }) {
   const today = new Date();
+  const todayKst = kstDateStr();
   const [year,           setYear]           = React.useState(today.getFullYear());
   const [month,          setMonth]          = React.useState(today.getMonth());
+  const [viewMode,       setViewMode]       = React.useState<'month' | 'week'>('month');
+  const [weekAnchor,     setWeekAnchor]     = React.useState(todayKst);
   const [promos,         setPromos]         = React.useState<PromoRow[]>([]);
   const [loading,        setLoading]        = React.useState(true);
   const [popup,          setPopup]          = React.useState<CalPopup | null>(null);
@@ -964,43 +1040,75 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const lastOfMonth = `${monthStr}-${String(daysInMonth).padStart(2,'0')}`;
 
+  const weekBounds = React.useMemo(() => {
+    const d = new Date(weekAnchor + 'T00:00:00');
+    const dow = d.getDay(); // 0=Sun
+    const ws = new Date(d); ws.setDate(d.getDate() - dow);
+    const we = new Date(ws); we.setDate(ws.getDate() + 6);
+    const fmt = (dd: Date) => `${dd.getFullYear()}-${String(dd.getMonth()+1).padStart(2,'0')}-${String(dd.getDate()).padStart(2,'0')}`;
+    return { start: fmt(ws), end: fmt(we) };
+  }, [weekAnchor]);
+
+  const fetchFrom = viewMode === 'month' ? firstOfMonth : weekBounds.start;
+  const fetchTo   = viewMode === 'month' ? lastOfMonth  : weekBounds.end;
+
   React.useEffect(() => {
     setLoading(true);
     sb.from('promotions')
       .select('id, musinsa_event_id, title, promotion_type, items_count, end_at, ended_at, snapshot_date')
-      .lte('snapshot_date', lastOfMonth)
-      .or(`ended_at.is.null,ended_at.gte.${firstOfMonth}`)
+      .lte('snapshot_date', fetchTo)
+      .or(`ended_at.is.null,ended_at.gte.${fetchFrom}`)
       .order('snapshot_date', { ascending: true })
       .limit(500)
       .then(({ data }) => { setPromos((data ?? []) as PromoRow[]); setLoading(false); });
-  }, [year, month]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchFrom, fetchTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 날짜별 이벤트 맵 — 프로모션 기간(snapshot_date ~ end_at) 전체에 표시
-  const events: Record<number, CalEvt[]> = {};
+  // 날짜별 이벤트 맵 (date string key)
+  const eventsMap: Record<string, CalEvt[]> = {};
   for (const promo of promos) {
     if (!activeTypes.has(promo.promotion_type)) continue;
-    const sev  = TYPE_SEV[promo.promotion_type] ?? 'lo';
-    const snap = promo.snapshot_date;                       // 'YYYY-MM-DD'
+    const sev    = TYPE_SEV[promo.promotion_type] ?? 'lo';
+    const snap   = promo.snapshot_date;
     const endStr = promo.ended_at ?? (promo.end_at ? promo.end_at.slice(0, 10) : null);
-    if (endStr && endStr < firstOfMonth) continue;
-    if (snap > lastOfMonth) continue;
-    const startD = snap >= firstOfMonth ? parseInt(snap.slice(8, 10)) : 1;
-    const endD   = endStr && endStr <= lastOfMonth ? parseInt(endStr.slice(8, 10)) : daysInMonth;
+    if (endStr && endStr < fetchFrom) continue;
+    if (snap > fetchTo) continue;
+    const startStr = snap >= fetchFrom ? snap : fetchFrom;
+    const endStr2  = endStr && endStr <= fetchTo ? endStr : fetchTo;
     const evt: CalEvt = { id: promo.id, title: promo.title, sev, type: promo.promotion_type, snapshotDate: snap };
-    for (let d = startD; d <= endD; d++) {
-      if (!events[d]) events[d] = [];
-      if (!events[d].some(e => e.id === evt.id)) events[d].push(evt);
+    const cur = new Date(startStr + 'T00:00:00');
+    const ed  = new Date(endStr2  + 'T00:00:00');
+    while (cur <= ed) {
+      const ds = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+      if (!eventsMap[ds]) eventsMap[ds] = [];
+      if (!eventsMap[ds].some(e => e.id === evt.id)) eventsMap[ds].push(evt);
+      cur.setDate(cur.getDate() + 1);
     }
   }
 
   const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   const prevMonth = () => month === 0 ? (setYear(y => y-1), setMonth(11)) : setMonth(m => m-1);
   const nextMonth = () => month === 11 ? (setYear(y => y+1), setMonth(0)) : setMonth(m => m+1);
+  const prevWeek = () => {
+    const d = new Date(weekAnchor + 'T00:00:00'); d.setDate(d.getDate() - 7);
+    setWeekAnchor(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+  };
+  const nextWeek = () => {
+    const d = new Date(weekAnchor + 'T00:00:00'); d.setDate(d.getDate() + 7);
+    setWeekAnchor(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+  };
+
+  const weekDayStrs = React.useMemo(() => {
+    const result: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekBounds.start + 'T00:00:00'); d.setDate(d.getDate() + i);
+      result.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+    }
+    return result;
+  }, [weekBounds.start]);
 
   const firstDay   = new Date(year, month, 1).getDay();
   const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
   const activeCount = promos.filter(p => isActive(p.end_at, p.ended_at)).length;
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
 
   const DAY_HEADERS = ['일','월','화','수','목','금','토'];
   const SUN_COLOR   = 'var(--shf)';
@@ -1010,7 +1118,18 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
     <>
       <div className="row-flex between center">
         <div className="row-flex baseline gap-10">
-          <h2 style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>{year}년 {MONTHS[month]}</h2>
+          {viewMode === 'month' ? (
+            <h2 style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>{year}년 {MONTHS[month]}</h2>
+          ) : (
+            <h2 style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>
+              {parseInt(weekBounds.start.slice(0,4))}년{' '}
+              {parseInt(weekBounds.start.slice(5,7))}월{' '}
+              {parseInt(weekBounds.start.slice(8))}일 주
+              <span style={{ fontSize: 12, fontWeight: 400, marginLeft: 6, color: 'var(--f3)' }}>
+                {weekBounds.start.slice(5)} ~ {weekBounds.end.slice(5)}
+              </span>
+            </h2>
+          )}
           <span className="mono dim" style={{ fontSize: 11 }}>
             · {loading ? '로딩중…' : `진행중 ${activeCount}건`}
           </span>
@@ -1032,55 +1151,113 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
               </span>
             );
           })}
-          <span style={{ width: 8 }} />
-          <button className="btn sm icon" onClick={prevMonth}><IcChevL /></button>
-          <button className="btn sm" onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()); }}>오늘</button>
-          <button className="btn sm icon" onClick={nextMonth}><IcChevR /></button>
+          <span style={{ width: 4 }} />
+          <button className={`btn sm ${viewMode === 'month' ? 'active' : ''}`} onClick={() => setViewMode('month')}>월</button>
+          <button className={`btn sm ${viewMode === 'week' ? 'active' : ''}`} onClick={() => setViewMode('week')}>주</button>
+          <span style={{ width: 4 }} />
+          {viewMode === 'month' ? (
+            <>
+              <button className="btn sm icon" onClick={prevMonth}><IcChevL /></button>
+              <button className="btn sm" onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()); }}>오늘</button>
+              <button className="btn sm icon" onClick={nextMonth}><IcChevR /></button>
+            </>
+          ) : (
+            <>
+              <button className="btn sm icon" onClick={prevWeek}><IcChevL /></button>
+              <button className="btn sm" onClick={() => setWeekAnchor(kstDateStr())}>오늘</button>
+              <button className="btn sm icon" onClick={nextWeek}><IcChevR /></button>
+            </>
+          )}
         </div>
       </div>
 
-      <section className="panel">
-        <div className="cal-head">
-          {DAY_HEADERS.map((d, i) => (
-            <div key={i} className="h" style={{ color: i === 0 ? SUN_COLOR : i === 6 ? SAT_COLOR : undefined }}>{d}</div>
-          ))}
-        </div>
-        <div className="cal">
-          {Array.from({ length: totalCells }).map((_, i) => {
-            const day      = i - firstDay + 1;
-            const inMonth  = day >= 1 && day <= daysInMonth;
-            const dayStr   = inMonth ? `${monthStr}-${String(day).padStart(2,'0')}` : '';
-            const isToday  = dayStr === todayStr;
-            const isHoliday = inMonth && !!KR_HOLIDAYS[dayStr];
-            const isSun    = i % 7 === 0;
-            const isSat    = i % 7 === 6;
-            const evts     = inMonth ? (events[day] ?? []) : [];
-            const numColor = (isHoliday || isSun) ? SUN_COLOR : isSat ? SAT_COLOR : undefined;
-            const holName  = isHoliday ? KR_HOLIDAYS[dayStr] : null;
-            const SHOW     = 3;
-            return (
-              <div key={i} className={`cal-day ${!inMonth ? 'out' : ''} ${isToday ? 'today' : ''}`}>
-                <div className="num" style={{ display: 'flex', alignItems: 'baseline', gap: 4, color: numColor }}>
-                  <span>{inMonth ? day : ''}</span>
-                  {holName && <span style={{ fontSize: 8, fontWeight: 400, color: SUN_COLOR, lineHeight: 1 }}>{holName}</span>}
-                </div>
-                {evts.slice(0, SHOW).map((e, j) => (
-                  <div key={j} className={`cal-evt ${e.sev}`} style={{ cursor: 'pointer' }}
-                    onClick={() => onSelectPromo(e.id, e.snapshotDate)}>
-                    {e.title}
+      {viewMode === 'week' ? (
+        <section className="panel" style={{ padding: 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '0.5px solid var(--bs)' }}>
+            {DAY_HEADERS.map((d, i) => (
+              <div key={i} className="h" style={{ color: i === 0 ? SUN_COLOR : i === 6 ? SAT_COLOR : undefined, padding: '6px 8px' }}>{d}</div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+            {weekDayStrs.map((dateStr, i) => {
+              const isToday   = dateStr === todayKst;
+              const isHoliday = !!KR_HOLIDAYS[dateStr];
+              const isSun     = i === 0;
+              const isSat     = i === 6;
+              const holName   = KR_HOLIDAYS[dateStr] ?? null;
+              const numColor  = (isHoliday || isSun) ? SUN_COLOR : isSat ? SAT_COLOR : undefined;
+              const evts      = eventsMap[dateStr] ?? [];
+              const SHOW      = 8;
+              return (
+                <div key={dateStr}
+                  className={`cal-day ${isToday ? 'today' : ''}`}
+                  style={{ borderLeft: i > 0 ? '0.5px solid var(--bs)' : undefined, minHeight: 220 }}>
+                  <div className="num" style={{ display: 'flex', alignItems: 'baseline', gap: 4, color: numColor }}>
+                    <span style={{ fontSize: 10, color: 'var(--f4)' }}>{parseInt(dateStr.slice(5,7))}월</span>
+                    <span>{parseInt(dateStr.slice(8))}</span>
+                    {holName && <span style={{ fontSize: 8, fontWeight: 400, color: SUN_COLOR, lineHeight: 1 }}>{holName}</span>}
                   </div>
-                ))}
-                {evts.length > SHOW && (
-                  <button className="btn sm" style={{ fontSize: 10, padding: '1px 0', width: '100%', marginTop: 2, textAlign: 'center' }}
-                    onClick={() => setPopup({ day, dateStr: dayStr, evts })}>
-                    + {evts.length - SHOW}개 더
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
+                  {evts.slice(0, SHOW).map((e, j) => (
+                    <div key={j} className={`cal-evt ${e.sev}`} style={{ cursor: 'pointer' }}
+                      onClick={() => onSelectPromo(e.id, e.snapshotDate)}>
+                      {e.title}
+                    </div>
+                  ))}
+                  {evts.length > SHOW && (
+                    <button className="btn sm" style={{ fontSize: 10, padding: '1px 0', width: '100%', marginTop: 2, textAlign: 'center' }}
+                      onClick={() => setPopup({ day: parseInt(dateStr.slice(8)), dateStr, evts })}>
+                      + {evts.length - SHOW}개 더
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : (
+        <section className="panel">
+          <div className="cal-head">
+            {DAY_HEADERS.map((d, i) => (
+              <div key={i} className="h" style={{ color: i === 0 ? SUN_COLOR : i === 6 ? SAT_COLOR : undefined }}>{d}</div>
+            ))}
+          </div>
+          <div className="cal">
+            {Array.from({ length: totalCells }).map((_, i) => {
+              const day      = i - firstDay + 1;
+              const inMonth  = day >= 1 && day <= daysInMonth;
+              const dayStr   = inMonth ? `${monthStr}-${String(day).padStart(2,'0')}` : '';
+              const isToday  = dayStr === todayKst;
+              const isHoliday = inMonth && !!KR_HOLIDAYS[dayStr];
+              const isSun    = i % 7 === 0;
+              const isSat    = i % 7 === 6;
+              const evts     = inMonth ? (eventsMap[dayStr] ?? []) : [];
+              const numColor = (isHoliday || isSun) ? SUN_COLOR : isSat ? SAT_COLOR : undefined;
+              const holName  = isHoliday ? KR_HOLIDAYS[dayStr] : null;
+              const SHOW     = 3;
+              return (
+                <div key={i} className={`cal-day ${!inMonth ? 'out' : ''} ${isToday ? 'today' : ''}`}>
+                  <div className="num" style={{ display: 'flex', alignItems: 'baseline', gap: 4, color: numColor }}>
+                    <span>{inMonth ? day : ''}</span>
+                    {holName && <span style={{ fontSize: 8, fontWeight: 400, color: SUN_COLOR, lineHeight: 1 }}>{holName}</span>}
+                  </div>
+                  {evts.slice(0, SHOW).map((e, j) => (
+                    <div key={j} className={`cal-evt ${e.sev}`} style={{ cursor: 'pointer' }}
+                      onClick={() => onSelectPromo(e.id, e.snapshotDate)}>
+                      {e.title}
+                    </div>
+                  ))}
+                  {evts.length > SHOW && (
+                    <button className="btn sm" style={{ fontSize: 10, padding: '1px 0', width: '100%', marginTop: 2, textAlign: 'center' }}
+                      onClick={() => setPopup({ day, dateStr: dayStr, evts })}>
+                      + {evts.length - SHOW}개 더
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* 팝업 모달 */}
       {popup && (
@@ -1093,7 +1270,7 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
             onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--f1)' }}>
-                {month+1}월 {popup.day}일 · {popup.evts.length}건
+                {parseInt(popup.dateStr.slice(5,7))}월 {parseInt(popup.dateStr.slice(8))}일 · {popup.evts.length}건
               </div>
               <button className="btn sm icon" onClick={() => setPopup(null)}>✕</button>
             </div>
@@ -1129,32 +1306,55 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
 
 // ── 통계 탭 ──────────────────────────────────────────────────────
 function PromoStats() {
-  type StatsWin = '30D' | '90D' | '1Y';
+  type StatsWin = '오늘' | '어제' | '이번주' | '지난주' | '30D' | '90D' | '180D' | '1Y';
   const router = useRouter();
-  const [win,        setWin]       = React.useState<StatsWin>('90D');
+  const [win,        setWin]       = React.useState<StatsWin>('30D');
   const [loading,    setLoading]   = React.useState(true);
   const [promoRows,  setPromoRows] = React.useState<any[]>([]);
   const [itemRows,   setItemRows]  = React.useState<any[]>([]);
   const [promoTotal, setPromoTotal] = React.useState(0);
   const [itemTotal,  setItemTotal] = React.useState(0);
   const [brandIdMap, setBrandIdMap] = React.useState<Map<string, string>>(new Map());
+  const [statsProductMap, setStatsProductMap] = React.useState<Map<string, { gender: string | null; category_d2_name: string | null }>>(new Map());
 
   const PROMO_LIMIT = 5000;
   const ITEM_LIMIT  = 20000;
 
   React.useEffect(() => {
-    const daysBack = win === '30D' ? 30 : win === '90D' ? 90 : 365;
-    const fromStr  = kstDateStr(-daysBack);
+    const todayStr = kstDateStr();
+    let fromStr: string;
+    let toStr: string = todayStr;
+    if (win === '오늘') {
+      fromStr = todayStr;
+    } else if (win === '어제') {
+      fromStr = kstDateStr(-1);
+      toStr   = kstDateStr(-1);
+    } else if (win === '이번주') {
+      const d = new Date(Date.now() + 9 * 60 * 60 * 1000);
+      const dow = d.getUTCDay(); // 0=Sun
+      fromStr = kstDateStr(dow === 0 ? -6 : -(dow - 1));
+    } else if (win === '지난주') {
+      const d = new Date(Date.now() + 9 * 60 * 60 * 1000);
+      const dow = d.getUTCDay();
+      const toMon = dow === 0 ? 6 : dow - 1;
+      fromStr = kstDateStr(-(toMon + 7));
+      toStr   = kstDateStr(-(toMon + 1));
+    } else {
+      const daysBack = win === '30D' ? 30 : win === '90D' ? 90 : win === '180D' ? 180 : 365;
+      fromStr = kstDateStr(-daysBack);
+    }
     setLoading(true);
     Promise.all([
       sb.from('promotions')
         .select('id, promotion_type, snapshot_date, items_count, end_at, ended_at', { count: 'exact' })
         .gte('snapshot_date', fromStr)
+        .lte('snapshot_date', toStr)
         .order('snapshot_date', { ascending: true })
         .limit(PROMO_LIMIT),
       sb.from('promotion_items')
-        .select('promotion_id, musinsa_brand_name, musinsa_brand_slug, discount_rate, snapshot_date, is_sold_out, review_score, musinsa_no', { count: 'exact' })
+        .select('promotion_id, product_id, musinsa_brand_name, musinsa_brand_slug, discount_rate, snapshot_date, is_sold_out, review_score, musinsa_no', { count: 'exact' })
         .gte('snapshot_date', fromStr)
+        .lte('snapshot_date', toStr)
         .limit(ITEM_LIMIT),
     ]).then(([pr, ir]) => {
       setPromoRows((pr.data ?? []) as any[]);
@@ -1172,6 +1372,18 @@ function PromoStats() {
     if (slugs.length === 0) return;
     sb.from('brands').select('slug, id').in('slug', slugs).limit(500)
       .then(({ data }) => setBrandIdMap(new Map((data ?? []).map((b: any) => [b.slug, b.id as string]))));
+  }, [itemRows]);
+
+  // product_id → gender/category 조회 (히트맵용)
+  React.useEffect(() => {
+    if (itemRows.length === 0) { setStatsProductMap(new Map()); return; }
+    const productIds = [...new Set((itemRows as any[]).map(i => i.product_id).filter(Boolean) as string[])].slice(0, 2000);
+    if (productIds.length === 0) { setStatsProductMap(new Map()); return; }
+    sb.from('products').select('id, gender, category_d2_name').in('id', productIds).limit(2000)
+      .then(({ data }) => setStatsProductMap(new Map((data ?? []).map((p: any) => [
+        p.id as string,
+        { gender: p.gender as string | null, category_d2_name: p.category_d2_name as string | null },
+      ]))));
   }, [itemRows]);
 
   // ── 집계 ────────────────────────────────────────────────────────
@@ -1499,6 +1711,31 @@ function PromoStats() {
       .slice(0, 500),
   [itemRows]);
 
+  // 성별 × 카테고리 히트맵
+  const genderCatHeatmap = React.useMemo(() => {
+    if (statsProductMap.size === 0 || itemRows.length === 0) return null;
+    const catCounts: Record<string, number> = {};
+    for (const item of itemRows as any[]) {
+      const p = item.product_id ? statsProductMap.get(item.product_id) : null;
+      const cat = p?.category_d2_name ?? '미분류';
+      catCounts[cat] = (catCounts[cat] ?? 0) + 1;
+    }
+    const topCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 7).map(([k]) => k);
+    const GENDERS = ['M', 'F', 'A', 'null'];
+    const GENDER_LABELS: Record<string, string> = { M: '남성', F: '여성', A: '전체', 'null': '미확인' };
+    const matrix: Record<string, Record<string, number>> = {};
+    for (const item of itemRows as any[]) {
+      const p = item.product_id ? statsProductMap.get(item.product_id) : null;
+      const cat = p?.category_d2_name ?? '미분류';
+      if (!topCats.includes(cat)) continue;
+      const gKey = p?.gender ?? 'null';
+      if (!matrix[gKey]) matrix[gKey] = {};
+      matrix[gKey][cat] = (matrix[gKey][cat] ?? 0) + 1;
+    }
+    const hmMax = Math.max(...GENDERS.flatMap(g => topCats.map(c => matrix[g]?.[c] ?? 0)), 1);
+    return { topCats, GENDERS, GENDER_LABELS, matrix, hmMax };
+  }, [itemRows, statsProductMap]);
+
   if (loading) return (
     <div className="panel" style={{ padding: 48, color: 'var(--f4)', textAlign: 'center', fontSize: 13 }}>
       통계 로딩중…
@@ -1549,8 +1786,8 @@ function PromoStats() {
             </span>
           )}
         </div>
-        <div className="row-flex gap-4">
-          {(['30D', '90D', '1Y'] as StatsWin[]).map(w => (
+        <div className="row-flex gap-4 wrap">
+          {(['오늘', '어제', '이번주', '지난주', '30D', '90D', '180D', '1Y'] as StatsWin[]).map(w => (
             <button key={w} className={`btn sm ${win === w ? 'active' : ''}`} onClick={() => setWin(w)}>{w}</button>
           ))}
         </div>
@@ -2025,6 +2262,53 @@ function PromoStats() {
           </div>
         </section>
       </div>
+
+      {/* 성별 × 카테고리 히트맵 */}
+      {genderCatHeatmap && (
+        <section className="panel">
+          <div className="sec-head">
+            <h3>성별 × 카테고리 히트맵 <span className="sub">상품 노출 건수</span></h3>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: '4px 8px', color: 'var(--f4)', fontWeight: 400, textAlign: 'left', fontSize: 10, minWidth: 60 }} />
+                  {genderCatHeatmap.topCats.map(cat => (
+                    <th key={cat} style={{ padding: '4px 6px', color: 'var(--f3)', fontWeight: 400, textAlign: 'center', fontSize: 10, whiteSpace: 'nowrap' }}>{cat}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {genderCatHeatmap.GENDERS.map(g => {
+                  const row = genderCatHeatmap.matrix[g] ?? {};
+                  const rowTotal = genderCatHeatmap.topCats.reduce((s, c) => s + (row[c] ?? 0), 0);
+                  if (rowTotal === 0) return null;
+                  return (
+                    <tr key={g}>
+                      <td style={{ padding: '3px 8px', color: 'var(--f3)', fontWeight: 500, fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {genderCatHeatmap.GENDER_LABELS[g]}
+                      </td>
+                      {genderCatHeatmap.topCats.map(cat => {
+                        const val = row[cat] ?? 0;
+                        const intensity = val > 0 ? Math.max(0.1, val / genderCatHeatmap.hmMax) : 0;
+                        return (
+                          <td key={cat} style={{ padding: '2px 4px', textAlign: 'center', position: 'relative', minWidth: 52 }}>
+                            {val > 0 && <div style={{ position: 'absolute', inset: 2, background: 'var(--hs)', opacity: intensity, borderRadius: 3 }} />}
+                            <span style={{ position: 'relative', zIndex: 1, fontSize: 10, fontFamily: 'var(--mono)', color: intensity > 0.5 ? 'var(--bg)' : 'var(--f2)' }}>
+                              {val > 0 ? val.toLocaleString() : '—'}
+                            </span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
     </>
   );

@@ -2,11 +2,14 @@
 무신사 자사 브랜드 상품 리뷰 스크래퍼
 
 수집 모드:
+  --smart     그룹 기반 증분 수집 (일별 권장 ★).
+              color_group_id 단위로 묶어 대표 1개 goodsNo로 리뷰 API 호출.
+              페이지 1 응답의 api_total vs DB count 비교 → 자동으로 증분/전수 결정.
+              연속 3페이지 전부 중복 시 조기 종료.
   --backfill  전체 수집 (1회성). is_own=True 전체 상품, 모든 페이지 수집.
               NULL review_checked_at 상품 먼저 → review_count 많은 순.
               재시작 시 이미 처리된 상품은 자동 스킵 (마커파일 기반).
   (기본)      일별 증분 수집. ranking_snapshots 최근 30일 등장 활성 상품만.
-              _get_last_review_date 이후 신규 리뷰만 수집.
 
 금지: userNickName, userId, encryptedUserId — 개인정보 절대 저장 금지
 pageSize 최대 20 (50+ → HTTP 400)
@@ -29,12 +32,14 @@ def _fmt_duration(td: timedelta) -> str:
 
 
 def _safe_smallint(val: Any) -> int | None:
-    """SMALLINT 범위(-32768~32767) 초과 값은 None 처리. API sentinel(2147483647 등) 방어."""
+    """SMALLINT 범위(-32768~32767) 초과 값은 None 처리. API sentinel(2147483647 등) 및 0 방어."""
     if val is None:
         return None
     try:
         v = int(val)
     except (TypeError, ValueError):
+        return None
+    if v == 0:
         return None
     return v if -32768 <= v <= 32767 else None
 
@@ -50,7 +55,7 @@ load_dotenv()
 
 REVIEW_URL = "https://api.musinsa.com/api2/review/v1/view/list"
 CDN_BASE = "https://image.msscdn.net"
-PAGE_SIZE = 10
+PAGE_SIZE = 7
 KST = pytz.timezone("Asia/Seoul")
 
 # backfill 재시작 지원용 마커파일
@@ -141,7 +146,12 @@ class ReviewScraper(BaseScraper):
     # ── 파싱 ─────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _parse_review(item: dict[str, Any], product_id: str) -> dict[str, Any]:
+    def _parse_review(
+        item: dict[str, Any],
+        product_id: str,
+        goods_no: str | None = None,
+        color_group_id: int | None = None,
+    ) -> dict[str, Any]:
         images = item.get("images") or []
         image_urls = [
             (CDN_BASE + img["imageUrl"]) if img.get("imageUrl", "").startswith("/") else img["imageUrl"]
@@ -164,6 +174,9 @@ class ReviewScraper(BaseScraper):
             if q.get("answers")
         ] or None
 
+        # 그룹 수집 시 item.goods.goodsNo 가 실제 리뷰 달린 variant
+        item_goods_no = str((item.get("goods") or {}).get("goodsNo") or "")
+
         return {
             "product_id": product_id,
             "musinsa_review_id": str(item["no"]),
@@ -179,6 +192,8 @@ class ReviewScraper(BaseScraper):
             "member_gender": profile.get("reviewSex") or None,
             "satisfactions": satisfactions,
             "is_experience": bool(item.get("specialtyCodes")),
+            "goods_no": item_goods_no or goods_no,
+            "color_group_id": color_group_id,
         }
 
     # ── DB 헬퍼 ──────────────────────────────────────────────────────────────
@@ -235,10 +250,11 @@ class ReviewScraper(BaseScraper):
 
     def _get_products_smart(self) -> list[dict]:
         """
-        스마트 수집 대상: is_own=True 전체 상품.
+        스마트 수집 대상: is_own=True + review_count > 0 상품.
         - review_checked_at NULL (미수집) 먼저
         - 이후 review_checked_at 오래된 순 (가장 오래전 체크 상품 우선)
         - 23시간 이내 체크된 상품은 스킵 (중복 방지)
+        - review_count = 0 상품은 수집 불필요 → 제외
         """
         daily_cutoff = (datetime.now(KST) - timedelta(hours=23)).isoformat()
 
@@ -249,6 +265,7 @@ class ReviewScraper(BaseScraper):
                 self.client.table("products")
                 .select("id, musinsa_no, name, review_count, review_checked_at")
                 .eq("is_own", True)
+                .gt("review_count", 0)
                 .or_(f"review_checked_at.is.null,review_checked_at.lt.{daily_cutoff}")
                 .range(offset, offset + 999)
                 .execute()
@@ -326,6 +343,12 @@ class ReviewScraper(BaseScraper):
             {"review_checked_at": datetime.now(KST).isoformat()}
         ).eq("id", product_id).execute()
 
+    def _mark_checked_group(self, color_group_id: int) -> None:
+        """그룹 내 모든 상품 review_checked_at 일괄 업데이트."""
+        self.client.table("products").update(
+            {"review_checked_at": datetime.now(KST).isoformat()}
+        ).eq("color_group_id", color_group_id).execute()
+
     def _get_last_review_date(self, product_id: str) -> date | None:
         """해당 상품의 가장 최근 리뷰 날짜. 없으면 None (= 첫 수집)."""
         result = (
@@ -340,6 +363,43 @@ class ReviewScraper(BaseScraper):
         if not rows or not rows[0].get("review_date"):
             return None
         return date.fromisoformat(rows[0]["review_date"])
+
+    def _get_last_date_for_group(self, color_group_id: int) -> date | None:
+        """그룹의 가장 최근 리뷰 날짜. 없으면 None."""
+        result = (
+            self.client.table("reviews")
+            .select("review_date")
+            .eq("color_group_id", color_group_id)
+            .order("review_date", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows or not rows[0].get("review_date"):
+            return None
+        return date.fromisoformat(rows[0]["review_date"])
+
+    def _get_db_count_for_group(self, color_group_id: int) -> int:
+        """그룹의 DB 내 리뷰 수."""
+        result = (
+            self.client.table("reviews")
+            .select("id", count="exact")
+            .eq("color_group_id", color_group_id)
+            .limit(1)
+            .execute()
+        )
+        return result.count or 0
+
+    def _get_group_product_map(self, color_group_id: int) -> dict[str, str]:
+        """color_group_id 그룹 내 musinsa_no → product UUID 매핑."""
+        rows = (
+            self.client.table("products")
+            .select("id, musinsa_no")
+            .eq("color_group_id", color_group_id)
+            .execute()
+            .data or []
+        )
+        return {r["musinsa_no"]: r["id"] for r in rows}
 
     @staticmethod
     def _sanitize(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -532,54 +592,236 @@ class ReviewScraper(BaseScraper):
 
     async def run_smart(self, limit: int | None = None) -> int:
         """
-        스마트 수집: 전체 자사 상품 대상 + 증분(신규 리뷰만).
-        - ranking 활성 여부 무관, 모든 is_own 상품 커버
-        - 신규 리뷰 없는 상품은 1회 API 호출 후 즉시 skip
-        - review_checked_at 오래된 순 우선 처리
+        스마트 수집: 그룹 기반 증분 + 전수 자동 결정.
+        - color_group_id 단위로 묶어 대표 goodsNo 1개로 API 호출 (N배 효율)
+        - 페이지 1의 api_total vs DB count → 증분/전수 자동 결정
+        - 연속 3페이지 중복 시 조기 종료
+        - color_group_id 없는 단독 상품은 기존 방식으로 수집
         """
         from worker.tasks.notify import send
 
-        products = self._get_products_smart()
-        if limit:
-            products = products[:limit]
+        daily_cutoff = (datetime.now(KST) - timedelta(hours=23)).isoformat()
+        groups, standalones = self._get_groups_for_smart(daily_cutoff)
 
-        total = len(products)
-        logger.info("review_smart_start", total_products=total)
+        if limit:
+            groups = groups[:max(1, limit // 2)]
+            standalones = standalones[:max(1, limit // 2)]
+
+        total_groups = len(groups)
+        total_standalones = len(standalones)
+        logger.info(
+            f"review_smart_start groups={total_groups} standalones={total_standalones}"
+        )
 
         grand_total = 0
-        skipped = 0
-        for idx, row in enumerate(products, 1):
+
+        # ── 그룹 수집 ────────────────────────────────────────────
+        for idx, grp in enumerate(groups, 1):
+            cgid    = grp["color_group_id"]
+            rep_no  = grp["rep_no"]
+            rep_id  = grp["rep_id"]
+
+            upserted = await self.run_group(
+                cgid, rep_no, rep_id,
+                group_idx=idx, group_total=total_groups,
+            )
+            self._mark_checked_group(cgid)
+            grand_total += upserted
+
+            if idx % 50 == 0:
+                logger.info(
+                    f"review_smart_group_progress {idx}/{total_groups} "
+                    f"reviews={grand_total:,}"
+                )
+
+        # ── 단독 상품 수집 (color_group_id=0 or NULL) ────────────
+        for idx, row in enumerate(standalones, 1):
             product_id = row["id"]
             musinsa_no = row["musinsa_no"]
             upserted = await self.run_product(product_id, musinsa_no, full_collect=False)
             self._mark_checked(product_id)
-            if upserted == 0:
-                skipped += 1
             grand_total += upserted
 
             if idx % 100 == 0:
                 logger.info(
-                    "review_smart_progress",
-                    done=idx,
-                    total=total,
-                    new_reviews=grand_total,
-                    skipped=skipped,
+                    f"review_smart_standalone_progress {idx}/{total_standalones} "
+                    f"reviews={grand_total:,}"
                 )
 
         logger.info(
-            "review_smart_done",
-            total_products=total,
-            total_reviews=grand_total,
-            skipped=skipped,
+            f"review_smart_done groups={total_groups} standalones={total_standalones} "
+            f"total_reviews={grand_total:,}"
         )
         send(
             f"[UTTU] 리뷰 스마트 수집 완료\n"
             f"━━━━━━━━━━━━━━\n"
-            f"전체 상품: {total:,}개\n"
-            f"신규 리뷰: {grand_total:,}건\n"
-            f"스킵 (신규 없음): {skipped:,}개"
+            f"그룹: {total_groups:,}개 / 단독: {total_standalones:,}개\n"
+            f"신규 리뷰: {grand_total:,}건"
         )
         return grand_total
+
+    def _get_groups_for_smart(self, daily_cutoff: str) -> tuple[list[dict], list[dict]]:
+        """
+        스마트 수집 대상을 그룹 vs 단독 상품으로 분리.
+
+        반환:
+          groups    — [{color_group_id, rep_no, rep_id, review_count, review_checked_at}]
+                      color_group_id 단위 대표 상품 (review_count 최대값)
+          standalones — [{id, musinsa_no, name, review_count, review_checked_at}]
+                      color_group_id = 0 (단독 확인됨) or NULL (미확인) 상품
+        """
+        all_products: list[dict] = []
+        offset = 0
+        while True:
+            rows = (
+                self.client.table("products")
+                .select("id, musinsa_no, name, review_count, review_checked_at, color_group_id")
+                .eq("is_own", True)
+                .gt("review_count", 0)
+                .or_(f"review_checked_at.is.null,review_checked_at.lt.{daily_cutoff}")
+                .range(offset, offset + 999)
+                .execute()
+                .data or []
+            )
+            all_products.extend(rows)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+
+        groups_map: dict[int, dict] = {}
+        standalones: list[dict] = []
+
+        for p in all_products:
+            cgid = p.get("color_group_id")
+            if cgid and cgid != 0:
+                # 그룹 상품: color_group_id 당 review_count 최대인 것이 대표
+                existing = groups_map.get(cgid)
+                if existing is None or (p.get("review_count") or 0) > (existing.get("review_count") or 0):
+                    groups_map[cgid] = {
+                        "color_group_id": cgid,
+                        "rep_no": p["musinsa_no"],
+                        "rep_id": p["id"],
+                        "review_count": p.get("review_count") or 0,
+                        "review_checked_at": p.get("review_checked_at"),
+                    }
+            else:
+                standalones.append(p)
+
+        groups = sorted(
+            groups_map.values(),
+            key=lambda g: (
+                0 if g.get("review_checked_at") is None else 1,
+                g.get("review_checked_at") or "",
+                -g["review_count"],
+            ),
+        )
+        standalones.sort(
+            key=lambda p: (
+                0 if p.get("review_checked_at") is None else 1,
+                p.get("review_checked_at") or "",
+                -(p.get("review_count") or 0),
+            )
+        )
+        return groups, standalones
+
+    async def run_group(
+        self,
+        color_group_id: int,
+        rep_no: str,
+        rep_id: str,
+        group_idx: int = 0,
+        group_total: int = 0,
+    ) -> int:
+        """
+        색상 그룹 단위 리뷰 수집.
+
+        페이지 1 호출 → api_total vs db_count 비교:
+          db_count >= api_total × 0.9 → 증분 (last_date 이후 신규만)
+          db_count <  api_total × 0.9 → 전수 (연속 3페이지 중복 시 조기 종료)
+        """
+        product_map = self._get_group_product_map(color_group_id)
+        db_count = self._get_db_count_for_group(color_group_id)
+
+        page = 1
+        total_inserted = 0
+        duplicate_pages = 0   # 연속 전부 중복 페이지 수
+        EARLY_STOP_PAGES = 3  # 연속 N페이지 전부 중복 시 완료 판단
+        api_total = 0
+        incremental = False
+        last_date: date | None = None
+
+        while True:
+            resp = await self._fetch_page(rep_no, page)
+            if not resp:
+                break
+
+            data = resp.get("data") or {}
+            items = data.get("list") or []
+            pagination = data.get("page") or {}
+            total_pages = pagination.get("totalPages", 1)
+
+            if page == 1:
+                api_total = data.get("total") or (total_pages * PAGE_SIZE)
+                incremental = db_count >= api_total * 0.9
+                if incremental:
+                    last_date = self._get_last_date_for_group(color_group_id)
+                logger.info(
+                    f"[그룹{group_idx}/{group_total}] cg={color_group_id} rep={rep_no} "
+                    f"api={api_total:,} db={db_count:,} "
+                    f"mode={'증분' if incremental else '전수'}"
+                )
+
+            if not items:
+                break
+
+            rows_to_insert: list[dict] = []
+            stop_early = False
+
+            for item in items:
+                create_date_str = item.get("createDate", "")
+                review_date = date.fromisoformat(create_date_str[:10]) if create_date_str else None
+
+                if incremental and last_date and review_date and review_date < last_date:
+                    stop_early = True
+                    break
+
+                # goods.goodsNo → product_id 매핑 (없으면 대표 상품으로 fallback)
+                item_goods_no = str((item.get("goods") or {}).get("goodsNo") or "")
+                pid = product_map.get(item_goods_no, rep_id)
+
+                rows_to_insert.append(
+                    self._parse_review(item, pid, color_group_id=color_group_id)
+                )
+
+            if rows_to_insert:
+                inserted = self._upsert_reviews(rows_to_insert)
+                total_inserted += inserted
+                # 전수 모드: 페이지 전체가 중복이면 카운터 증가
+                if not incremental:
+                    if inserted == 0:
+                        duplicate_pages += 1
+                    else:
+                        duplicate_pages = 0
+            elif not incremental:
+                duplicate_pages += 1
+
+            if group_idx and page % 10 == 0:
+                logger.info(
+                    f"  cg={color_group_id} 페이지 {page}/{total_pages} "
+                    f"신규 {total_inserted:,}건"
+                )
+                self._send_hourly()
+
+            if stop_early:
+                break
+            if not incremental and duplicate_pages >= EARLY_STOP_PAGES:
+                logger.info(f"  cg={color_group_id} 연속 {EARLY_STOP_PAGES}페이지 중복 → 조기 종료")
+                break
+            if page >= total_pages:
+                break
+            page += 1
+
+        return total_inserted
 
     async def run_daily(self, limit: int | None = None) -> int:
         """
