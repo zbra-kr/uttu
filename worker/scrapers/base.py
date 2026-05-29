@@ -93,7 +93,7 @@ class BaseScraper:
                 raise  # 즉시 중단, retry 금지
             except Exception as exc:
                 last_exc = exc
-                wait = 2 ** attempt
+                wait = max(self.MIN_DELAY_SEC, 2 ** attempt)
                 logger.warning(
                     "retry",
                     label=label,

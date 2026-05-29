@@ -3,8 +3,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcMore, IcChevL, IcChevR, IcChevD, IcShield, IcUsers, IcSpark, IcBell, IcCalendar, IcHelp } from '../ui/icons';
-
+import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcMore, IcChevL, IcChevR, IcChevD, IcShield, IcUsers, IcSpark, IcBell, IcCalendar, IcHelp, IcReport, IcRecommend } from '../ui/icons';
 
 const MANUAL_URL = 'https://www.notion.so/36b7af342d908176b629c6343d1c35a7';
 
@@ -15,35 +14,39 @@ type RouteItem = {
   Icon: React.ComponentType<{ size?: number; style?: React.CSSProperties }>;
   parent?: string;
   external?: boolean;
+  adminOnly?: boolean;
 };
 
 const ROUTES: RouteItem[] = [
-  { id: 'home',         path: '/',             label: '홈',        Icon: IcHome         },
-  { id: 'ranking',      path: '/ranking',      label: '상품 랭킹',  Icon: IcRanking      },
-  { id: 'product',      path: '/product',      label: '상품',      Icon: IcProduct,     parent: 'ranking' },
-  { id: 'brand-ranking',path: '/brand-ranking',label: '브랜드 랭킹',Icon: IcBrandRanking },
-  { id: 'brand',        path: '/brand',        label: '브랜드',     Icon: IcBrand,       parent: 'brand-ranking' },
-  { id: 'anomaly',      path: '/anomaly',      label: '이상탐지',   Icon: IcFlag         },
-  { id: 'companies',    path: '/companies',    label: '회사 목록',  Icon: IcCompany      },
-  { id: 'company',      path: '/company',      label: '회사 상세',  Icon: IcCompany,     parent: 'companies' },
-  { id: 'promo',        path: '/promo',        label: '프로모션',   Icon: IcPromo        },
-  { id: 'snap',         path: '/snap',         label: '스냅샷',     Icon: IcSnap         },
-  { id: 'magazine',     path: '/magazine',     label: '매거진',     Icon: IcBook         },
-  { id: 'reviews',      path: '/reviews',      label: '리뷰',      Icon: IcReview       },
-  { id: 'matching',     path: '/matching',     label: '자사 매칭',  Icon: IcLink         },
-  { id: 'manual',       path: MANUAL_URL,      label: '사용 매뉴얼', Icon: IcHelp,       external: true },
+  { id: 'home',                path: '/',                    label: '홈',           Icon: IcHome                      },
+  { id: 'report',              path: '/report',              label: '일일 리포트',  Icon: IcReport                    },
+  { id: 'ranking',             path: '/ranking',             label: '상품 랭킹',    Icon: IcRanking                   },
+  { id: 'product',             path: '/product',             label: '상품',         Icon: IcProduct,   parent: 'ranking'       },
+  { id: 'brand-ranking',       path: '/brand-ranking',       label: '브랜드 랭킹',  Icon: IcBrandRanking              },
+  { id: 'brand',               path: '/brand',               label: '브랜드',       Icon: IcBrand,     parent: 'brand-ranking' },
+  { id: 'anomaly',             path: '/anomaly',             label: '이상탐지',     Icon: IcFlag                      },
+  { id: 'companies',           path: '/companies',           label: '회사 목록',    Icon: IcCompany                   },
+  { id: 'company',             path: '/company',             label: '회사 상세',    Icon: IcCompany,   parent: 'companies'     },
+  { id: 'promo',               path: '/promo',               label: '프로모션',     Icon: IcPromo                     },
+  { id: 'recommend',           path: '/recommend',           label: '추천판',       Icon: IcRecommend                 },
+  { id: 'snap',                path: '/snap',                label: '스냅샷',       Icon: IcSnap                      },
+  { id: 'magazine',            path: '/magazine',            label: '매거진',       Icon: IcBook                      },
+  { id: 'reviews',             path: '/reviews',             label: '리뷰',         Icon: IcReview                    },
+  { id: 'matching',            path: '/matching',            label: '자사 매칭',    Icon: IcLink                      },
+  { id: 'manual',              path: MANUAL_URL,             label: '사용 매뉴얼',  Icon: IcHelp,      external: true          },
+  // ── 관리자 그룹 (adminOnly) ─────────────────────────────────────────────────
+  { id: 'admin',               path: '/admin',               label: '관리자',       Icon: IcShield,    adminOnly: true         },
+  { id: 'admin-dashboard',     path: '/admin',               label: '관리 대시보드',Icon: IcShield,    parent: 'admin', adminOnly: true },
+  { id: 'admin-users',         path: '/admin/users',         label: '사용자 관리',  Icon: IcUsers,     parent: 'admin', adminOnly: true },
+  { id: 'admin-llm',           path: '/admin/llm',           label: 'LLM 관리',     Icon: IcSpark,     parent: 'admin', adminOnly: true },
+  { id: 'admin-jobs',          path: '/admin/jobs',          label: '수집 모니터링',Icon: IcCalendar,  parent: 'admin', adminOnly: true },
+  { id: 'admin-notifications', path: '/admin/notifications', label: '알림 모니터링',Icon: IcBell,      parent: 'admin', adminOnly: true },
+  { id: 'admin-mapping',       path: '/admin/mapping',       label: 'DART 매핑',    Icon: IcMapping,   parent: 'admin', adminOnly: true },
+  { id: 'admin-anomalies',     path: '/admin/anomalies',     label: '이상탐지 룰',  Icon: IcFlag,      parent: 'admin', adminOnly: true },
+  { id: 'admin-audit',         path: '/admin/audit',         label: '감사 로그',    Icon: IcBook,      parent: 'admin', adminOnly: true },
 ];
 
-const MANAGE_ROUTES = [
-  { id: 'admin',               path: '/admin',                label: '관리 대시보드', Icon: IcShield   },
-  { id: 'admin-users',         path: '/admin/users',          label: '사용자 관리',   Icon: IcUsers    },
-  { id: 'admin-llm',           path: '/admin/llm',            label: 'LLM 관리',      Icon: IcSpark    },
-  { id: 'admin-jobs',          path: '/admin/jobs',           label: '수집 모니터링', Icon: IcCalendar },
-  { id: 'admin-notifications', path: '/admin/notifications',  label: '알림 모니터링', Icon: IcBell     },
-  { id: 'admin-mapping',       path: '/admin/mapping',        label: 'DART 매핑',     Icon: IcMapping  },
-  { id: 'admin-anomalies',     path: '/admin/anomalies',      label: '이상탐지 룰',   Icon: IcFlag     },
-  { id: 'admin-audit',         path: '/admin/audit',          label: '감사 로그',     Icon: IcBook     },
-];
+const GROUP_PARENTS = new Set(ROUTES.filter(r => r.parent).map(r => r.parent!));
 
 interface SidebarProps {
   collapsed: boolean;
@@ -51,8 +54,6 @@ interface SidebarProps {
   theme: string;
   navCounts?: Record<string, number>;
 }
-
-const GROUP_PARENTS = new Set(ROUTES.filter(r => r.parent).map(r => r.parent!));
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -92,9 +93,7 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
   React.useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -121,17 +120,22 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
     return s;
   });
 
+  // 페이지 이동 시 해당 부모 그룹 자동 열기
+  React.useEffect(() => {
+    setOpen(s => {
+      const n = new Set(s);
+      ROUTES.forEach(r => {
+        if (r.parent && (pathname === r.path || pathname.startsWith(r.path + '/'))) {
+          n.add(r.parent);
+        }
+      });
+      return n;
+    });
+  }, [pathname]);
+
   const toggleGroup = (id: string) => {
     setOpen(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
-
-  const [adminOpen, setAdminOpen] = React.useState(() => pathname.startsWith('/admin'));
-
-  // admin 페이지 진입 시 자동 펼침
-  React.useEffect(() => {
-    if (pathname.startsWith('/admin')) setAdminOpen(true);
-  }, [pathname]);
-
 
   return (
     <aside
@@ -164,94 +168,61 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
       {show && <div className="sb-section">workspace</div>}
       <nav className="sb-nav">
         {ROUTES.map(r => {
+          if (r.adminOnly && !isAdmin) return null;
+
           const isSub    = !!r.parent;
           const isParent = GROUP_PARENTS.has(r.id);
           const isOpen   = open.has(r.id);
           const isExt    = !!r.external;
+
           if (isSub && !open.has(r.parent!)) return null;
 
+          // 관리자 그룹 상단에 구분선
+          const showDivider = r.id === 'admin' && show;
+
           return (
-            <div key={r.id} style={{ position: 'relative' }}>
-              {isExt ? (
-                <a
-                  href={r.path}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="sb-item"
-                  title={!show ? r.label : undefined}
-                  style={{ display: 'flex', alignItems: 'center', gap: show ? 8 : 0 }}
-                >
-                  <r.Icon size={16} />
-                  {show && <span>{r.label}</span>}
-                </a>
-              ) : (
-                <Link
-                  href={r.path}
-                  className={`sb-item${isSub ? ' sub' : ''} ${isActive(r.path) ? 'active' : ''}`}
-                  title={!show ? r.label : undefined}
-                >
-                  <r.Icon size={isSub ? 13 : 16} />
-                  {show && <span>{r.label}</span>}
-                  {show && navCounts[r.id] ? <span className="num">{navCounts[r.id]}</span> : null}
-                </Link>
+            <React.Fragment key={r.id}>
+              {showDivider && (
+                <div style={{ height: 1, background: 'var(--bd)', margin: '6px 10px' }} />
               )}
-              {show && isParent && (
-                <button
-                  className="sb-toggle"
-                  onClick={e => { e.preventDefault(); toggleGroup(r.id); }}
-                  title={isOpen ? '접기' : '펼치기'}
-                >
-                  <IcChevD size={12} style={{ transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 150ms ease' }} />
-                </button>
-              )}
-            </div>
+              <div style={{ position: 'relative' }}>
+                {isExt ? (
+                  <a
+                    href={r.path}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="sb-item"
+                    title={!show ? r.label : undefined}
+                    style={{ display: 'flex', alignItems: 'center', gap: show ? 8 : 0 }}
+                  >
+                    <r.Icon size={16} />
+                    {show && <span>{r.label}</span>}
+                  </a>
+                ) : (
+                  <Link
+                    href={r.path}
+                    className={`sb-item${isSub ? ' sub' : ''} ${isActive(r.path) ? 'active' : ''}`}
+                    title={!show ? r.label : undefined}
+                  >
+                    <r.Icon size={isSub ? 13 : 16} />
+                    {show && <span>{r.label}</span>}
+                    {show && navCounts[r.id] ? <span className="num">{navCounts[r.id]}</span> : null}
+                  </Link>
+                )}
+                {show && isParent && (
+                  <button
+                    className="sb-toggle"
+                    onClick={e => { e.preventDefault(); toggleGroup(r.id); }}
+                    title={isOpen ? '접기' : '펼치기'}
+                  >
+                    <IcChevD size={12} style={{ transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 150ms ease' }} />
+                  </button>
+                )}
+              </div>
+            </React.Fragment>
           );
         })}
       </nav>
-
-      {isAdmin && (
-        <>
-          {!collapsed ? (
-            <button
-              className="sb-section"
-              onClick={() => setAdminOpen(o => !o)}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-                padding: 0, textAlign: 'left',
-              }}
-            >
-              <span>Administrator</span>
-              <IcChevD
-                size={11}
-                style={{
-                  color: 'var(--f4)',
-                  transform: adminOpen ? 'rotate(0deg)' : 'rotate(-90deg)',
-                  transition: 'transform 150ms ease',
-                  marginRight: 2,
-                }}
-              />
-            </button>
-          ) : (
-            <div className="sb-section" />
-          )}
-          {(adminOpen || collapsed) && (
-            <nav className="sb-nav">
-              {MANAGE_ROUTES.map(r => (
-                <Link
-                  key={r.id}
-                  href={r.path}
-                  className={`sb-item ${isActive(r.path) ? 'active' : ''}`}
-                  title={!show ? r.label : undefined}
-                >
-                  <r.Icon size={16} />
-                  {show && <span>{r.label}</span>}
-                </Link>
-              ))}
-            </nav>
-          )}
-        </>
-      )}
 
       {/* 하단 유저 영역 */}
       <div ref={menuRef} style={{ position: 'relative', marginTop: 'auto' }}>

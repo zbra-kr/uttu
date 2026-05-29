@@ -50,7 +50,7 @@ load_dotenv()
 
 REVIEW_URL = "https://api.musinsa.com/api2/review/v1/view/list"
 CDN_BASE = "https://image.msscdn.net"
-PAGE_SIZE = 20
+PAGE_SIZE = 10
 KST = pytz.timezone("Asia/Seoul")
 
 # backfill 재시작 지원용 마커파일
@@ -467,6 +467,10 @@ class ReviewScraper(BaseScraper):
             self._mark_checked(product_id)
             grand_total += upserted
             self.progress_grand_total = grand_total
+
+            # 상품 간 추가 딜레이 — 수집량이 많을수록 더 길게 쉬어 차단 방지
+            inter_delay = 10 if upserted > 500 else 5
+            await asyncio.sleep(inter_delay)
 
             if idx % 100 == 0:
                 logger.info(

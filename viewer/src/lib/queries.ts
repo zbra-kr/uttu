@@ -2198,11 +2198,12 @@ export interface OwnProductWithPrice {
 export async function fetchOwnProductsWithPrices(opts: {
   brandIds?: string[];
   categoryCodes?: string[];
+  gender?: string;
   keyword?: string;
   limit?: number;
   offset?: number;
 }): Promise<{ rows: OwnProductWithPrice[]; total: number }> {
-  const { brandIds, categoryCodes, keyword, limit = 50, offset = 0 } = opts;
+  const { brandIds, categoryCodes, gender, keyword, limit = 50, offset = 0 } = opts;
 
   let q = supabase
     .from('products')
@@ -2216,6 +2217,7 @@ export async function fetchOwnProductsWithPrices(opts: {
 
   if (brandIds && brandIds.length > 0) q = (q as any).in('brand_id', brandIds);
   if (categoryCodes && categoryCodes.length > 0) q = (q as any).in('category_code', categoryCodes);
+  if (gender) q = (q as any).eq('gender', gender);
   if (keyword) q = q.ilike('name', `%${keyword}%`);
 
   const { data, error, count } = await q;
@@ -2276,15 +2278,40 @@ export interface CompetitorBrandRow {
   id: string;
   own_brand_id: string;
   brand_id: string;
+  company_id: string | null;
   brand_name: string;
+  slug: string | null;
+  name_eng: string | null;
+  nation_name: string | null;
+  since_year: number | null;
+  service_type: string | null;
   corp_name: string | null;
+  ceo_name: string | null;
+  is_listed: boolean | null;
+  website: string | null;
+  revenue: number | null;
+  operating_income: number | null;
+  fiscal_year: number | null;
+  brand_rank: number | null;
   added_at: string;
 }
 
 export interface BrandSearchRow {
   id: string;
   name: string;
+  slug: string | null;
   corp_name: string | null;
+}
+
+export interface CompetitorProductSearchResult {
+  id: string;
+  musinsa_no: string;
+  name: string;
+  brand_name: string;
+  thumbnail_url: string | null;
+  review_count: number;
+  satisfaction_score: number | null;
+  category_code: string | null;
 }
 
 export interface ProductMatchRow {
@@ -2306,18 +2333,78 @@ export interface ProductMatchRow {
 export async function fetchCompetitorBrands(ownBrandId: string): Promise<CompetitorBrandRow[]> {
   const { data, error } = await supabase
     .from('competitor_brands')
-    .select('id, own_brand_id, brand_id, added_at, brands!competitor_brands_brand_id_fkey(name, companies(corp_name))')
+    .select(`id, own_brand_id, brand_id, added_at,
+      brands!competitor_brands_brand_id_fkey(
+        name, slug, name_eng, nation_name, since_year, service_type, company_id,
+        companies(corp_name, ceo_name, is_listed, website)
+      )`)
     .eq('own_brand_id', ownBrandId)
     .order('added_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((r: any) => ({
-    id: r.id,
-    own_brand_id: r.own_brand_id,
-    brand_id: r.brand_id,
-    brand_name: r.brands?.name ?? '—',
-    corp_name: r.brands?.companies?.corp_name ?? null,
-    added_at: r.added_at,
-  }));
+
+  const rows = (data ?? []).map((r: any) => {
+    const b = r.brands ?? {};
+    const c = b.companies ?? {};
+    return {
+      id: r.id,
+      own_brand_id: r.own_brand_id,
+      brand_id: r.brand_id,
+      company_id: (b.company_id as string) ?? null,
+      brand_name: b.name ?? '—',
+      slug: b.slug ?? null,
+      name_eng: b.name_eng ?? null,
+      nation_name: b.nation_name ?? null,
+      since_year: b.since_year ?? null,
+      service_type: b.service_type ?? null,
+      corp_name: c.corp_name ?? null,
+      ceo_name: c.ceo_name ?? null,
+      is_listed: (c.is_listed as boolean) ?? null,
+      website: c.website ?? null,
+      revenue: null as number | null,
+      operating_income: null as number | null,
+      fiscal_year: null as number | null,
+      brand_rank: null as number | null,
+      added_at: r.added_at,
+    };
+  });
+
+  if (!rows.length) return rows;
+
+  // 재무 데이터 (dart_financials) — 회사별 최신 연도
+  const companyIds = [...new Set(rows.map(r => r.company_id).filter(Boolean))] as string[];
+  if (companyIds.length) {
+    const { data: fins } = await supabase
+      .from('dart_financials')
+      .select('company_id, fiscal_year, revenue, operating_income')
+      .in('company_id', companyIds)
+      .order('fiscal_year', { ascending: false });
+    const finMap = new Map<string, any>();
+    for (const f of (fins ?? []) as any[]) {
+      if (!finMap.has(f.company_id)) finMap.set(f.company_id, f);
+    }
+    rows.forEach(r => {
+      const fin = r.company_id ? finMap.get(r.company_id) : null;
+      if (fin) { r.revenue = fin.revenue; r.operating_income = fin.operating_income; r.fiscal_year = fin.fiscal_year; }
+    });
+  }
+
+  // 브랜드 순위 (brand_ranking_snapshots) — 전체 카테고리 최신
+  const brandIds = rows.map(r => r.brand_id);
+  const { data: ranks } = await supabase
+    .from('brand_ranking_snapshots')
+    .select('brand_id, rank_position, snapshot_date')
+    .in('brand_id', brandIds)
+    .eq('category_code', '000')
+    .eq('gender_filter', 'A')
+    .eq('age_filter', 'AGE_BAND_ALL')
+    .order('snapshot_date', { ascending: false });
+  const rankMap = new Map<string, number>();
+  for (const rk of (ranks ?? []) as any[]) {
+    if (!rankMap.has(rk.brand_id)) rankMap.set(rk.brand_id, rk.rank_position);
+  }
+  rows.forEach(r => { r.brand_rank = rankMap.get(r.brand_id) ?? null; });
+
+  return rows;
 }
 
 export async function searchBrandsForPool(keyword: string, limit = 20): Promise<BrandSearchRow[]> {
@@ -2325,7 +2412,7 @@ export async function searchBrandsForPool(keyword: string, limit = 20): Promise<
   if (!kw) return [];
   const { data, error } = await supabase
     .from('brands')
-    .select('id, name, companies(corp_name)')
+    .select('id, name, slug, companies(corp_name)')
     .ilike('name', `%${kw}%`)
     .order('name')
     .limit(limit);
@@ -2333,6 +2420,7 @@ export async function searchBrandsForPool(keyword: string, limit = 20): Promise<
   return (data ?? []).map((r: any) => ({
     id: r.id,
     name: r.name,
+    slug: r.slug ?? null,
     corp_name: (r.companies as any)?.corp_name ?? null,
   }));
 }
@@ -2397,10 +2485,10 @@ export async function setMatchStatus(matchId: string, status: 'confirmed' | 'exc
 export async function runAutoMatch(ownProductId: string): Promise<number> {
   const { data: own } = await supabase
     .from('products')
-    .select('category_code, brand_id')
+    .select('category_code, category_d2_code, category_path, brand_id')
     .eq('id', ownProductId)
     .single();
-  if (!own?.category_code || !own?.brand_id) return 0;
+  if (!own?.brand_id) return 0;
 
   // 해당 자사 브랜드에 등록된 경쟁 브랜드 풀만 사용
   const { data: pool } = await supabase
@@ -2409,29 +2497,120 @@ export async function runAutoMatch(ownProductId: string): Promise<number> {
     .eq('own_brand_id', own.brand_id);
   if (!pool?.length) return 0;
 
-  const brandIds = (pool as any[]).map((r) => r.brand_id);
+  const poolBrandIds = new Set((pool as any[]).map((r: any) => r.brand_id as string));
+  const poolIds = [...poolBrandIds];
+  const excludeFromB = [...poolIds, own.brand_id];
 
-  const { data: candidates } = await supabase
-    .from('products')
-    .select('id')
-    .in('brand_id', brandIds)
-    .eq('category_code', own.category_code)
-    .neq('is_own', true)
-    .limit(500);
+  if (!own.category_code && !own.category_d2_code && !own.category_path) return 0;
 
-  if (!candidates?.length) return 0;
+  const pathParts = (own.category_path ?? '').split(' > ');
 
-  const rows = (candidates as any[]).map((c) => ({
-    own_product_id: ownProductId,
-    competitor_product_id: c.id,
-    status: 'auto',
-    score: 100,
-  }));
+  // 매칭 레벨 — 정밀도 내림차순
+  // A등급(풀 내 브랜드): score 70~100 / B등급(풀 외 브랜드): score 35~65
+  const levels = [
+    ...(own.category_path ? [{
+      apply: (q: any) => q.eq('category_path', own.category_path),
+      scoreA: 100, scoreB: 65,
+    }] : []),
+    ...(own.category_path && pathParts.length >= 2 ? [{
+      apply: (q: any) => q.ilike('category_path', `% > ${pathParts[1]} > %`),
+      scoreA: 90, scoreB: 60,
+    }] : []),
+    ...(own.category_d2_code ? [{
+      apply: (q: any) => q.eq('category_d2_code', own.category_d2_code),
+      scoreA: 85, scoreB: 50,
+    }] : []),
+    ...(own.category_code ? [{
+      apply: (q: any) => q.eq('category_code', own.category_code),
+      scoreA: 70, scoreB: 35,
+    }] : []),
+  ];
 
-  const { error } = await supabase
-    .from('product_matches')
-    .upsert(rows, { onConflict: 'own_product_id,competitor_product_id', ignoreDuplicates: true });
+  let aCandidates: { id: string; score: number }[] = [];
+  let bCandidates: { id: string; score: number }[] = [];
+
+  for (const { apply, scoreA, scoreB } of levels) {
+    const [aRes, bRes] = await Promise.all([
+      apply(supabase.from('products').select('id').in('brand_id', poolIds).neq('is_own', true).limit(500)),
+      apply(
+        supabase.from('products').select('id')
+          .neq('is_own', true)
+          .not('brand_id', 'in', `(${excludeFromB.join(',')})`)
+          .order('review_count', { ascending: false })
+          .limit(30)
+      ),
+    ]);
+    const aRows = (aRes.data ?? []) as { id: string }[];
+    const bRows = (bRes.data ?? []) as { id: string }[];
+    if (aRows.length > 0 || bRows.length > 0) {
+      aCandidates = aRows.map(r => ({ id: r.id, score: scoreA }));
+      bCandidates = bRows.map(r => ({ id: r.id, score: scoreB }));
+      break;
+    }
+  }
+
+  // 기존 auto 매칭 전부 삭제
+  await supabase.from('product_matches').delete()
+    .eq('own_product_id', ownProductId).eq('status', 'auto');
+
+  const allCandidates = [...aCandidates, ...bCandidates];
+  if (!allCandidates.length) return 0;
+
+  const { data: existing } = await supabase
+    .from('product_matches').select('competitor_product_id').eq('own_product_id', ownProductId);
+  const existingSet = new Set((existing ?? []).map((m: any) => m.competitor_product_id));
+
+  const newRows = allCandidates
+    .filter(c => !existingSet.has(c.id))
+    .map(c => ({ own_product_id: ownProductId, competitor_product_id: c.id, status: 'auto', score: c.score }));
+
+  if (!newRows.length) return -allCandidates.length;
+
+  const { error } = await supabase.from('product_matches').insert(newRows);
   if (error) throw error;
 
-  return rows.length;
+  return newRows.length;
+}
+
+/** 특정 자사 상품의 excluded 매칭을 전부 삭제하고 auto-match를 재실행 */
+export async function resetAndAutoMatch(ownProductId: string): Promise<number> {
+  await supabase
+    .from('product_matches')
+    .delete()
+    .eq('own_product_id', ownProductId)
+    .eq('status', 'excluded');
+  return runAutoMatch(ownProductId);
+}
+
+export async function searchCompetitorProducts(keyword: string, limit = 20): Promise<CompetitorProductSearchResult[]> {
+  const kw = keyword.trim();
+  if (!kw) return [];
+  const { data, error } = await supabase
+    .from('products')
+    .select('id, musinsa_no, name, thumbnail_url, review_count, satisfaction_score, category_code, brands(name)')
+    .eq('is_own', false)
+    .ilike('name', `%${kw}%`)
+    .order('review_count', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((p: any) => ({
+    id: p.id,
+    musinsa_no: String(p.musinsa_no),
+    name: p.name ?? '—',
+    brand_name: (p.brands as any)?.name ?? '—',
+    thumbnail_url: normImgUrl(p.thumbnail_url),
+    review_count: p.review_count ?? 0,
+    satisfaction_score: p.satisfaction_score ?? null,
+    category_code: p.category_code ?? null,
+  }));
+}
+
+export async function addManualMatch(ownProductId: string, competitorProductId: string): Promise<void> {
+  const { error } = await supabase
+    .from('product_matches')
+    .upsert(
+      { own_product_id: ownProductId, competitor_product_id: competitorProductId, status: 'confirmed', score: null },
+      { onConflict: 'own_product_id,competitor_product_id' },
+    );
+  if (error) throw error;
 }

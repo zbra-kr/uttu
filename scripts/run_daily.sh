@@ -12,11 +12,12 @@ DATE="$(date +%Y%m%d)"
 cd "$ROOT"
 source .env 2>/dev/null || true
 
-# ── 1단계: 랭킹·브랜드랭킹·이벤트·DART 동시 시작 ─────────────────────────
+# ── 1단계: 랭킹·브랜드랭킹·이벤트·DART·추천판 동시 시작 ──────────────────
 bash "$ROOT/scripts/run_ranking.sh"       > "$LOG_DIR/ranking_${DATE}.log"       2>&1 &
 bash "$ROOT/scripts/run_brand_ranking.sh" > "$LOG_DIR/brand_ranking_${DATE}.log" 2>&1 &
 bash "$ROOT/scripts/run_event.sh"         > "$LOG_DIR/event_${DATE}.log"         2>&1 &
 bash "$ROOT/scripts/run_dart.sh"          > "$LOG_DIR/dart_${DATE}.log"          2>&1 &
+bash "$ROOT/scripts/run_recommend.sh"     > "$LOG_DIR/recommend_${DATE}.log"     2>&1 &
 
 # ── 2단계: Full collection (상품·브랜드·스냅·매거진) ─────────────────────
 bash "$ROOT/scripts/run_full_collection.sh" > "$LOG_DIR/full_collection_${DATE}.log" 2>&1 &

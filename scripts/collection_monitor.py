@@ -68,8 +68,13 @@ while True:
                     ["worker/.venv/bin/python3", "-m", "worker.detectors.runner"],
                     capture_output=True, text=True, cwd=str(Path(__file__).parent.parent)
                 )
-                saved = next((l for l in ret.stdout.splitlines() if "anomalies_saved" in l), "")
-                tg("✅ 이상탐지 완료", saved.split(" - ")[-1] if saved else ret.stdout[-200:])
+                output = ret.stdout + ret.stderr  # loguru는 stderr 출력
+                saved_line = next((l for l in output.splitlines() if "anomalies_saved" in l), "")
+                failed = ret.returncode != 0 or ("count=0" in saved_line and "total=0" not in output)
+                if failed:
+                    tg("🚨 이상탐지 실패", output[-300:])
+                else:
+                    tg("✅ 이상탐지 완료", saved_line.split(" - ")[-1] if saved_line else "")
                 notified.add("detect")
 
     # 1시간마다 현황 요약

@@ -89,6 +89,8 @@ export const IcBook = (p: IconProps) => <Icon {...p} d={<><path d="M3 3h4.5a1.5 
 export const IcUsers = (p: IconProps) => <Icon {...p} d={<><circle cx="6" cy="6" r="2"/><circle cx="11" cy="6.5" r="1.5"/><path d="M2.5 13c0-2 1.6-3.5 3.5-3.5s3.5 1.5 3.5 3.5M10 13c0-1.5 1-2.5 2-2.5s2 1 2 2.5"/></>} />;
 export const IcShield   = (p: IconProps) => <Icon {...p} d={<><path d="M8 1.5L13 3v5c0 3.3-2.4 5.7-5 6.5C5.4 13.7 3 11.3 3 8V3z"/><path d="M5.5 8L7 9.5l3.5-3.5"/></>} />;
 export const IcHelp     = (p: IconProps) => <Icon {...p} d={<><circle cx="8" cy="8" r="5.5"/><path d="M6.5 6.5a1.5 1.5 0 0 1 3 0c0 1-1 1.5-1.5 2M8 11.5v.1"/></>} />;
+export const IcReport      = (p: IconProps) => <Icon {...p} d={<><rect x="3" y="2" width="10" height="12" rx="1"/><path d="M5.5 5h5M5.5 7.5h5M5.5 10h3"/></>} />;
+export const IcRecommend   = (p: IconProps) => <Icon {...p} d={<><path d="M8 2l1 2.5 2.5.3-1.8 1.6.5 2.4L8 7.7l-2.2 1.1.5-2.4L4.5 4.8l2.5-.3z" fill="currentColor" stroke="none"/><path d="M4 10h8M4 12.5h6"/></>} />;
 export const IcExpand   = (p: IconProps) => <Icon {...p} d={<><path d="M9 3h4v4M13 3l-4.5 4.5M7 13H3v-4M3 13l4.5-4.5"/></>} />;
 export const IcContract = (p: IconProps) => <Icon {...p} d={<><path d="M13 7H9V3M9 7l4.5-4.5M3 9h4v4M7 9l-4.5 4.5"/></>} />;
 export const IcClock    = (p: IconProps) => <Icon {...p} d={<><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 2"/></>} />;
