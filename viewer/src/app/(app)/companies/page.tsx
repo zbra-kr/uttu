@@ -66,7 +66,7 @@ function Sparkline({ values }: { values: (number | null)[] }) {
 }
 
 // ── 정렬 ─────────────────────────────────────────────────────────────────
-type SortKey = 'revenue' | 'net_income' | 'op_margin' | 'roe' | 'debt_ratio' | 'rev_yoy' | 'name';
+type SortKey = 'revenue' | 'net_income' | 'op_margin' | 'roe' | 'debt_ratio' | 'rev_yoy' | 'name' | 'dart';
 
 function sortRows(rows: CompanyListRow[], key: SortKey): CompanyListRow[] {
   return [...rows].sort((a, b) => {
@@ -83,15 +83,27 @@ function sortRows(rows: CompanyListRow[], key: SortKey): CompanyListRow[] {
       }
       case 'rev_yoy':    return (b.rev_yoy      ?? -Infinity) - (a.rev_yoy      ?? -Infinity);
       case 'name':       return a.corp_name.localeCompare(b.corp_name, 'ko');
+      case 'dart': {
+        if (a.latest_disclosure_dt == null && b.latest_disclosure_dt == null) return 0;
+        if (a.latest_disclosure_dt == null) return 1;
+        if (b.latest_disclosure_dt == null) return -1;
+        return b.latest_disclosure_dt.localeCompare(a.latest_disclosure_dt);
+      }
     }
   });
 }
 
 // ── 메인 ─────────────────────────────────────────────────────────────────
 const GRID = '28px 1fr 52px 108px 96px 88px 76px';
+const COMPANIES_SS = 'companies-state-v1';
+function readCompaniesSS(): Record<string, unknown> {
+  if (typeof window === 'undefined') return {};
+  try { return JSON.parse(sessionStorage.getItem(COMPANIES_SS) ?? '{}'); } catch { return {}; }
+}
 
 export default function CompaniesPage() {
   const router = useRouter();
+  const ss = React.useRef(readCompaniesSS());
 
   const [rows,    setRows]    = React.useState<CompanyListRow[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -99,12 +111,18 @@ export default function CompaniesPage() {
   const [hovIdx,  setHovIdx]  = React.useState<number | null>(null);
 
   // 필터
-  const [search,   setSearch]   = React.useState('');
-  const [listed,   setListed]   = React.useState(new Set(['listed', 'unlisted']));
-  const [revRange, setRevRange] = React.useState(new Set<RevRange>(ALL_REV));
-  const [hasFin,   setHasFin]   = React.useState(true);
-  const [ownOnly,  setOwnOnly]  = React.useState(false);
-  const [sortKey,  setSortKey]  = React.useState<SortKey>('revenue');
+  const [search,   setSearch]   = React.useState((ss.current.search as string) ?? '');
+  const [listed,   setListed]   = React.useState(new Set<string>((ss.current.listed as string[]) ?? ['listed', 'unlisted']));
+  const [revRange, setRevRange] = React.useState(new Set<RevRange>((ss.current.revRange as RevRange[]) ?? ALL_REV));
+  const [hasFin,   setHasFin]   = React.useState((ss.current.hasFin as boolean) ?? true);
+  const [ownOnly,  setOwnOnly]  = React.useState((ss.current.ownOnly as boolean) ?? false);
+  const [sortKey,  setSortKey]  = React.useState<SortKey>((ss.current.sortKey as SortKey) ?? 'revenue');
+
+  React.useEffect(() => {
+    sessionStorage.setItem(COMPANIES_SS, JSON.stringify({
+      search, listed: [...listed], revRange: [...revRange], hasFin, ownOnly, sortKey,
+    }));
+  }, [search, listed, revRange, hasFin, ownOnly, sortKey]);
 
   React.useEffect(() => {
     fetchCompanyList().then(data => {
@@ -232,6 +250,7 @@ export default function CompaniesPage() {
                   ['debt_ratio', '부채비율순'],
                   ['rev_yoy',    'YoY순'],
                   ['name',       '가나다순'],
+                  ['dart',       'DART 최신순'],
                 ]}
               />
             </FilterBlock>
@@ -375,10 +394,17 @@ export default function CompaniesPage() {
                     {/* 2행: 비율값 + 브랜드 태그 */}
                     <div style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', padding: '1px 14px 9px' }}>
                       <span />
-                      <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                         {c.top_brands.map(name => (
                           <span key={name} className="chip" style={{ fontSize: 9, color: 'var(--f3)' }}>{name}</span>
                         ))}
+                        {c.latest_disclosure_dt && (
+                          <span style={{ fontSize: 9, color: sortKey === 'dart' ? 'var(--smf)' : 'var(--f4)', marginLeft: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}
+                            title={c.latest_disclosure_nm ?? undefined}>
+                            DART {c.latest_disclosure_dt.slice(0,4)}.{c.latest_disclosure_dt.slice(4,6)}.{c.latest_disclosure_dt.slice(6,8)}
+                            {sortKey === 'dart' && c.latest_disclosure_nm && ` · ${c.latest_disclosure_nm}`}
+                          </span>
+                        )}
                       </span>
                       <span />
                       <span className="cell-r mono" style={{ fontSize: 11, color: GC[gOp] }}>{fmtRaw(c.op_margin)}</span>

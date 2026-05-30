@@ -19,7 +19,8 @@ type RouteItem = {
 
 const ROUTES: RouteItem[] = [
   { id: 'home',                path: '/',                    label: '홈',           Icon: IcHome                      },
-  { id: 'report',              path: '/report',              label: '일일 리포트',  Icon: IcReport                    },
+  { id: 'today',               path: '/today',               label: '오늘의 매거진',Icon: IcSpark                     },
+  { id: 'report',              path: '/report',              label: '심층 리포트',  Icon: IcReport                    },
   { id: 'ranking',             path: '/ranking',             label: '상품 랭킹',    Icon: IcRanking                   },
   { id: 'product',             path: '/product',             label: '상품',         Icon: IcProduct,   parent: 'ranking'       },
   { id: 'brand-ranking',       path: '/brand-ranking',       label: '브랜드 랭킹',  Icon: IcBrandRanking              },

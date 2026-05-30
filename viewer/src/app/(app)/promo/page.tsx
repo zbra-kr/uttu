@@ -11,6 +11,12 @@ import { CATEGORY_MAP } from '@/lib/queries';
 
 const sb = supabaseBrowser();
 
+const PROMO_SS = 'promo-state-v1';
+function readPromoSS(): Record<string, unknown> {
+  if (typeof window === 'undefined') return {};
+  try { return JSON.parse(sessionStorage.getItem(PROMO_SS) ?? '{}'); } catch { return {}; }
+}
+
 // ── 타입 매핑 ────────────────────────────────────────────────────
 const TYPE_LABEL: Record<string, string> = {
   limited_offer: '선착순',
@@ -125,7 +131,13 @@ interface EnrichData {
 interface JumpPromo { id: string; snapshotDate: string; }
 
 export default function PromoPage() {
-  const [tab,       setTab]       = React.useState<'hub' | 'calendar' | 'stats'>('hub');
+  const pageSS = React.useRef(readPromoSS());
+  const [tab, setTab] = React.useState<'hub' | 'calendar' | 'stats'>((pageSS.current.tab as 'hub' | 'calendar' | 'stats') ?? 'hub');
+
+  React.useEffect(() => {
+    const cur = readPromoSS();
+    sessionStorage.setItem(PROMO_SS, JSON.stringify({ ...cur, tab }));
+  }, [tab]);
   const [jumpPromo, setJumpPromo] = React.useState<JumpPromo | null>(() => {
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search);
@@ -165,12 +177,14 @@ const ITEM_COLS = '40px 1fr 120px 70px 46px 90px 54px 72px 54px 54px';
 function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null; onJumpConsumed?: () => void }) {
   const router    = useRouter();
   const todayStr  = React.useMemo(() => kstDateStr(), []);
+  // jumpPromo가 있으면 URL에서 온 딥링크 — session 무시
+  const hubSS = React.useRef(jumpPromo ? {} : readPromoSS());
 
   const [period,     setPeriod]     = React.useState<'today' | '3d' | '7d' | '14d' | 'custom'>(
-    jumpPromo ? 'custom' : '7d'
+    jumpPromo ? 'custom' : (hubSS.current.period as 'today' | '3d' | '7d' | '14d' | 'custom') ?? '7d'
   );
-  const [customFrom, setCustomFrom] = React.useState(jumpPromo?.snapshotDate ?? '');
-  const [customTo,   setCustomTo]   = React.useState(jumpPromo?.snapshotDate ?? todayStr);
+  const [customFrom, setCustomFrom] = React.useState(jumpPromo?.snapshotDate ?? (hubSS.current.customFrom as string) ?? '');
+  const [customTo,   setCustomTo]   = React.useState(jumpPromo?.snapshotDate ?? (hubSS.current.customTo as string) ?? todayStr);
 
   const { fromStr, toStr } = React.useMemo(() => {
     const today = kstDateStr();
@@ -186,9 +200,9 @@ function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null;
   const [error,       setError]      = React.useState<string | null>(null);
 
   // ── 필터 상태
-  const [typeFilters,  setTypeFilters]  = React.useState<Set<string>>(new Set());
-  const [statusFilter, setStatusFilter] = React.useState<'all' | 'active' | 'ended'>('all');
-  const [brandFilter,  setBrandFilter]  = React.useState<Set<string>>(new Set());
+  const [typeFilters,  setTypeFilters]  = React.useState<Set<string>>(new Set((hubSS.current.typeFilters as string[]) ?? []));
+  const [statusFilter, setStatusFilter] = React.useState<'all' | 'active' | 'ended'>((hubSS.current.statusFilter as 'all' | 'active' | 'ended') ?? 'all');
+  const [brandFilter,  setBrandFilter]  = React.useState<Set<string>>(new Set((hubSS.current.brandFilter as string[]) ?? []));
   const [sel,          setSel]          = React.useState<Set<string>>(new Set());
   const [pendingSelId, setPendingSelId] = React.useState<string | null>(jumpPromo?.id ?? null);
   const [summaryMap,   setSummaryMap]   = React.useState<Map<string, { discount: number | null }>>(new Map());
@@ -196,7 +210,15 @@ function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null;
   const [detailLoad,   setDetailLoad]   = React.useState(false);
   const [enrichMap,    setEnrichMap]    = React.useState<Map<string, EnrichData>>(new Map());
   const [brandIdMap,   setBrandIdMap]   = React.useState<Map<string, string>>(new Map());
-  const [sortBy,       setSortBy]       = React.useState<'discount' | 'display'>('discount');
+  const [sortBy,       setSortBy]       = React.useState<'discount' | 'display'>((hubSS.current.sortBy as 'discount' | 'display') ?? 'discount');
+
+  React.useEffect(() => {
+    const cur = readPromoSS();
+    sessionStorage.setItem(PROMO_SS, JSON.stringify({
+      ...cur, period, customFrom, customTo,
+      typeFilters: [...typeFilters], statusFilter, brandFilter: [...brandFilter], sortBy,
+    }));
+  }, [period, customFrom, customTo, typeFilters, statusFilter, brandFilter, sortBy]);
 
   // jumpPromo → 해당 날짜로 기간 세팅 + 해당 프로모션 선택 예약
   React.useEffect(() => {

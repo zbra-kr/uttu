@@ -569,7 +569,7 @@ class ReviewScraper(BaseScraper):
         - 연속 3페이지 중복 시 조기 종료
         - color_group_id 없는 단독 상품은 기존 방식으로 수집
         """
-        from worker.tasks.notify import send
+        from worker.tasks.schedule_notify import send_progress as _notify, send_done as _notify_done
 
         daily_cutoff = (datetime.now(KST) - timedelta(hours=23)).isoformat()
         groups, standalones = self._get_groups_for_smart(daily_cutoff)
@@ -580,11 +580,22 @@ class ReviewScraper(BaseScraper):
 
         total_groups = len(groups)
         total_standalones = len(standalones)
+        total_items = total_groups + total_standalones
         logger.info(
             f"review_smart_start groups={total_groups} standalones={total_standalones}"
         )
 
+        # smart 모드는 일별(daily)과 체인(chain) 두 가지 — 로그 파일명으로 구분
+        import os as _os
+        _task_key = "smart_chain" if "reviews_smart" in (_os.environ.get("_SMART_LOG", "") or "") else "smart_daily"
+
+        NOTIFY_INTERVAL_SEC = 30 * 60
+        started_at = datetime.now(KST)
+        last_notify_at = started_at
+        _notify(_task_key, 0, total_items)
+
         grand_total = 0
+        done_items = 0
 
         # ── 그룹 수집 ────────────────────────────────────────────
         for idx, grp in enumerate(groups, 1):
@@ -598,12 +609,25 @@ class ReviewScraper(BaseScraper):
             )
             self._mark_checked_group(cgid)
             grand_total += upserted
+            done_items += 1
 
             if idx % 50 == 0:
                 logger.info(
                     f"review_smart_group_progress {idx}/{total_groups} "
                     f"reviews={grand_total:,}"
                 )
+
+            now = datetime.now(KST)
+            if (now - last_notify_at).total_seconds() >= NOTIFY_INTERVAL_SEC:
+                last_notify_at = now
+                elapsed = now - started_at
+                if done_items > 0:
+                    rate = elapsed.total_seconds() / done_items
+                    rem = timedelta(seconds=rate * (total_items - done_items))
+                    rem_str = _fmt_duration(rem)
+                else:
+                    rem_str = "계산 중"
+                _notify(_task_key, done_items, total_items, _fmt_duration(elapsed), rem_str)
 
         # ── 단독 상품 수집 (color_group_id=0 or NULL) ────────────
         for idx, row in enumerate(standalones, 1):
@@ -612,6 +636,7 @@ class ReviewScraper(BaseScraper):
             upserted = await self.run_product(product_id, musinsa_no, full_collect=False)
             self._mark_checked(product_id)
             grand_total += upserted
+            done_items += 1
 
             if idx % 100 == 0:
                 logger.info(
@@ -619,16 +644,24 @@ class ReviewScraper(BaseScraper):
                     f"reviews={grand_total:,}"
                 )
 
+            now = datetime.now(KST)
+            if (now - last_notify_at).total_seconds() >= NOTIFY_INTERVAL_SEC:
+                last_notify_at = now
+                elapsed = now - started_at
+                if done_items > 0:
+                    rate = elapsed.total_seconds() / done_items
+                    rem = timedelta(seconds=rate * (total_items - done_items))
+                    rem_str = _fmt_duration(rem)
+                else:
+                    rem_str = "계산 중"
+                _notify(_task_key, done_items, total_items, _fmt_duration(elapsed), rem_str)
+
+        elapsed_total = datetime.now(KST) - started_at
         logger.info(
             f"review_smart_done groups={total_groups} standalones={total_standalones} "
             f"total_reviews={grand_total:,}"
         )
-        send(
-            f"[UTTU] 리뷰 스마트 수집 완료\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"그룹: {total_groups:,}개 / 단독: {total_standalones:,}개\n"
-            f"신규 리뷰: {grand_total:,}건"
-        )
+        _notify_done(_task_key, f"그룹 {total_groups:,} · 단독 {total_standalones:,} · 신규 리뷰 {grand_total:,}건 · 소요 {_fmt_duration(elapsed_total)}")
         return grand_total
 
     def _get_groups_for_smart(self, daily_cutoff: str) -> tuple[list[dict], list[dict]]:
@@ -715,8 +748,6 @@ class ReviewScraper(BaseScraper):
 
         page = 1
         total_inserted = 0
-        duplicate_pages = 0   # 연속 전부 중복 페이지 수
-        EARLY_STOP_PAGES = 3  # 연속 N페이지 전부 중복 시 완료 판단
         api_total = 0
         incremental = False
         last_date: date | None = None
@@ -733,7 +764,7 @@ class ReviewScraper(BaseScraper):
 
             if page == 1:
                 api_total = data.get("total") or (total_pages * PAGE_SIZE)
-                incremental = db_count >= api_total * 0.9
+                incremental = db_count >= api_total * 0.95
                 if incremental:
                     last_date = self._get_last_date_for_group(color_group_id)
                 logger.info(
@@ -767,14 +798,6 @@ class ReviewScraper(BaseScraper):
             if rows_to_insert:
                 inserted = self._upsert_reviews(rows_to_insert)
                 total_inserted += inserted
-                # 전수 모드: 페이지 전체가 중복이면 카운터 증가
-                if not incremental:
-                    if inserted == 0:
-                        duplicate_pages += 1
-                    else:
-                        duplicate_pages = 0
-            elif not incremental:
-                duplicate_pages += 1
 
             if group_idx and page % 10 == 0:
                 logger.info(
@@ -784,9 +807,6 @@ class ReviewScraper(BaseScraper):
                 self._send_hourly()
 
             if stop_early:
-                break
-            if not incremental and duplicate_pages >= EARLY_STOP_PAGES:
-                logger.info(f"  cg={color_group_id} 연속 {EARLY_STOP_PAGES}페이지 중복 → 조기 종료")
                 break
             if page >= total_pages:
                 break
@@ -800,7 +820,7 @@ class ReviewScraper(BaseScraper):
         - ranking_snapshots 최근 30일 등장 + is_sold_out=False 자사 상품만
         - review_checked_at 기준 1일 이내 상품은 스킵
         """
-        from worker.tasks.notify import send
+        from worker.tasks.schedule_notify import send_done as _notify_done
 
         products = self._get_products_daily()
         if limit:
@@ -826,10 +846,7 @@ class ReviewScraper(BaseScraper):
                 )
 
         logger.info("review_daily_done", total_products=total, total_reviews=grand_total)
-        send(
-            f"[UTTU] 리뷰 수집 완료\n"
-            f"활성 상품: {total}개 / 신규 리뷰: {grand_total:,}건"
-        )
+        _notify_done("smart_daily", f"활성 상품 {total:,}개 · 신규 리뷰 {grand_total:,}건")
         return grand_total
 
 

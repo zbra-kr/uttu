@@ -889,10 +889,12 @@ export interface CompanyListRow {
   rev_yoy: number | null;
   rev_history: (number | null)[];  // [oldest → newest]
   top_brands: string[];            // is_own 우선, 최대 3개
+  latest_disclosure_dt: string | null;   // YYYYMMDD
+  latest_disclosure_nm: string | null;
 }
 
 export async function fetchCompanyList(): Promise<CompanyListRow[]> {
-  const [companiesRes, finsRes] = await Promise.all([
+  const [companiesRes, finsRes, discRes] = await Promise.all([
     supabase
       .from('companies')
       .select('id, corp_name, is_listed, corp_code, brands(id, is_own, name)')
@@ -904,10 +906,16 @@ export async function fetchCompanyList(): Promise<CompanyListRow[]> {
       .order('company_id')
       .order('fiscal_year', { ascending: false })
       .limit(2000),
+    supabase
+      .from('dart_disclosures')
+      .select('company_id, rcept_dt, report_nm')
+      .order('rcept_dt', { ascending: false })
+      .limit(2000),
   ]);
 
   const companies = companiesRes.data ?? [];
   const fins      = finsRes.data ?? [];
+  const discs     = discRes.data ?? [];
 
   // company_id별로 연도 내림차순 그룹
   const finMap = new Map<string, typeof fins>();
@@ -915,6 +923,12 @@ export async function fetchCompanyList(): Promise<CompanyListRow[]> {
     const arr = finMap.get(f.company_id) ?? [];
     arr.push(f);
     finMap.set(f.company_id, arr);
+  }
+
+  // company_id별 최신 공시 (이미 rcept_dt 내림차순 정렬됨)
+  const discMap = new Map<string, { rcept_dt: string; report_nm: string }>();
+  for (const d of discs) {
+    if (!discMap.has(d.company_id)) discMap.set(d.company_id, { rcept_dt: d.rcept_dt, report_nm: d.report_nm });
   }
 
   return companies.map(c => {
@@ -954,11 +968,13 @@ export async function fetchCompanyList(): Promise<CompanyListRow[]> {
       debt_ratio:        debtRatio,
       roe,
       rev_yoy:           revYoy,
-      rev_history:       [...fList].reverse().map(f => f.revenue),
+      rev_history:           [...fList].reverse().map(f => f.revenue),
       top_brands: [
         ...brands.filter((b: any) => b.is_own).map((b: any) => b.name as string),
         ...brands.filter((b: any) => !b.is_own).map((b: any) => b.name as string),
       ].slice(0, 3),
+      latest_disclosure_dt:  discMap.get(c.id)?.rcept_dt ?? null,
+      latest_disclosure_nm:  discMap.get(c.id)?.report_nm ?? null,
     };
   });
 }

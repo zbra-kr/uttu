@@ -14,6 +14,12 @@ import {
 
 const CATEGORY_ENTRIES = Object.entries(CATEGORY_MAP).filter(([code]) => code !== '000');
 
+const MATCHING_SS = 'matching-state-v1';
+function readMatchingSS(): Record<string, unknown> {
+  if (typeof window === 'undefined') return {};
+  try { return JSON.parse(sessionStorage.getItem(MATCHING_SS) ?? '{}'); } catch { return {}; }
+}
+
 // ── 경쟁 브랜드 풀 ─────────────────────────────────────────────────
 
 function BrandPool() {
@@ -452,15 +458,17 @@ function MatchCard({ m, onConfirm, onExclude }: {
 }
 
 function ProductMatching() {
+  const ss = React.useRef(readMatchingSS());
+
   // ── 필터 상태 ──
   const [ownBrands, setOwnBrands] = React.useState<OwnBrand[]>([]);
-  const [filterBrandIds, setFilterBrandIds] = React.useState<Set<string>>(new Set());
-  const [filterGender, setFilterGender] = React.useState('');
-  const [filterCategory, setFilterCategory] = React.useState('');
-  const [filterKwInput, setFilterKwInput] = React.useState('');
-  const [filterKeyword, setFilterKeyword] = React.useState('');
-  const [minPrice, setMinPrice] = React.useState('');
-  const [maxPrice, setMaxPrice] = React.useState('');
+  const [filterBrandIds, setFilterBrandIds] = React.useState<Set<string>>(new Set((ss.current.filterBrandIds as string[]) ?? []));
+  const [filterGender, setFilterGender] = React.useState((ss.current.filterGender as string) ?? '');
+  const [filterCategory, setFilterCategory] = React.useState((ss.current.filterCategory as string) ?? '');
+  const [filterKwInput, setFilterKwInput] = React.useState((ss.current.filterKwInput as string) ?? '');
+  const [filterKeyword, setFilterKeyword] = React.useState((ss.current.filterKeyword as string) ?? '');
+  const [minPrice, setMinPrice] = React.useState((ss.current.minPrice as string) ?? '');
+  const [maxPrice, setMaxPrice] = React.useState((ss.current.maxPrice as string) ?? '');
   const [productPage, setProductPage] = React.useState(0);
 
   // ── 상품 목록 ──
@@ -476,7 +484,14 @@ function ProductMatching() {
   // ── 매칭 관리 ──
   const [running, setRunning] = React.useState(false);
   const [runMsg, setRunMsg] = React.useState<string | null>(null);
-  const [matchFilter, setMatchFilter] = React.useState<MatchFilter>('all');
+  const [matchFilter, setMatchFilter] = React.useState<MatchFilter>((ss.current.matchFilter as MatchFilter) ?? 'all');
+
+  React.useEffect(() => {
+    sessionStorage.setItem(MATCHING_SS, JSON.stringify({
+      filterBrandIds: [...filterBrandIds], filterGender, filterCategory,
+      filterKwInput, filterKeyword, minPrice, maxPrice, matchFilter,
+    }));
+  }, [filterBrandIds, filterGender, filterCategory, filterKwInput, filterKeyword, minPrice, maxPrice, matchFilter]);
 
   // ── 경쟁 상품 검색 ──
   const [compKw, setCompKw] = React.useState('');

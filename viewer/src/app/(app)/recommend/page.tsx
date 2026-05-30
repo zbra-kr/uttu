@@ -80,11 +80,23 @@ const KPI_COLORS = [
 // ──────────────────────────────────────────────────────────────────────────────
 // RecommendHub — 분석 탭
 // ──────────────────────────────────────────────────────────────────────────────
+
+const HUB_SS_KEY = 'rhub-state-v1';
+
+function readHubSession(): Record<string, unknown> {
+  if (typeof window === 'undefined') return {};
+  try { return JSON.parse(sessionStorage.getItem(HUB_SS_KEY) ?? '{}'); } catch { return {}; }
+}
+
 function RecommendHub() {
   const router = useRouter();
-  const [dateMode, setDateMode]   = React.useState<DateMode>('today');
-  const [customFrom, setCustomFrom] = React.useState(kstDateStr(-6));
-  const [customTo, setCustomTo]   = React.useState(kstDateStr());
+
+  // 세션 복구값 (마운트 시 1회)
+  const ss = React.useRef(readHubSession());
+
+  const [dateMode, setDateMode]     = React.useState<DateMode>((ss.current.dateMode as DateMode) ?? 'today');
+  const [customFrom, setCustomFrom] = React.useState((ss.current.customFrom as string) ?? kstDateStr(-6));
+  const [customTo, setCustomTo]     = React.useState((ss.current.customTo as string) ?? kstDateStr());
   const { fromDate, toDate } = React.useMemo(() => {
     if (dateMode === 'today')     return { fromDate: kstDateStr(),    toDate: kstDateStr() };
     if (dateMode === 'yesterday') return { fromDate: kstDateStr(-1),  toDate: kstDateStr(-1) };
@@ -93,7 +105,7 @@ function RecommendHub() {
     if (dateMode === '30d')       return { fromDate: kstDateStr(-29), toDate: kstDateStr() };
     return { fromDate: customFrom, toDate: customTo };
   }, [dateMode, customFrom, customTo]);
-  const [gender, setGender]     = React.useState<GenderFilter>('A');
+  const [gender, setGender]     = React.useState<GenderFilter>((ss.current.gender as GenderFilter) ?? 'A');
   const [modules, setModules]   = React.useState<RecModule[]>([]);
   const [items, setItems]       = React.useState<RecItem[]>([]);
   const [selModules, setSelModules] = React.useState<Set<string>>(new Set());
@@ -104,16 +116,33 @@ function RecommendHub() {
   const [rankMap, setRankMap] = React.useState<Map<string, { rank: number | null; delta: number | null }>>(new Map());
 
   // 추가 필터
-  const [filterModType, setFilterModType]         = React.useState<'all' | 'tab' | 'regular'>('all');
-  const [filterBrandKw, setFilterBrandKw]         = React.useState('');
-  const [filterProdKw, setFilterProdKw]           = React.useState('');
-  const [filterMinDiscount, setFilterMinDiscount] = React.useState('');
-  const [filterHideSoldOut, setFilterHideSoldOut] = React.useState(false);
+  const [filterModType, setFilterModType]         = React.useState<'all' | 'tab' | 'regular'>((ss.current.filterModType as 'all' | 'tab' | 'regular') ?? 'all');
+  const [filterBrandKw, setFilterBrandKw]         = React.useState((ss.current.filterBrandKw as string) ?? '');
+  const [filterProdKw, setFilterProdKw]           = React.useState((ss.current.filterProdKw as string) ?? '');
+  const [filterMinDiscount, setFilterMinDiscount] = React.useState((ss.current.filterMinDiscount as string) ?? '');
+  const [filterHideSoldOut, setFilterHideSoldOut] = React.useState((ss.current.filterHideSoldOut as boolean) ?? false);
+
+  // 저장된 선택 모듈 ID — 모듈 로드 후 복구
+  const pendingModuleIds = React.useRef<string[]>((ss.current.selModules as string[]) ?? []);
+  const isFirstModuleLoad = React.useRef(true);
+
+  // 상태 → sessionStorage 동기화
+  React.useEffect(() => {
+    sessionStorage.setItem(HUB_SS_KEY, JSON.stringify({
+      dateMode, customFrom, customTo, gender,
+      filterModType, filterBrandKw, filterProdKw, filterMinDiscount, filterHideSoldOut,
+      selModules: [...selModules],
+    }));
+  }, [dateMode, customFrom, customTo, gender, filterModType, filterBrandKw, filterProdKw, filterMinDiscount, filterHideSoldOut, selModules]);
 
   // 모듈 로드
   React.useEffect(() => {
     setLoading(true);
-    setSelModules(new Set());
+    if (!isFirstModuleLoad.current) {
+      // 날짜/성별 변경 시 선택 초기화
+      setSelModules(new Set());
+      pendingModuleIds.current = [];
+    }
     setItems([]);
     setSelItems(new Set());
     setRankMap(new Map());
@@ -127,7 +156,16 @@ function RecommendHub() {
       .then(({ data, error }) => {
         setLoading(false);
         if (error) { console.error('[recommend] modules', error); return; }
-        setModules(data ?? []);
+        const mods = data ?? [];
+        setModules(mods);
+        // 첫 로드 시 저장된 선택 복구
+        if (isFirstModuleLoad.current && pendingModuleIds.current.length > 0) {
+          const validIds = new Set(mods.map(m => m.id));
+          const toRestore = pendingModuleIds.current.filter(id => validIds.has(id));
+          if (toRestore.length > 0) setSelModules(new Set(toRestore));
+          pendingModuleIds.current = [];
+        }
+        isFirstModuleLoad.current = false;
       });
   }, [fromDate, toDate, gender]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -209,42 +247,24 @@ function RecommendHub() {
     const withScore = src.filter(it => it.review_score != null);
     const withPrice = src.filter(it => it.final_price != null);
     const discList  = src.map(it => it.discount_rate ?? 0);
-    const avgScore  = withScore.length > 0 ? Math.round(withScore.reduce((s, it) => s + it.review_score!, 0) / withScore.length) : null;
-    const maxScore  = withScore.length > 0 ? Math.max(...withScore.map(it => it.review_score!)) : null;
-    const avgPrice  = withPrice.length > 0 ? Math.round(withPrice.reduce((s, it) => s + it.final_price!, 0) / withPrice.length) : null;
-    const minPriceV = withPrice.length > 0 ? Math.min(...withPrice.map(it => it.final_price!)) : null;
-    const maxPriceV = withPrice.length > 0 ? Math.max(...withPrice.map(it => it.final_price!)) : null;
-    const avgDisc   = src.length > 0 ? Math.round(discList.reduce((s, v) => s + v, 0) / src.length) : null;
-    const maxDisc   = src.length > 0 ? Math.max(...discList) : null;
+    const avgScore    = withScore.length > 0 ? Math.round(withScore.reduce((s, it) => s + it.review_score!, 0) / withScore.length) : null;
+    const avgPrice    = withPrice.length > 0 ? Math.round(withPrice.reduce((s, it) => s + it.final_price!, 0) / withPrice.length) : null;
+    const avgDisc     = src.length > 0 ? Math.round(discList.reduce((s, v) => s + v, 0) / src.length) : null;
     const soldOutCnt  = src.filter(it => it.is_sold_out).length;
     const noReviewCnt = src.filter(it => it.review_score == null).length;
-    const totalReviews = src.reduce((s, it) => s + (it.review_count ?? 0), 0);
-    const avgReviews   = src.length > 0 ? Math.round(totalReviews / src.length) : null;
-    const tabMods     = selMods.filter(m => m.module_type === 'CAROUSEL_TWOROW_DYNAMIC_TAB').length;
     const avgPerBrand = brandSet.size > 0 ? (src.length / brandSet.size).toFixed(1) : null;
     const fmtW   = (v: number | null) => v == null ? '—' : v >= 10000 ? `${(v / 10000).toFixed(1)}만` : v.toLocaleString();
     const fmtPct = (v: number | null) => v == null ? '—' : `${v}%`;
     return [
-      { g: 0, label: '선택 모듈',     value: selMods.length.toString(),                                                    sub: `${src.length}개 상품` },
-      { g: 0, label: '노출 브랜드',   value: brandSet.size.toString(),                                                     sub: avgPerBrand ? `평균 ${avgPerBrand}개/브랜드` : '' },
-      { g: 0, label: '탭 모듈',       value: tabMods.toString(),                                                           sub: `/ ${selMods.length}개` },
-      { g: 0, label: '일반 모듈',     value: (selMods.length - tabMods).toString(),                                        sub: `/ ${selMods.length}개` },
-      { g: 0, label: '품절 상품',     value: soldOutCnt.toString(),                                                        sub: src.length > 0 ? `${Math.round(soldOutCnt / src.length * 100)}%` : '' },
-      { g: 0, label: '브랜드당 상품', value: avgPerBrand ?? '—',                                                           sub: '평균' },
-      { g: 1, label: '평균 리뷰점수', value: fmtPct(avgScore),                                                             sub: `${withScore.length}개 집계` },
-      { g: 1, label: '최고 리뷰점수', value: fmtPct(maxScore),                                                             sub: '' },
-      { g: 1, label: '90점+ 상품',    value: src.filter(it => (it.review_score ?? 0) >= 90).length.toString(),            sub: `/ ${withScore.length}개` },
-      { g: 1, label: '리뷰없는 상품', value: noReviewCnt.toString(),                                                       sub: src.length > 0 ? `${Math.round(noReviewCnt / src.length * 100)}%` : '' },
-      { g: 1, label: '총 리뷰 수',    value: totalReviews.toLocaleString(),                                                sub: '합계' },
-      { g: 1, label: '평균 리뷰 수',  value: avgReviews?.toLocaleString() ?? '—',                                         sub: '상품당' },
-      { g: 2, label: '평균 판매가',   value: fmtW(avgPrice),                                                               sub: '원' },
-      { g: 2, label: '최저 판매가',   value: fmtW(minPriceV),                                                              sub: '원' },
-      { g: 2, label: '최고 판매가',   value: fmtW(maxPriceV),                                                              sub: '원' },
-      { g: 2, label: '평균 할인율',   value: fmtPct(avgDisc),                                                              sub: '' },
-      { g: 2, label: '최대 할인율',   value: fmtPct(maxDisc),                                                              sub: '' },
-      { g: 2, label: '무할인 상품',   value: src.filter(it => (it.discount_rate ?? 0) === 0).length.toString(),           sub: `/ ${src.length}개` },
-      { g: 2, label: '30%+ 할인',     value: src.filter(it => (it.discount_rate ?? 0) >= 30).length.toString(),           sub: `/ ${src.length}개` },
-      { g: 2, label: '품절율',        value: src.length > 0 ? `${Math.round(soldOutCnt / src.length * 100)}%` : '—',     sub: `${soldOutCnt}개` },
+      { g: 0, label: '노출 브랜드',   value: brandSet.size.toString(),                                                sub: avgPerBrand ? `상품당 ${avgPerBrand}개` : '' },
+      { g: 0, label: '품절 상품',     value: `${soldOutCnt}개`,                                                       sub: src.length > 0 ? `${Math.round(soldOutCnt / src.length * 100)}%` : '' },
+      { g: 1, label: '평균 리뷰점수', value: fmtPct(avgScore),                                                        sub: `${withScore.length}개 집계` },
+      { g: 1, label: '90점+ 상품',    value: src.filter(it => (it.review_score ?? 0) >= 90).length.toString(),       sub: `/ ${withScore.length}개` },
+      { g: 1, label: '리뷰없는 상품', value: noReviewCnt.toString(),                                                  sub: src.length > 0 ? `${Math.round(noReviewCnt / src.length * 100)}%` : '' },
+      { g: 2, label: '평균 판매가',   value: fmtW(avgPrice),                                                         sub: '원' },
+      { g: 2, label: '평균 할인율',   value: fmtPct(avgDisc),                                                        sub: '' },
+      { g: 2, label: '무할인 상품',   value: src.filter(it => (it.discount_rate ?? 0) === 0).length.toString(),      sub: `/ ${src.length}개` },
+      { g: 2, label: '30%+ 할인',     value: src.filter(it => (it.discount_rate ?? 0) >= 30).length.toString(),     sub: `/ ${src.length}개` },
     ].map(k => ({ ...k, color: KPI_COLORS[k.g] }));
   }, [displayedItems, selItems, selModules, modules]);
 
@@ -668,7 +688,7 @@ function RecommendHub() {
           <div style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, marginBottom: 8 }}>
             지표 요약{selItems.size > 0 ? ` — 선택 ${selItems.size}개 상품 기준` : ''}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6 }}>
             {kpiCards.map((k, i) => (
               <div key={i} style={{ padding: '7px 10px', borderRadius: 5, background: 'var(--snk)', borderLeft: `2px solid ${k.color}` }}>
                 <div style={{ fontSize: 9, color: 'var(--f4)', marginBottom: 2 }}>{k.label}</div>

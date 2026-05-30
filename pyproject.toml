@@ -12,6 +12,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "loguru>=0.7",
     "pytz>=2024.1",
+    "anthropic>=0.100",
 ]
 
 [project.optional-dependencies]
