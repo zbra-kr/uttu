@@ -1,6 +1,8 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileReportView from './MobileReportView';
 import {
   fetchDailyReport,
   type DailyReportData,
@@ -191,6 +193,8 @@ function DemoCard({ row }: { row: DemoRow }) {
 
 // ── 메인 페이지 ───────────────────────────────────────────────────────────────
 export default function ReportPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileReportView />;
   const [data, setData] = useState<DailyReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAllRanking, setShowAllRanking] = useState(false);

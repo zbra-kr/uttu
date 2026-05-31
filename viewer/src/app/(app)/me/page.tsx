@@ -1,6 +1,8 @@
 'use client';
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileMeView from './MobileMeView';
 import { IcEdit, IcBell, IcShield } from '@/components/ui/icons';
 import Link from 'next/link';
 import { fetchMyProfile, uploadAvatar, MyProfile, fetchMyRecentNotes, fetchMentionsForMe, MyNote, fetchBookmarks, removeBookmark, Bookmark, EntityType, fetchViewHistory, ViewHistoryRow, fetchAllSavedFilters, deleteSavedFilter, SavedFilter, fetchMyStats, MyStats, fetchMyAiQuota, MyAiQuota } from '@/lib/queries-me';
@@ -75,6 +77,8 @@ const ADMIN_CHIPS  = ['홈', '랭킹', '이상탐지', '회사', '브랜드', '�
 const VIEWER_CHIPS = ['홈', '랭킹', '이상탐지', '회사', '브랜드', '상품', '프로모션', '스냅샷'];
 
 export default function MePage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileMeView />;
   const router = useRouter();
   const [profile, setProfile] = React.useState<MyProfile | null>(null);
   const [loading, setLoading] = React.useState(true);
