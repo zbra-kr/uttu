@@ -8,6 +8,8 @@ import {
   type CollectionJob, type JobsKpi, type JobHistoryPoint,
 } from '@/lib/queries-admin';
 import JobDetailModal from '@/components/admin/JobDetailModal';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileAdminJobsView from './MobileAdminJobsView';
 
 // ── 포맷 헬퍼 ──────────────────────────────────────────────────────────────────
 function fmtTime(iso: string | null | undefined): string {
@@ -67,6 +69,8 @@ function ProgressCell({ rows_done, target, status }: Pick<CollectionJob, 'rows_d
 
 // ── 메인 페이지 ───────────────────────────────────────────────────────────────
 export default function AdminJobsPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileAdminJobsView />;
   const [jobs,    setJobs]    = React.useState<CollectionJob[]>([]);
   const [kpi,     setKpi]     = React.useState<JobsKpi | null>(null);
   const [history, setHistory] = React.useState<JobHistoryPoint[]>([]);

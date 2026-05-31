@@ -3,6 +3,8 @@ import React from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { resetPassword } from '../auth/actions';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileForgotPasswordView from './MobileForgotPasswordView';
 
 const BCAVE_LOGO_LIGHT = '/images/bcave/logo.png';
 const BCAVE_LOGO_DARK  = '/images/bcave/logo-white.png';
@@ -28,6 +30,8 @@ function SubmitBtn() {
 }
 
 export default function ForgotPasswordPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileForgotPasswordView />;
   const [state, action] = useFormState(resetPassword, null);
   const [isDark, setIsDark] = React.useState(false);
 

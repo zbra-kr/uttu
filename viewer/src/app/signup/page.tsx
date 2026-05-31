@@ -3,6 +3,8 @@ import React from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { signUp } from '../auth/actions';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileSignupView from './MobileSignupView';
 
 const BCAVE_LOGO_LIGHT = '/images/bcave/logo.png';
 const BCAVE_LOGO_DARK  = '/images/bcave/logo-white.png';
@@ -28,6 +30,8 @@ function SubmitBtn() {
 }
 
 export default function SignupPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileSignupView />;
   const [state, action] = useFormState(signUp, null);
   const [isDark, setIsDark] = React.useState(false);
 

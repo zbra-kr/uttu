@@ -6,6 +6,8 @@ import {
   createLlmModel, updateLlmModel, deleteLlmModel,
   type LlmModel, type LlmProviders,
 } from '@/lib/queries-admin';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileAdminLLMView from './MobileAdminLLMView';
 
 const PROVIDER_LABEL: Record<string, string> = {
   anthropic: 'Claude',
@@ -48,6 +50,8 @@ const INITIAL_FORM = {
 };
 
 export default function AdminLlmPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileAdminLLMView />;
   const [models,    setModels]    = React.useState<LlmModel[]>([]);
   const [providers, setProviders] = React.useState<LlmProviders | null>(null);
   const [loading,   setLoading]   = React.useState(true);

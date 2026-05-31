@@ -2,6 +2,8 @@
 import React from 'react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { IcSearch, IcCheck, IcX, IcArrowUR, IcShield } from '@/components/ui/icons';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileAdminMappingView from './MobileAdminMappingView';
 
 // ─── 공통 타입 ───────────────────────────────────────────────────────────────
 interface Company {
@@ -1100,6 +1102,8 @@ function CreateTab() {
 // 메인 페이지
 // ═══════════════════════════════════════════════════════════════════════════
 export default function MappingPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileAdminMappingView />;
   const [tab, setTab] = React.useState<'dart' | 'brand' | 'create'>('dart');
 
   return (

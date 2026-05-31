@@ -9,6 +9,8 @@ import {
   fetchDashboardKpi, fetchDashboardActivity,
   type DashboardKpi, type DashboardActivity,
 } from '@/lib/queries-admin';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileAdminDashboardView from './MobileAdminDashboardView';
 
 // ── 포맷 헬퍼 ──────────────────────────────────────────────────────────────────
 function fmtTokens(n: number): string {
@@ -96,6 +98,8 @@ const ACTIVITY_META: Record<DashboardActivity['type'], { label: string; color: s
 };
 
 export default function AdminDashboardPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileAdminDashboardView />;
   const [kpi, setKpi]         = React.useState<DashboardKpi | null>(null);
   const [activity, setActivity] = React.useState<DashboardActivity[]>([]);
   const [loading, setLoading] = React.useState(true);

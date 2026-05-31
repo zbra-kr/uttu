@@ -9,6 +9,8 @@ import {
   type DetectorRule,
   type RuleSeverity,
 } from '@/lib/queries-admin';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileAdminAnomaliesView from './MobileAdminAnomaliesView';
 
 // ── 파라미터 팔레트 정의 ────────────────────────────────────────────────────────
 // 제안 목록일 뿐 — 여기 없는 키도 자유롭게 추가 가능
@@ -655,6 +657,8 @@ function RuleRow({ rule, index, toggling, onToggle, onEdit, onDelete }: {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function AdminAnomaliesPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileAdminAnomaliesView />;
   const [rules,      setRules]      = React.useState<DetectorRule[]>([]);
   const [loading,    setLoading]    = React.useState(true);
   const [apiErr,     setApiErr]     = React.useState<string | null>(null);

@@ -3,6 +3,8 @@ import React from 'react';
 import { IcUsers, IcShield, IcSearch } from '@/components/ui/icons';
 import { fetchAdminUsers, type AdminUser } from '@/lib/queries-admin';
 import UserDetailModal from '@/components/admin/UserDetailModal';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileAdminUsersView from './MobileAdminUsersView';
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -70,6 +72,8 @@ function UsageBar({ used, limit, usedToday, dailyLimit }: {
 }
 
 export default function AdminUsersPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileAdminUsersView />;
   const [users,   setUsers]   = React.useState<AdminUser[]>([]);
   const [total,   setTotal]   = React.useState(0);
   const [loading, setLoading] = React.useState(true);

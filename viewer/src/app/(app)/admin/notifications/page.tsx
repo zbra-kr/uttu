@@ -6,6 +6,8 @@ import {
   fetchNotificationsKpi, fetchRecentNotifications, fetchEventTypeDistribution, fetchUserWebhookStatus,
   type NotificationsKpi, type NotificationRow, type EventTypeDistribution, type UserWebhookStatus,
 } from '@/lib/queries-admin';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileAdminNotificationsView from './MobileAdminNotificationsView';
 
 // ── 포맷 헬퍼 ──────────────────────────────────────────────────────────────────
 function fmtDatetime(iso: string | null | undefined): string {
@@ -57,6 +59,8 @@ function eventLabel(et: string): string {
 }
 
 export default function NotificationsAdminPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileAdminNotificationsView />;
   const [kpi, setKpi]           = React.useState<NotificationsKpi | null>(null);
   const [recents, setRecents]   = React.useState<NotificationRow[]>([]);
   const [dist, setDist]         = React.useState<EventTypeDistribution[]>([]);
