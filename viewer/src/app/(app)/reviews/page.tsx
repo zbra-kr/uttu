@@ -1,5 +1,7 @@
 'use client';
 import React from 'react';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileReviewsView from './MobileReviewsView';
 import NoteDrawer from '@/components/me/NoteDrawer';
 import { IcArrowUR, IcX } from '@/components/ui/icons';
 import { exportBrowseReviews, exportProductReviews } from '@/lib/excel-export';
@@ -179,6 +181,8 @@ function ReviewCard({
 
 // ── 페이지 ────────────────────────────────────────────────────────────────────
 export default function ReviewsPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileReviewsView />;
   const [tab, setTab] = React.useState<'dash' | 'browse' | 'product-browse' | 'anomaly'>(
     () => lsRead('rv_tab', 'dash') as any
   );

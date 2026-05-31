@@ -1,5 +1,7 @@
 'use client';
 import React from 'react';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileMagazineView from './MobileMagazineView';
 import { useSearchParams } from 'next/navigation';
 import { IcArrowUR, IcX, IcPlus, IcChevL, IcChevR, IcSearch } from '@/components/ui/icons';
 import { HBar } from '@/components/ui/charts';
@@ -791,10 +793,20 @@ function MagazinePage() {
   );
 }
 
-export default function MagazinePageRoot() {
+function MagazineRootInner() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileMagazineView />;
   return (
     <React.Suspense>
       <MagazinePage />
+    </React.Suspense>
+  );
+}
+
+export default function MagazinePageRoot() {
+  return (
+    <React.Suspense>
+      <MagazineRootInner />
     </React.Suspense>
   );
 }

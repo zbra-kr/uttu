@@ -1,5 +1,7 @@
 'use client';
 import React from 'react';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileMatchingView from './MobileMatchingView';
 import Link from 'next/link';
 import { IcArrowUR, IcCheck, IcX, IcPlus } from '@/components/ui/icons';
 import {
@@ -977,6 +979,8 @@ function ProductMatching() {
 type Tab = 'brands' | 'products';
 
 export default function MatchingPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileMatchingView />;
   const [tab, setTab] = React.useState<Tab>('brands');
 
   return (

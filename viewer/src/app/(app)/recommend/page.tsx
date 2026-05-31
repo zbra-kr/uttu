@@ -1,5 +1,7 @@
 'use client';
 import React from 'react';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileRecommendView from './MobileRecommendView';
 import { useRouter } from 'next/navigation';
 import {
   BarChart, Bar, Cell as RCell, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -1696,6 +1698,8 @@ function RecommendEffect() {
 // Page
 // ──────────────────────────────────────────────────────────────────────────────
 export default function RecommendPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileRecommendView />;
   const [tab, setTab] = React.useState<Tab>('hub');
 
   return (

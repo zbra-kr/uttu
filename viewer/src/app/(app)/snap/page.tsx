@@ -1,5 +1,7 @@
 'use client';
 import React from 'react';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileSnapView from './MobileSnapView';
 import { useRouter } from 'next/navigation';
 import { PeriodFilter, FilterBlock, PillGroup, CheckRow, DismissChip } from '@/components/ui/filters';
 import { IcChevL, IcChevR, IcSnap, IcX } from '@/components/ui/icons';
@@ -559,6 +561,8 @@ function ProfilePanel({ profile, date, onSnapClick, onClose }: { profile: SnapPr
 
 // ── SnapPage ───────────────────────────────────────────────────────────────────
 export default function SnapPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileSnapView />;
   const [tab, setTab] = React.useState<Tab>('USER');
 
   // common

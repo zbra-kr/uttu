@@ -1,5 +1,7 @@
 'use client';
 import React from 'react';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobilePromoView from './MobilePromoView';
 import { useRouter } from 'next/navigation';
 import { Bars, HBar, Donut } from '@/components/ui/charts';
 import { IcFilter, IcDownload, IcChevL, IcChevR } from '@/components/ui/icons';
@@ -131,6 +133,8 @@ interface EnrichData {
 interface JumpPromo { id: string; snapshotDate: string; }
 
 export default function PromoPage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobilePromoView />;
   const pageSS = React.useRef(readPromoSS());
   const [tab, setTab] = React.useState<'hub' | 'calendar' | 'stats'>((pageSS.current.tab as 'hub' | 'calendar' | 'stats') ?? 'hub');
 
