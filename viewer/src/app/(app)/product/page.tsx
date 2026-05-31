@@ -2,6 +2,8 @@
 import React from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileProductDetailView from './MobileProductDetailView';
 import {
   LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot,
@@ -272,10 +274,20 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default function ProductPage() {
+function ProductPageRoot() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileProductDetailView />;
   return (
     <Suspense fallback={<div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>로딩 중…</div>}>
       <ProductPageInner />
+    </Suspense>
+  );
+}
+
+export default function ProductPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>로딩 중…</div>}>
+      <ProductPageRoot />
     </Suspense>
   );
 }

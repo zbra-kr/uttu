@@ -2,6 +2,8 @@
 import React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Suspense } from 'react';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileBrandDetailView from './MobileBrandDetailView';
 import { Line, HorizBars, VertBars } from '@/components/ui/charts';
 import { IcBrand, IcEdit } from '@/components/ui/icons';
 import Link from 'next/link';
@@ -195,10 +197,20 @@ function BrandPortal({ onSelect }: { onSelect: (id: string) => void }) {
   );
 }
 
-export default function BrandPage() {
+function BrandPageRoot() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileBrandDetailView />;
   return (
     <Suspense fallback={<div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>로딩 중…</div>}>
       <BrandPageInner />
+    </Suspense>
+  );
+}
+
+export default function BrandPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>로딩 중…</div>}>
+      <BrandPageRoot />
     </Suspense>
   );
 }

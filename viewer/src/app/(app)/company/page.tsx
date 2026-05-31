@@ -3,6 +3,8 @@ import React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Suspense } from 'react';
 import Link from 'next/link';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileCompanyDetailView from './MobileCompanyDetailView';
 import {
   LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, Tooltip, Legend, ReferenceLine,
@@ -895,11 +897,21 @@ function TabDisclosure({ disclosures }: { disclosures: DartDisclosure[] }) {
   );
 }
 
+function CompanyPageRoot() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileCompanyDetailView />;
+  return (
+    <Suspense fallback={<div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>로딩 중…</div>}>
+      <CompanyPageInner />
+    </Suspense>
+  );
+}
+
 // ── 메인 페이지 ───────────────────────────────────────────────────────
 export default function CompanyPage() {
   return (
     <Suspense fallback={<div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>로딩 중…</div>}>
-      <CompanyPageInner />
+      <CompanyPageRoot />
     </Suspense>
   );
 }
