@@ -1,6 +1,8 @@
 'use client';
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileRankingView from './MobileRankingView';
 import { PeriodFilter, FilterBlock, PillGroup, CheckRow, DismissChip, SearchSelect } from '@/components/ui/filters';
 import { IcDownload, IcChevL, IcChevR, IcEdit } from '@/components/ui/icons';
 import NoteDrawer from '@/components/me/NoteDrawer';
@@ -210,7 +212,9 @@ function RangeSlider({ min, max, value, onChange }: {
 }
 
 export default function RankingPage() {
+  const isMobile = useIsMobile();
   const router = useRouter();
+  if (isMobile) return <MobileRankingView />;
 
   // localStorage에서 초기값 로드 (컴포넌트 마운트 시 1회)
   const [saved] = React.useState(() => loadSavedFilters());

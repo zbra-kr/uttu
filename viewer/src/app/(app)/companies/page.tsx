@@ -1,6 +1,8 @@
 'use client';
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileCompaniesView from './MobileCompaniesView';
 import { FilterBlock, CheckRow, DismissChip, SegGroup } from '@/components/ui/filters';
 import { IcDownload } from '@/components/ui/icons';
 import { fetchCompanyList, type CompanyListRow } from '@/lib/queries';
@@ -102,7 +104,9 @@ function readCompaniesSS(): Record<string, unknown> {
 }
 
 export default function CompaniesPage() {
+  const isMobile = useIsMobile();
   const router = useRouter();
+  if (isMobile) return <MobileCompaniesView />;
   const ss = React.useRef(readCompaniesSS());
 
   const [rows,    setRows]    = React.useState<CompanyListRow[]>([]);

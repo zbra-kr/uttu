@@ -1,6 +1,8 @@
 'use client';
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileBrandRankingView from './MobileBrandRankingView';
 import { PeriodFilter, FilterBlock, PillGroup, CheckRow, DismissChip, SearchSelect } from '@/components/ui/filters';
 import { IcDownload, IcBookmark } from '@/components/ui/icons';
 import {
@@ -66,7 +68,9 @@ function loadFilters() {
 }
 
 export default function BrandRankingPage() {
+  const isMobile = useIsMobile();
   const router = useRouter();
+  if (isMobile) return <MobileBrandRankingView />;
 
   const saved = React.useMemo(() => loadFilters(), []);
   const [period, setPeriod]       = React.useState(saved?.period ?? 'today');

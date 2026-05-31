@@ -1,6 +1,8 @@
 'use client';
 import React from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileAnomalyView from './MobileAnomalyView';
 import { PeriodFilter, FilterBlock, CheckRow, DismissChip } from '@/components/ui/filters';
 import { IcDownload, IcBookmark, IcArrowUR, IcX, IcPlus, IcChevL, IcChevR } from '@/components/ui/icons';
 import { supabaseBrowser } from '@/lib/supabase/client';
@@ -540,10 +542,20 @@ function AnomalyPage() {
   );
 }
 
-export default function AnomalyPageRoot() {
+function AnomalyPageRootInner() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileAnomalyView />;
   return (
     <React.Suspense>
       <AnomalyPage />
+    </React.Suspense>
+  );
+}
+
+export default function AnomalyPageRoot() {
+  return (
+    <React.Suspense>
+      <AnomalyPageRootInner />
     </React.Suspense>
   );
 }
