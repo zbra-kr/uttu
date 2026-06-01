@@ -10,10 +10,6 @@ const GENDER_CHIPS = [
   { value: 'F',   label: '여성' },
 ];
 
-function snapImageUrl(snapId: string): string {
-  return `https://image.musinsa.com/mfile_s01/${snapId}/list/${snapId}_1_6.jpg`;
-}
-
 export default function MobileSnapView() {
   const [rows, setRows] = useState<SnapRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,15 +36,19 @@ export default function MobileSnapView() {
           {rows.map(r => (
             <div
               key={r.id}
-              onClick={() => setFullscreen(r)}
-              style={{ borderRadius: 8, overflow: 'hidden', cursor: 'pointer', position: 'relative', aspectRatio: '3/4', background: 'var(--snk)' }}
+              onClick={() => r.thumbnail_url && setFullscreen(r)}
+              style={{ borderRadius: 8, overflow: 'hidden', cursor: r.thumbnail_url ? 'pointer' : 'default', position: 'relative', aspectRatio: '3/4', background: 'var(--snk)' }}
             >
-              <img
-                src={snapImageUrl(r.snap_id)}
-                alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
+              {r.thumbnail_url ? (
+                <img
+                  src={r.thumbnail_url}
+                  alt=""
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              ) : (
+                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>📸</div>
+              )}
               <div style={{
                 position: 'absolute', bottom: 0, left: 0, right: 0,
                 background: 'linear-gradient(transparent, rgba(0,0,0,0.6))',
@@ -64,13 +64,13 @@ export default function MobileSnapView() {
       )}
 
       {/* 풀스크린 */}
-      {fullscreen && (
+      {fullscreen && fullscreen.thumbnail_url && (
         <div
           onClick={() => setFullscreen(null)}
           style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           <img
-            src={snapImageUrl(fullscreen.snap_id)}
+            src={fullscreen.thumbnail_url}
             alt=""
             style={{ maxWidth: '100%', maxHeight: '90dvh', objectFit: 'contain' }}
           />

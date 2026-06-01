@@ -561,17 +561,14 @@ class ReviewScraper(BaseScraper):
 
         return grand_total
 
-    async def run_smart(self, limit: int | None = None) -> int:
+    async def run_smart(self, limit: int | None = None, force_full: bool = False) -> int:
         """
         스마트 수집: 그룹 기반 증분 + 전수 자동 결정.
-        - color_group_id 단위로 묶어 대표 goodsNo 1개로 API 호출 (N배 효율)
-        - 페이지 1의 api_total vs DB count → 증분/전수 자동 결정
-        - 연속 3페이지 중복 시 조기 종료
-        - color_group_id 없는 단독 상품은 기존 방식으로 수집
+        force_full=True: review_checked_at 무시, 모든 그룹·상품 전수 스캔 (전수조사 모드).
         """
         from worker.tasks.schedule_notify import send_progress as _notify, send_done as _notify_done
 
-        daily_cutoff = (datetime.now(KST) - timedelta(hours=23)).isoformat()
+        daily_cutoff = None if force_full else (datetime.now(KST) - timedelta(hours=23)).isoformat()
         groups, standalones = self._get_groups_for_smart(daily_cutoff)
 
         if limit:
@@ -585,9 +582,12 @@ class ReviewScraper(BaseScraper):
             f"review_smart_start groups={total_groups} standalones={total_standalones}"
         )
 
-        # smart 모드는 일별(daily)과 체인(chain) 두 가지 — 로그 파일명으로 구분
+        # task key: force_full=True면 backfill, 아니면 로그 파일명으로 구분
         import os as _os
-        _task_key = "smart_chain" if "reviews_smart" in (_os.environ.get("_SMART_LOG", "") or "") else "smart_daily"
+        if force_full:
+            _task_key = "backfill"
+        else:
+            _task_key = "smart_chain" if "reviews_smart" in (_os.environ.get("_SMART_LOG", "") or "") else "smart_daily"
 
         NOTIFY_INTERVAL_SEC = 30 * 60
         started_at = datetime.now(KST)
@@ -606,6 +606,7 @@ class ReviewScraper(BaseScraper):
             upserted = await self.run_group(
                 cgid, rep_no, rep_id,
                 group_idx=idx, group_total=total_groups,
+                force_full=force_full,
             )
             self._mark_checked_group(cgid)
             grand_total += upserted
@@ -633,7 +634,7 @@ class ReviewScraper(BaseScraper):
         for idx, row in enumerate(standalones, 1):
             product_id = row["id"]
             musinsa_no = row["musinsa_no"]
-            upserted = await self.run_product(product_id, musinsa_no, full_collect=False)
+            upserted = await self.run_product(product_id, musinsa_no, full_collect=force_full)
             self._mark_checked(product_id)
             grand_total += upserted
             done_items += 1
@@ -657,36 +658,33 @@ class ReviewScraper(BaseScraper):
                 _notify(_task_key, done_items, total_items, _fmt_duration(elapsed), rem_str)
 
         elapsed_total = datetime.now(KST) - started_at
-        logger.info(
-            f"review_smart_done groups={total_groups} standalones={total_standalones} "
-            f"total_reviews={grand_total:,}"
-        )
+        if force_full:
+            logger.info("review_backfill_done", total_groups=total_groups, total_standalones=total_standalones, total_reviews=grand_total)
+        else:
+            logger.info(
+                f"review_smart_done groups={total_groups} standalones={total_standalones} "
+                f"total_reviews={grand_total:,}"
+            )
         _notify_done(_task_key, f"그룹 {total_groups:,} · 단독 {total_standalones:,} · 신규 리뷰 {grand_total:,}건 · 소요 {_fmt_duration(elapsed_total)}")
         return grand_total
 
-    def _get_groups_for_smart(self, daily_cutoff: str) -> tuple[list[dict], list[dict]]:
+    def _get_groups_for_smart(self, daily_cutoff: str | None) -> tuple[list[dict], list[dict]]:
         """
         스마트 수집 대상을 그룹 vs 단독 상품으로 분리.
-
-        반환:
-          groups    — [{color_group_id, rep_no, rep_id, review_count, review_checked_at}]
-                      color_group_id 단위 대표 상품 (review_count 최대값)
-          standalones — [{id, musinsa_no, name, review_count, review_checked_at}]
-                      color_group_id = 0 (단독 확인됨) or NULL (미확인) 상품
+        daily_cutoff=None 이면 review_checked_at 필터 없이 전체 대상.
         """
         all_products: list[dict] = []
         offset = 0
         while True:
-            rows = (
+            q = (
                 self.client.table("products")
                 .select("id, musinsa_no, name, review_count, review_checked_at, color_group_id")
                 .eq("is_own", True)
                 .gt("review_count", 0)
-                .or_(f"review_checked_at.is.null,review_checked_at.lt.{daily_cutoff}")
-                .range(offset, offset + 999)
-                .execute()
-                .data or []
             )
+            if daily_cutoff:
+                q = q.or_(f"review_checked_at.is.null,review_checked_at.lt.{daily_cutoff}")
+            rows = q.range(offset, offset + 999).execute().data or []
             all_products.extend(rows)
             if len(rows) < 1000:
                 break
@@ -735,13 +733,11 @@ class ReviewScraper(BaseScraper):
         rep_id: str,
         group_idx: int = 0,
         group_total: int = 0,
+        force_full: bool = False,
     ) -> int:
         """
         색상 그룹 단위 리뷰 수집.
-
-        페이지 1 호출 → api_total vs db_count 비교:
-          db_count >= api_total × 0.9 → 증분 (last_date 이후 신규만)
-          db_count <  api_total × 0.9 → 전수 (연속 3페이지 중복 시 조기 종료)
+        force_full=True 이면 db_count 비율 무관, 항상 전수 모드 (total_pages까지 전부 스캔).
         """
         product_map = self._get_group_product_map(color_group_id)
         db_count = self._get_db_count_for_group(color_group_id)
@@ -764,7 +760,10 @@ class ReviewScraper(BaseScraper):
 
             if page == 1:
                 api_total = data.get("total") or (total_pages * PAGE_SIZE)
-                incremental = db_count >= api_total * 0.95
+                if force_full:
+                    incremental = False
+                else:
+                    incremental = db_count >= api_total * 0.95
                 if incremental:
                     last_date = self._get_last_date_for_group(color_group_id)
                 logger.info(
@@ -850,12 +849,14 @@ class ReviewScraper(BaseScraper):
         return grand_total
 
 
-async def main(backfill: bool = False, smart: bool = False, limit: int | None = None) -> None:
+async def main(backfill: bool = False, smart: bool = False, force_full: bool = False, limit: int | None = None) -> None:
     from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = ReviewScraper(client)
     if backfill:
         label = "리뷰 전체수집(backfill)"
+    elif force_full:
+        label = "리뷰 전수조사(force-full)"
     elif smart:
         label = "리뷰 스마트수집"
     else:
@@ -865,8 +866,8 @@ async def main(backfill: bool = False, smart: bool = False, limit: int | None = 
     try:
         if backfill:
             total = await scraper.run_backfill(limit=limit)
-        elif smart:
-            total = await scraper.run_smart(limit=limit)
+        elif smart or force_full:
+            total = await scraper.run_smart(limit=limit, force_full=force_full)
         else:
             total = await scraper.run_daily(limit=limit)
         await tracker.finish(rows_done=total or 0)
@@ -892,10 +893,15 @@ if __name__ == "__main__":
              "ranking 활성 여부 무관. 신규 없는 상품은 1회 API 호출 후 즉시 skip."
     )
     parser.add_argument(
+        "--force-full",
+        action="store_true",
+        help="전수조사 모드. review_checked_at 무시, 모든 그룹·상품 전 페이지 스캔."
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
         help="테스트용 상품 수 제한 (모든 모드 공통)"
     )
     args = parser.parse_args()
-    asyncio.run(main(backfill=args.backfill, smart=args.smart, limit=args.limit))
+    asyncio.run(main(backfill=args.backfill, smart=args.smart, force_full=args.force_full, limit=args.limit))

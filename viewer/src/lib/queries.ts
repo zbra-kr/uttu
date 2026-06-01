@@ -202,6 +202,7 @@ export interface SnapRow {
   model_height: number | null;
   model_weight: number | null;
   collected_at: string;
+  thumbnail_url: string | null;
 }
 
 export async function fetchSnaps(opts: {
@@ -213,7 +214,7 @@ export async function fetchSnaps(opts: {
 
   let q = supabase
     .from('snaps')
-    .select('id, snap_id, content_type, format_type, published_at, like_count, view_count, comment_count, goods_click_count, model_gender, model_height, model_weight, collected_at', { count: 'exact' })
+    .select('id, snap_id, content_type, format_type, published_at, like_count, view_count, comment_count, goods_click_count, model_gender, model_height, model_weight, collected_at, thumbnail_url', { count: 'exact' })
     .order('published_at', { ascending: false })
     .range(offset, offset + limit - 1);
 

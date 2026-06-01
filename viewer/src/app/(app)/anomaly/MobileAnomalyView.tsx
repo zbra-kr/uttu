@@ -105,10 +105,19 @@ export default function MobileAnomalyView() {
     { value: 'lo',  label: `🟢 낮음 ${counts.lo}` },
   ];
 
-  function handleRowClick(r: ARow) {
+  async function handleRowClick(r: ARow) {
     if (!r.entity_id || !r.entity_type) return;
-    if (r.entity_type === 'brand') router.push(`/brand?id=${r.entity_id}`);
-    else router.push(`/product?id=${r.entity_id}`);
+    if (r.entity_type === 'brand') {
+      router.push(`/brand?id=${r.entity_id}`);
+      return;
+    }
+    // entity_id는 products.id (UUID) → musinsa_no 조회 필요
+    const { data } = await supabaseBrowser()
+      .from('products')
+      .select('musinsa_no')
+      .eq('id', r.entity_id)
+      .single();
+    if (data?.musinsa_no) router.push(`/product?no=${data.musinsa_no}`);
   }
 
   return (

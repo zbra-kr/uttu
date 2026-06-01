@@ -7,18 +7,9 @@ import AiPanel from './AiPanel';
 import {
   IcHome, IcSpark, IcRanking, IcFlag, IcUser,
   IcReport, IcBrandRanking, IcCompany, IcReview, IcPromo,
-  IcBook, IcSnap, IcLink, IcRecommend, IcShield, IcBell, IcMenu, IcX, IcChevL,
+  IcBook, IcSnap, IcLink, IcRecommend, IcShield, IcBell, IcX, IcChevL,
 } from '../ui/icons';
 import type { ShellStats } from '@/lib/queries';
-
-/* ── bottom tab bar definition ── */
-const TABS = [
-  { id: 'home',    path: '/',         label: '홈',    Icon: IcHome    },
-  { id: 'today',   path: '/today',    label: '매거진', Icon: IcSpark   },
-  { id: 'ranking', path: '/ranking',  label: '랭킹',  Icon: IcRanking },
-  { id: 'anomaly', path: '/anomaly',  label: '탐지',  Icon: IcFlag    },
-  { id: 'me',      path: '/me',       label: '내정보', Icon: IcUser    },
-] as const;
 
 /* ── left drawer nav definition ── */
 type NavItem = { id: string; path: string; label: string; Icon: React.ComponentType<{ size?: number }>; badge?: number; adminOnly?: boolean };
@@ -60,7 +51,7 @@ interface MobileShellProps {
   context: string[];
 }
 
-const ROOT_PATHS = new Set(['/', '/today', '/ranking', '/anomaly', '/me']);
+const ROOT_PATHS = new Set(['/']);
 
 export default function MobileShell({ children, shellStats, context }: MobileShellProps) {
   const pathname = usePathname();
@@ -138,11 +129,11 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
           </button>
         )}
 
-        {/* wordmark */}
-        <span style={{ display: 'flex', alignItems: 'baseline', fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 700, letterSpacing: '-0.03em', flex: 1 }}>
+        {/* wordmark — 홈 링크 */}
+        <Link href="/" style={{ display: 'flex', alignItems: 'baseline', fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 700, letterSpacing: '-0.03em', flex: 1, textDecoration: 'none', color: 'var(--f1)' }}>
           uttu
           <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--hs)', alignSelf: 'flex-end', marginBottom: 4, marginLeft: 2 }} />
-        </span>
+        </Link>
 
         {/* right: bell + avatar */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -186,7 +177,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
       {/* ── Main content ── */}
       <main style={{
         flex: 1, overflowY: 'auto', overflowX: 'hidden',
-        paddingTop: 52, paddingBottom: 60,
+        paddingTop: 52, paddingBottom: 20,
         background: 'var(--bg)',
         backgroundImage: 'radial-gradient(circle, var(--bs) 0.8px, transparent 0.8px)',
         backgroundSize: '14px 14px',
@@ -198,7 +189,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
       <button
         onClick={toggleAip}
         style={{
-          position: 'fixed', right: 16, bottom: 74, zIndex: 50,
+          position: 'fixed', right: 16, bottom: 20, zIndex: 50,
           width: 56, height: 56, borderRadius: 18,
           background: 'var(--hs)', color: '#fff',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -211,30 +202,6 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
         AI
       </button>
 
-      {/* ── Tab bar (60px fixed bottom) ── */}
-      <nav style={{
-        position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, zIndex: 20,
-        borderTop: '1px solid var(--bs)', background: 'var(--sur)',
-        display: 'flex', alignItems: 'flex-start', padding: '8px 6px 0',
-      }}>
-        {TABS.map(({ id, path, label, Icon }) => {
-          const active = isActive(pathname, path);
-          return (
-            <Link
-              key={id}
-              href={path}
-              style={{
-                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-                gap: 4, color: active ? 'var(--hs)' : 'var(--f3)',
-                textDecoration: 'none', fontSize: 9, letterSpacing: '0.02em',
-              }}
-            >
-              <Icon size={18} />
-              <span style={{ fontFamily: 'var(--mono)', lineHeight: 1 }}>{label}</span>
-            </Link>
-          );
-        })}
-      </nav>
 
       {/* ── Left drawer ── */}
       {drawerOpen && (
