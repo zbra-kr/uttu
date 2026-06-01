@@ -45,7 +45,11 @@ export default function MobileReportView() {
   if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>;
   if (!data) return <MobileEmptyState icon="📋" title="리포트 데이터가 없습니다" description="수집이 완료되면 자동 생성됩니다" />;
 
-  const { kpi, ownBrands, competitors, brandRanking, demoGrid } = data;
+  const {
+    kpi, ownBrands, competitors, brandRanking, demoGrid,
+    rankingRows, topContent, saleDist, recommendModules, recommendTopBrands,
+    channelConversions, priceBuckets, topBrandsByCount,
+  } = data;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' }}>
@@ -97,6 +101,162 @@ export default function MobileReportView() {
                 {c.hasSale ? ' · 프로모션' : ''}
               </div>
             </div>
+          </div>
+        ))}
+      </Section>
+
+      {/* S. 전략 인사이트 */}
+      <Section title="S. 전략 인사이트">
+        {/* 채널 전환율 */}
+        {channelConversions.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 6 }}>판별 랭킹 전환 효과</div>
+            {channelConversions.map(ch => (
+              <div key={ch.channel} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                <span style={{ color: 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' }}>
+                  {ch.channel.replace(' (선착순)', '')}
+                </span>
+                <span style={{ color: 'var(--f4)', fontFamily: 'var(--mono)', flexShrink: 0 }}>
+                  {ch.exposureBrands}→{ch.matchedBrands} ({ch.rate}%)
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* 가격 분포 */}
+        {priceBuckets.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 6 }}>가격 전략 (랭킹 상품)</div>
+            {priceBuckets.map(b => (
+              <div key={b.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                <span style={{ color: 'var(--f2)' }}>{b.label}</span>
+                <span style={{ color: 'var(--f4)', fontFamily: 'var(--mono)' }}>{b.count.toLocaleString()}개</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* 랭킹 독점 브랜드 */}
+        {topBrandsByCount.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 6 }}>랭킹 독점 브랜드 TOP 10</div>
+            {topBrandsByCount.slice(0, 10).map((b, i) => (
+              <div key={b.brand} style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', width: 16, flexShrink: 0 }}>{i + 1}</span>
+                <span style={{ fontSize: 11, fontWeight: i < 3 ? 600 : 400, color: 'var(--f1)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.brand}</span>
+                <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', flexShrink: 0 }}>{b.count}개 · #{b.bestRank}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {/* 1. 콘텐츠판 */}
+      <Section title={`1. 콘텐츠판 (${kpi.contentCount}건)`}>
+        {topContent.length === 0 ? (
+          <p style={{ margin: '4px 0', fontSize: 12, color: 'var(--f4)' }}>데이터 없음</p>
+        ) : topContent.map((c, i) => (
+          <div key={i} style={{ paddingTop: i > 0 ? 8 : 0, marginTop: i > 0 ? 8 : 0, borderTop: i > 0 ? '1px solid var(--bd)' : 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+              <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', width: 18, flexShrink: 0, paddingTop: 2 }}>{i + 1}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {c.landingUrl ? (
+                  <a href={c.landingUrl} target="_blank" rel="noreferrer"
+                    style={{ fontSize: 12, fontWeight: 500, color: 'var(--f1)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {c.title}
+                  </a>
+                ) : (
+                  <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--f1)', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</span>
+                )}
+                <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginTop: 2, display: 'flex', gap: 8 }}>
+                  <span>{c.brandNames.slice(0, 2).join(', ')}</span>
+                  <span>조회 {c.viewCount >= 1000 ? `${(c.viewCount / 1000).toFixed(0)}K` : c.viewCount}</span>
+                  {c.rankMatch != null && <span>#{c.rankMatch}</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </Section>
+
+      {/* 2. 추천판 */}
+      <Section title={`2. 추천판 (${recommendModules.length}개 모듈)`}>
+        {recommendModules.length === 0 ? (
+          <p style={{ margin: '4px 0', fontSize: 12, color: 'var(--f4)' }}>오늘 추천판 데이터가 없습니다</p>
+        ) : (
+          <>
+            {recommendModules.slice(0, 8).map((m, i) => (
+              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: i > 0 ? 6 : 0, marginTop: i > 0 ? 6 : 0, borderTop: i > 0 ? '1px solid var(--bd)' : 'none' }}>
+                <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', width: 18, flexShrink: 0 }}>{m.position + 1}</span>
+                <span style={{ fontSize: 12, color: 'var(--f1)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</span>
+                <span style={{ fontSize: 9, color: 'var(--f4)', fontFamily: 'var(--mono)', flexShrink: 0 }}>{m.itemsCount}개</span>
+              </div>
+            ))}
+            {recommendTopBrands.length > 0 && (
+              <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--bd)' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 6 }}>노출 브랜드 TOP 5</div>
+                {recommendTopBrands.slice(0, 5).map((b, i) => (
+                  <div key={b.brandName} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                    <span style={{ color: 'var(--f2)' }}>{i + 1}. {b.brandName}</span>
+                    <span style={{ color: 'var(--f4)', fontFamily: 'var(--mono)' }}>{b.count}개</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </Section>
+
+      {/* 3. 세일판 */}
+      <Section title={`3. 세일판 (${kpi.saleItemCount?.toLocaleString() ?? 0}개 상품)`}>
+        {saleDist.length === 0 ? (
+          <p style={{ margin: '4px 0', fontSize: 12, color: 'var(--f4)' }}>데이터 없음</p>
+        ) : (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 6 }}>할인율 분포</div>
+            {saleDist.map((b, i) => (
+              <div key={b.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                <span style={{ color: i >= 2 ? 'var(--td)' : 'var(--f2)' }}>{b.label}</span>
+                <span style={{ color: 'var(--f4)', fontFamily: 'var(--mono)' }}>{b.count.toLocaleString()}개</span>
+              </div>
+            ))}
+            {channelConversions.filter(ch => ch.channel !== '추천판').length > 0 && (
+              <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--bd)' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 6 }}>채널 요약</div>
+                {channelConversions.filter(ch => ch.channel !== '추천판').map(ch => (
+                  <div key={ch.channel} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                    <span style={{ color: 'var(--f2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' }}>
+                      {ch.channel}
+                    </span>
+                    <span style={{ color: 'var(--f4)', fontFamily: 'var(--mono)', flexShrink: 0 }}>전환 {ch.rate}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </Section>
+
+      {/* 4. 랭킹 분석 */}
+      <Section title={`4. 랭킹 분석 (${rankingRows.length.toLocaleString()}개 상품)`}>
+        {rankingRows.length === 0 ? (
+          <p style={{ margin: '4px 0', fontSize: 12, color: 'var(--f4)' }}>데이터 없음</p>
+        ) : rankingRows.slice(0, 10).map((r, i) => (
+          <div key={r.musinsaNo} style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: i > 0 ? 6 : 0, marginTop: i > 0 ? 6 : 0, borderTop: i > 0 ? '1px solid var(--bd)' : 'none' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--f4)', fontFamily: 'var(--mono)', width: 22, flexShrink: 0 }}>#{r.rank}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: r.isOwn ? 600 : 400, color: r.isOwn ? 'var(--hs)' : 'var(--f1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {r.productName}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginTop: 1 }}>
+                {r.brandName}
+                {r.discountRate != null && r.discountRate > 0 && ` · ${r.discountRate}%↓`}
+              </div>
+            </div>
+            {r.rankChange != null && (
+              <span style={{ fontSize: 10, color: r.rankChange > 0 ? 'var(--tu)' : 'var(--td)', fontFamily: 'var(--mono)', flexShrink: 0 }}>
+                {r.rankChange > 0 ? '▲' : '▼'}{Math.abs(r.rankChange)}
+              </span>
+            )}
           </div>
         ))}
       </Section>

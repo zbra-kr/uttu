@@ -53,7 +53,7 @@ export default function MobileSnapView() {
                 position: 'absolute', bottom: 0, left: 0, right: 0,
                 background: 'linear-gradient(transparent, rgba(0,0,0,0.6))',
                 padding: '8px 8px 6px',
-                display: 'flex', gap: 8, color: '#fff', fontSize: 10, fontFamily: 'var(--mono)',
+                display: 'flex', gap: 8, color: 'var(--rai)', fontSize: 10, fontFamily: 'var(--mono)',
               }}>
                 <span>♥ {r.like_count.toLocaleString()}</span>
                 <span>👁 {r.view_count.toLocaleString()}</span>
@@ -76,7 +76,7 @@ export default function MobileSnapView() {
           />
           <button
             onClick={() => setFullscreen(null)}
-            style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: '50%', cursor: 'pointer' }}
+            style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(0,0,0,0.5)', border: 'none', color: 'var(--rai)', fontSize: 20, width: 36, height: 36, borderRadius: '50%', cursor: 'pointer' }}
           >
             ✕
           </button>

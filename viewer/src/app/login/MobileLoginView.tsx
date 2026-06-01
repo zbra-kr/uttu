@@ -15,7 +15,7 @@ function SubmitBtn() {
       disabled={pending}
       style={{
         height: 44, width: '100%', fontSize: 14, fontWeight: 600,
-        background: 'var(--hs)', color: '#fff', border: 'none',
+        background: 'var(--hs)', color: 'var(--rai)', border: 'none',
         borderRadius: 10, cursor: pending ? 'not-allowed' : 'pointer',
         opacity: pending ? 0.65 : 1, transition: 'opacity 150ms',
       }}
@@ -42,13 +42,27 @@ export default function MobileLoginView() {
     }}>
       <div style={{ width: '100%', maxWidth: 400 }}>
         {/* 로고 */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <img
             src={isDark ? WORDMARK_DARK : WORDMARK_LIGHT}
             alt="UTTU"
             style={{ height: 28, objectFit: 'contain' }}
           />
         </div>
+
+        {/* 카피 */}
+        <p style={{
+          textAlign: 'center',
+          color: 'var(--f3)',
+          fontSize: 12,
+          lineHeight: 1.8,
+          margin: '0 0 28px',
+          fontFamily: 'var(--mono)',
+        }}>
+          수메르 신화에서 실을 엮어 옷을 만든 여신, UTTU.<br />
+          흩어진 데이터를 한 자리에 엮어 인사이트로 만듭니다.<br />
+          B.CAVE 전 직원과 AI가 함께 짭니다.
+        </p>
 
         <div style={{ background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 16, padding: '28px 24px' }}>
           <div style={{ marginBottom: 24 }}>

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface RecommendModule {
   id: string;
@@ -56,6 +57,26 @@ export default function MobileRecommendView() {
   const totalOwn   = modules.reduce((s, m) => s + (m.own_item_count ?? 0), 0);
   const ownRate    = totalItems > 0 ? ((totalOwn / totalItems) * 100).toFixed(1) : null;
 
+  // 날짜별 자사 노출 비율 (7일 추이 차트용)
+  const chartData = (() => {
+    const byDate = new Map<string, { items: number; own: number }>();
+    for (const m of modules) {
+      const d = m.snapshot_date;
+      const cur = byDate.get(d) ?? { items: 0, own: 0 };
+      byDate.set(d, {
+        items: cur.items + (m.item_count ?? 0),
+        own:   cur.own   + (m.own_item_count ?? 0),
+      });
+    }
+    return Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, { items, own }]) => ({
+        date: date.slice(5), // MM-DD
+        ownRate: items > 0 ? Math.round((own / items) * 100) : 0,
+        totalItems: items,
+      }));
+  })();
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' }}>
       <MobileFilterChips items={GENDER_CHIPS} activeValue={gender} onChange={setGender} />
@@ -76,6 +97,31 @@ export default function MobileRecommendView() {
           </div>
         ))}
       </div>
+
+      {/* 7일 자사 노출 비율 추이 */}
+      {!loading && chartData.length > 1 && (
+        <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 8 }}>자사 노출 비율 7일 추이</div>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--f4)' }} />
+              <YAxis tick={{ fontSize: 10, fill: 'var(--f4)' }} unit="%" domain={[0, 'auto']} />
+              <Tooltip
+                contentStyle={{ background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 11 }}
+                formatter={(v: unknown) => [`${v}%`, '자사 비율']}
+              />
+              <Line
+                type="monotone"
+                dataKey="ownRate"
+                stroke="var(--hs)"
+                strokeWidth={2}
+                dot={{ r: 3, fill: 'var(--hs)' }}
+                activeDot={{ r: 5 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>

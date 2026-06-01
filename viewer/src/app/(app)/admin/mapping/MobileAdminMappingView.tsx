@@ -27,27 +27,32 @@ export default function MobileAdminMappingView() {
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState<Set<Tab>>(new Set());
   const [search, setSearch] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function loadDart() {
     setLoading(true);
+    setLoadError(null);
     const sb = supabaseBrowser();
-    const { data } = await sb
+    const { data, error } = await sb
       .from('companies')
       .select('id, corp_name, dart_corp_code, business_number, dart_skip')
       .order('corp_name')
       .limit(200);
+    if (error) { console.error('[mapping] loadDart failed', error); setLoadError(error.message); setLoading(false); return; }
     setDartRows((data as DartRow[]) ?? []);
     setLoading(false);
   }
 
   async function loadBrand() {
     setLoading(true);
+    setLoadError(null);
     const sb = supabaseBrowser();
-    const { data } = await sb
+    const { data, error } = await sb
       .from('brands')
       .select('id, name, company_id, companies(corp_name)')
       .order('name')
       .limit(300);
+    if (error) { console.error('[mapping] loadBrand failed', error); setLoadError(error.message); setLoading(false); return; }
     setBrandRows(
       ((data ?? []) as unknown[]).map((r: unknown) => {
         const row = r as { id: string; name: string; company_id: string | null; companies: { corp_name: string } | null };
@@ -97,7 +102,7 @@ export default function MobileAdminMappingView() {
             style={{
               flex: 1, padding: '8px 0', fontSize: 12, fontWeight: tab === t ? 700 : 400,
               background: tab === t ? 'var(--hs)' : 'var(--sur)',
-              color: tab === t ? '#fff' : 'var(--f3)',
+              color: tab === t ? 'var(--rai)' : 'var(--f3)',
               border: '1px solid var(--bd)', borderRadius: 8, cursor: 'pointer',
             }}
           >
@@ -118,6 +123,11 @@ export default function MobileAdminMappingView() {
         }}
       />
 
+      {loadError && (
+        <div style={{ background: 'var(--shb)', border: '1px solid var(--shf)', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: 'var(--shf)' }}>
+          {loadError}
+        </div>
+      )}
       {loading && (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>
       )}

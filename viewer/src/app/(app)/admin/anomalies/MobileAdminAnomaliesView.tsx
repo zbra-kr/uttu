@@ -46,7 +46,7 @@ export default function MobileAdminAnomaliesView() {
             style={{
               flex: 1, padding: '6px 0', fontSize: 11, fontWeight: filter === v ? 700 : 400,
               background: filter === v ? 'var(--hs)' : 'var(--sur)',
-              color: filter === v ? '#fff' : 'var(--f3)',
+              color: filter === v ? 'var(--rai)' : 'var(--f3)',
               border: '1px solid var(--bd)', borderRadius: 8, cursor: 'pointer',
             }}
           >
