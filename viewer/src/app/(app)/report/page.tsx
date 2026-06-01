@@ -195,6 +195,10 @@ function DemoCard({ row }: { row: DemoRow }) {
 export default function ReportPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileReportView />;
+  return <ReportDesktopView />;
+}
+
+function ReportDesktopView() {
   const [data, setData] = useState<DailyReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAllRanking, setShowAllRanking] = useState(false);

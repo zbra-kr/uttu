@@ -32,6 +32,10 @@ function SubmitBtn() {
 export default function SignupPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileSignupView />;
+  return <SignupDesktopView />;
+}
+
+function SignupDesktopView() {
   const [state, action] = useFormState(signUp, null);
   const [isDark, setIsDark] = React.useState(false);
 

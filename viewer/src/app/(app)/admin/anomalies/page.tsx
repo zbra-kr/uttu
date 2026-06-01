@@ -659,6 +659,10 @@ function RuleRow({ rule, index, toggling, onToggle, onEdit, onDelete }: {
 export default function AdminAnomaliesPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileAdminAnomaliesView />;
+  return <AdminAnomaliesDesktopView />;
+}
+
+function AdminAnomaliesDesktopView() {
   const [rules,      setRules]      = React.useState<DetectorRule[]>([]);
   const [loading,    setLoading]    = React.useState(true);
   const [apiErr,     setApiErr]     = React.useState<string | null>(null);

@@ -32,6 +32,10 @@ function SubmitBtn() {
 export default function ForgotPasswordPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileForgotPasswordView />;
+  return <ForgotPasswordDesktopView />;
+}
+
+function ForgotPasswordDesktopView() {
   const [state, action] = useFormState(resetPassword, null);
   const [isDark, setIsDark] = React.useState(false);
 

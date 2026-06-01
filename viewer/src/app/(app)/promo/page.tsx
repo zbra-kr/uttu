@@ -135,6 +135,10 @@ interface JumpPromo { id: string; snapshotDate: string; }
 export default function PromoPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobilePromoView />;
+  return <PromoDesktopView />;
+}
+
+function PromoDesktopView() {
   const pageSS = React.useRef(readPromoSS());
   const [tab, setTab] = React.useState<'hub' | 'calendar' | 'stats'>((pageSS.current.tab as 'hub' | 'calendar' | 'stats') ?? 'hub');
 

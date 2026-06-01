@@ -38,6 +38,10 @@ function SubmitBtn() {
 export default function LoginPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileLoginView />;
+  return <LoginDesktopView />;
+}
+
+function LoginDesktopView() {
   const [state, action] = useFormState(signIn, null);
   const [stats, setStats] = React.useState<{ brands: number; products: number; reviews: number } | null>(null);
   const [isDark, setIsDark] = React.useState(false);

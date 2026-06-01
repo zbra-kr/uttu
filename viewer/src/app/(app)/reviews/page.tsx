@@ -183,6 +183,10 @@ function ReviewCard({
 export default function ReviewsPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileReviewsView />;
+  return <ReviewsDesktopView />;
+}
+
+function ReviewsDesktopView() {
   const [tab, setTab] = React.useState<'dash' | 'browse' | 'product-browse' | 'anomaly'>(
     () => lsRead('rv_tab', 'dash') as any
   );

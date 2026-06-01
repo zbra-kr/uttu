@@ -1,13 +1,13 @@
 'use client';
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import AiPanel from './AiPanel';
 import {
   IcHome, IcSpark, IcRanking, IcFlag, IcUser,
   IcReport, IcBrandRanking, IcCompany, IcReview, IcPromo,
-  IcBook, IcSnap, IcLink, IcRecommend, IcShield, IcBell, IcMenu, IcX,
+  IcBook, IcSnap, IcLink, IcRecommend, IcShield, IcBell, IcMenu, IcX, IcChevL,
 } from '../ui/icons';
 import type { ShellStats } from '@/lib/queries';
 
@@ -60,8 +60,11 @@ interface MobileShellProps {
   context: string[];
 }
 
+const ROOT_PATHS = new Set(['/', '/today', '/ranking', '/anomaly', '/me']);
+
 export default function MobileShell({ children, shellStats, context }: MobileShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [aipOpen, setAipOpen] = React.useState(false);
   const [user, setUser] = React.useState<{
@@ -119,6 +122,21 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
             <span key={i} style={{ width: 13, height: 1.5, background: 'var(--f2)', borderRadius: 1 }} />
           ))}
         </button>
+
+        {/* back button — root 탭 페이지에서는 숨김 */}
+        {!ROOT_PATHS.has(pathname) && (
+          <button
+            onClick={() => router.back()}
+            style={{
+              width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 8,
+              background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0, padding: 0, color: 'var(--f2)',
+            }}
+            aria-label="뒤로"
+          >
+            <IcChevL size={15} />
+          </button>
+        )}
 
         {/* wordmark */}
         <span style={{ display: 'flex', alignItems: 'baseline', fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 700, letterSpacing: '-0.03em', flex: 1 }}>

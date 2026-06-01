@@ -61,6 +61,10 @@ function eventLabel(et: string): string {
 export default function NotificationsAdminPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileAdminNotificationsView />;
+  return <NotificationsAdminDesktopView />;
+}
+
+function NotificationsAdminDesktopView() {
   const [kpi, setKpi]           = React.useState<NotificationsKpi | null>(null);
   const [recents, setRecents]   = React.useState<NotificationRow[]>([]);
   const [dist, setDist]         = React.useState<EventTypeDistribution[]>([]);

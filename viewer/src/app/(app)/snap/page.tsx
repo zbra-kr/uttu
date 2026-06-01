@@ -563,6 +563,10 @@ function ProfilePanel({ profile, date, onSnapClick, onClose }: { profile: SnapPr
 export default function SnapPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileSnapView />;
+  return <SnapDesktopView />;
+}
+
+function SnapDesktopView() {
   const [tab, setTab] = React.useState<Tab>('USER');
 
   // common

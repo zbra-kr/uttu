@@ -79,6 +79,10 @@ const VIEWER_CHIPS = ['홈', '랭킹', '이상탐지', '회사', '브랜드', '�
 export default function MePage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileMeView />;
+  return <MeDesktopView />;
+}
+
+function MeDesktopView() {
   const router = useRouter();
   const [profile, setProfile] = React.useState<MyProfile | null>(null);
   const [loading, setLoading] = React.useState(true);
