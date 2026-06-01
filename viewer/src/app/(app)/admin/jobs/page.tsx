@@ -71,6 +71,10 @@ function ProgressCell({ rows_done, target, status }: Pick<CollectionJob, 'rows_d
 export default function AdminJobsPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileAdminJobsView />;
+  return <AdminJobsDesktopView />;
+}
+
+function AdminJobsDesktopView() {
   const [jobs,    setJobs]    = React.useState<CollectionJob[]>([]);
   const [kpi,     setKpi]     = React.useState<JobsKpi | null>(null);
   const [history, setHistory] = React.useState<JobHistoryPoint[]>([]);

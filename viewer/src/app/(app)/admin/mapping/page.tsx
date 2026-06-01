@@ -1104,6 +1104,10 @@ function CreateTab() {
 export default function MappingPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileAdminMappingView />;
+  return <MappingDesktopView />;
+}
+
+function MappingDesktopView() {
   const [tab, setTab] = React.useState<'dart' | 'brand' | 'create'>('dart');
 
   return (

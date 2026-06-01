@@ -1700,6 +1700,10 @@ function RecommendEffect() {
 export default function RecommendPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileRecommendView />;
+  return <RecommendDesktopView />;
+}
+
+function RecommendDesktopView() {
   const [tab, setTab] = React.useState<Tab>('hub');
 
   return (

@@ -105,8 +105,12 @@ function readCompaniesSS(): Record<string, unknown> {
 
 export default function CompaniesPage() {
   const isMobile = useIsMobile();
-  const router = useRouter();
   if (isMobile) return <MobileCompaniesView />;
+  return <CompaniesDesktopView />;
+}
+
+function CompaniesDesktopView() {
+  const router = useRouter();
   const ss = React.useRef(readCompaniesSS());
 
   const [rows,    setRows]    = React.useState<CompanyListRow[]>([]);

@@ -69,8 +69,12 @@ function loadFilters() {
 
 export default function BrandRankingPage() {
   const isMobile = useIsMobile();
-  const router = useRouter();
   if (isMobile) return <MobileBrandRankingView />;
+  return <BrandRankingDesktopView />;
+}
+
+function BrandRankingDesktopView() {
+  const router = useRouter();
 
   const saved = React.useMemo(() => loadFilters(), []);
   const [period, setPeriod]       = React.useState(saved?.period ?? 'today');

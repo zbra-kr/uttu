@@ -981,6 +981,10 @@ type Tab = 'brands' | 'products';
 export default function MatchingPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileMatchingView />;
+  return <MatchingDesktopView />;
+}
+
+function MatchingDesktopView() {
   const [tab, setTab] = React.useState<Tab>('brands');
 
   return (

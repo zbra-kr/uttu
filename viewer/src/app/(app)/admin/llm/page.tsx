@@ -52,6 +52,10 @@ const INITIAL_FORM = {
 export default function AdminLlmPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileAdminLLMView />;
+  return <AdminLlmDesktopView />;
+}
+
+function AdminLlmDesktopView() {
   const [models,    setModels]    = React.useState<LlmModel[]>([]);
   const [providers, setProviders] = React.useState<LlmProviders | null>(null);
   const [loading,   setLoading]   = React.useState(true);

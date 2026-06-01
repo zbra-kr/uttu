@@ -100,6 +100,10 @@ const ACTIVITY_META: Record<DashboardActivity['type'], { label: string; color: s
 export default function AdminDashboardPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileAdminDashboardView />;
+  return <AdminDashboardDesktopView />;
+}
+
+function AdminDashboardDesktopView() {
   const [kpi, setKpi]         = React.useState<DashboardKpi | null>(null);
   const [activity, setActivity] = React.useState<DashboardActivity[]>([]);
   const [loading, setLoading] = React.useState(true);

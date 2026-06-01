@@ -213,8 +213,12 @@ function RangeSlider({ min, max, value, onChange }: {
 
 export default function RankingPage() {
   const isMobile = useIsMobile();
-  const router = useRouter();
   if (isMobile) return <MobileRankingView />;
+  return <RankingDesktopView />;
+}
+
+function RankingDesktopView() {
+  const router = useRouter();
 
   // localStorage에서 초기값 로드 (컴포넌트 마운트 시 1회)
   const [saved] = React.useState(() => loadSavedFilters());

@@ -74,6 +74,10 @@ function UsageBar({ used, limit, usedToday, dailyLimit }: {
 export default function AdminUsersPage() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileAdminUsersView />;
+  return <AdminUsersDesktopView />;
+}
+
+function AdminUsersDesktopView() {
   const [users,   setUsers]   = React.useState<AdminUser[]>([]);
   const [total,   setTotal]   = React.useState(0);
   const [loading, setLoading] = React.useState(true);
