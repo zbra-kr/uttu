@@ -194,7 +194,10 @@ def fetch_anomalies(db: Client, target_date: date, severity: str) -> list[dict]:
             .limit(20)
             .execute()
         )
-        return res.data or []
+        rows = res.data or []
+        for r in rows:
+            r["link"] = f"/anomaly?id={r['id']}"
+        return rows
     except Exception as e:
         logger.warning("anomalies_failed", severity=severity, error=str(e))
         return []
@@ -413,7 +416,12 @@ def fetch_dart_disclosures(db: Client, target_date: date) -> list[dict]:
             .limit(30)
             .execute()
         )
-        return res.data or []
+        rows = res.data or []
+        for r in rows:
+            co = r.get("companies") or {}
+            if co.get("id"):
+                r["link"] = f"/company?id={co['id']}"
+        return rows
     except Exception as e:
         logger.warning("dart_disclosures_failed", error=str(e))
         return []
@@ -526,7 +534,11 @@ def fetch_competitor_company_movers(db: Client, target_date: date) -> list[dict]
             key=lambda x: abs(x.get("max_delta") or 0),
             reverse=True,
         )
-        return sorted_cos[:5] if sorted_cos else movers[:5]
+        result = sorted_cos[:5] if sorted_cos else movers[:5]
+        for r in result:
+            if r.get("company_id"):
+                r["link"] = f"/company?id={r['company_id']}"
+        return result
     except Exception as e:
         logger.warning("competitor_company_movers_failed", error=str(e))
         return movers[:5]

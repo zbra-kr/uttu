@@ -162,9 +162,9 @@ interface QuotaState {
 }
 
 // ── AiPanel ───────────────────────────────────────────────────────────────────
-interface AiPanelProps { open: boolean; onToggle: () => void; context: string[]; route: string }
+interface AiPanelProps { open: boolean; onToggle: () => void; context: string[]; route: string; mobileMode?: boolean }
 
-export default function AiPanel({ open, onToggle, context, route }: AiPanelProps) {
+export default function AiPanel({ open, onToggle, context, route, mobileMode }: AiPanelProps) {
   const [messages,     setMessages]     = React.useState<Message[]>([]);
   const [input,        setInput]        = React.useState('');
   const [thinking,     setThinking]     = React.useState(false);
@@ -383,6 +383,7 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
 
   // ── 닫힌 상태 ────────────────────────────────────────────────────────────────
   if (!open) {
+    if (mobileMode) return null;
     return (
       <aside className="aip collapsed" onClick={onToggle} title="UTTU AI 열기" style={{ cursor: 'pointer' }}>
         <div className="aip-head">
@@ -398,7 +399,12 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
 
   const quickPrompts = QUICK_PROMPTS_BY_ROUTE[route] ?? QUICK_PROMPTS_BY_ROUTE['/'];
 
-  const fsStyle: React.CSSProperties = fullscreen ? {
+  const fsStyle: React.CSSProperties = mobileMode ? {
+    position: 'fixed',
+    top: 0, bottom: 0, left: 0, right: 0,
+    zIndex: 100,
+    width: '100%', maxWidth: 'none', borderLeft: 'none',
+  } : fullscreen ? {
     position: 'fixed',
     top: 0, bottom: 0,
     left: 'var(--sb-w)', right: 0,
@@ -407,7 +413,7 @@ export default function AiPanel({ open, onToggle, context, route }: AiPanelProps
   } : {};
 
   return (
-    <aside className={`aip${fullscreen ? ' fullscreen' : ''}`} style={fsStyle}>
+    <aside className={`aip${fullscreen || mobileMode ? ' fullscreen' : ''}`} style={fsStyle}>
 
       {/* 헤더 */}
       <div className="aip-head">

@@ -1,0 +1,313 @@
+'use client';
+import React from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { supabaseBrowser } from '@/lib/supabase/client';
+import AiPanel from './AiPanel';
+import {
+  IcHome, IcSpark, IcRanking, IcFlag, IcUser,
+  IcReport, IcBrandRanking, IcCompany, IcReview, IcPromo,
+  IcBook, IcSnap, IcLink, IcRecommend, IcShield, IcBell, IcMenu, IcX,
+} from '../ui/icons';
+import type { ShellStats } from '@/lib/queries';
+
+/* ── bottom tab bar definition ── */
+const TABS = [
+  { id: 'home',    path: '/',         label: '홈',    Icon: IcHome    },
+  { id: 'today',   path: '/today',    label: '매거진', Icon: IcSpark   },
+  { id: 'ranking', path: '/ranking',  label: '랭킹',  Icon: IcRanking },
+  { id: 'anomaly', path: '/anomaly',  label: '탐지',  Icon: IcFlag    },
+  { id: 'me',      path: '/me',       label: '내정보', Icon: IcUser    },
+] as const;
+
+/* ── left drawer nav definition ── */
+type NavItem = { id: string; path: string; label: string; Icon: React.ComponentType<{ size?: number }>; badge?: number; adminOnly?: boolean };
+type NavSection = { divider: true };
+const DRAWER_NAV: (NavItem | NavSection)[] = [
+  { id: 'home',          path: '/',              label: '홈',           Icon: IcHome      },
+  { id: 'today',         path: '/today',         label: '오늘의 매거진', Icon: IcSpark     },
+  { id: 'report',        path: '/report',        label: '심층 리포트',  Icon: IcReport    },
+  { divider: true },
+  { id: 'ranking',       path: '/ranking',       label: '상품 랭킹',    Icon: IcRanking   },
+  { id: 'brand-ranking', path: '/brand-ranking', label: '브랜드 랭킹',  Icon: IcBrandRanking },
+  { id: 'companies',     path: '/companies',     label: '회사 목록',    Icon: IcCompany   },
+  { id: 'reviews',       path: '/reviews',       label: '자사 리뷰',    Icon: IcReview    },
+  { id: 'promo',         path: '/promo',         label: '프로모션',     Icon: IcPromo     },
+  { id: 'magazine',      path: '/magazine',      label: '매거진',       Icon: IcBook      },
+  { id: 'snap',          path: '/snap',          label: '스냅샷',       Icon: IcSnap      },
+  { id: 'anomaly',       path: '/anomaly',       label: '이상탐지',     Icon: IcFlag      },
+  { id: 'matching',      path: '/matching',      label: '자사 매칭',    Icon: IcLink      },
+  { id: 'recommend',     path: '/recommend',     label: '추천판',       Icon: IcRecommend },
+  { divider: true },
+  { id: 'me',            path: '/me',            label: '내 정보',      Icon: IcUser      },
+  { id: 'admin',         path: '/admin',         label: '관리자',       Icon: IcShield,   adminOnly: true },
+];
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
+function isActive(pathname: string, path: string): boolean {
+  if (path === '/') return pathname === '/';
+  return pathname.startsWith(path);
+}
+
+interface MobileShellProps {
+  children: React.ReactNode;
+  shellStats: ShellStats | null;
+  context: string[];
+}
+
+export default function MobileShell({ children, shellStats, context }: MobileShellProps) {
+  const pathname = usePathname();
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [aipOpen, setAipOpen] = React.useState(false);
+  const [user, setUser] = React.useState<{
+    name: string; email: string; initials: string; role: string; avatarUrl: string | null;
+  } | null>(null);
+
+  const anomalyCount = shellStats?.anomalyCount ?? 0;
+
+  React.useEffect(() => {
+    const sb = supabaseBrowser();
+    sb.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return;
+      const { data: profile } = await sb
+        .from('profiles_public')
+        .select('display_name, role, avatar_url')
+        .eq('id', data.user.id)
+        .single();
+      const name = profile?.display_name || data.user.email?.split('@')[0] || '?';
+      setUser({
+        name,
+        email: data.user.email ?? '',
+        initials: getInitials(name),
+        role: profile?.role ?? 'viewer',
+        avatarUrl: profile?.avatar_url ?? null,
+      });
+    });
+  }, []);
+
+  /* close drawer on route change */
+  React.useEffect(() => { setDrawerOpen(false); }, [pathname]);
+
+  const toggleAip = () => setAipOpen(o => !o);
+
+  return (
+    <div style={{ position: 'relative', height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
+
+      {/* ── Header (52px sticky) ── */}
+      <header style={{
+        position: 'fixed', top: 0, left: 0, right: 0, height: 52, zIndex: 20,
+        display: 'flex', alignItems: 'center', gap: 11, padding: '0 15px',
+        borderBottom: '1px solid var(--bs)', background: 'var(--sur)',
+        flexShrink: 0,
+      }}>
+        {/* hamburger */}
+        <button
+          onClick={() => setDrawerOpen(true)}
+          style={{
+            width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 8,
+            background: 'var(--snk)', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 3.5,
+            cursor: 'pointer', flexShrink: 0, padding: 0,
+          }}
+        >
+          {[0,1,2].map(i => (
+            <span key={i} style={{ width: 13, height: 1.5, background: 'var(--f2)', borderRadius: 1 }} />
+          ))}
+        </button>
+
+        {/* wordmark */}
+        <span style={{ display: 'flex', alignItems: 'baseline', fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 700, letterSpacing: '-0.03em', flex: 1 }}>
+          uttu
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--hs)', alignSelf: 'flex-end', marginBottom: 4, marginLeft: 2 }} />
+        </span>
+
+        {/* right: bell + avatar */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            style={{
+              width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 8,
+              background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', color: 'var(--f2)', position: 'relative', padding: 0,
+            }}
+          >
+            <IcBell size={15} />
+            {anomalyCount > 0 && (
+              <span style={{
+                position: 'absolute', top: -6, right: -6, minWidth: 15, height: 15,
+                padding: '0 3px', background: 'var(--hs)', color: '#fff',
+                borderRadius: 8, fontSize: 9, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: 'var(--mono)',
+              }}>
+                {anomalyCount > 99 ? '99+' : anomalyCount}
+              </span>
+            )}
+          </button>
+          <Link href="/me" style={{ textDecoration: 'none' }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: 8, background: 'var(--snk)',
+              border: '1px solid var(--bs)', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--f2)',
+              fontFamily: 'var(--mono)', overflow: 'hidden',
+            }}>
+              {user?.avatarUrl ? (
+                <img src={user.avatarUrl} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                user?.initials ?? '?'
+              )}
+            </div>
+          </Link>
+        </div>
+      </header>
+
+      {/* ── Main content ── */}
+      <main style={{
+        flex: 1, overflowY: 'auto', overflowX: 'hidden',
+        paddingTop: 52, paddingBottom: 60,
+        background: 'var(--bg)',
+        backgroundImage: 'radial-gradient(circle, var(--bs) 0.8px, transparent 0.8px)',
+        backgroundSize: '14px 14px',
+      }}>
+        {children}
+      </main>
+
+      {/* ── FAB (AI) ── */}
+      <button
+        onClick={toggleAip}
+        style={{
+          position: 'fixed', right: 16, bottom: 74, zIndex: 50,
+          width: 56, height: 56, borderRadius: 18,
+          background: 'var(--hs)', color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 13, fontWeight: 700, letterSpacing: '0.02em',
+          border: 'none', cursor: 'pointer', fontFamily: 'var(--mono)',
+          boxShadow: '0 10px 24px -8px color-mix(in oklch, var(--hs) 60%, transparent)',
+        }}
+        aria-label="AI 어시스턴트 열기"
+      >
+        AI
+      </button>
+
+      {/* ── Tab bar (60px fixed bottom) ── */}
+      <nav style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, zIndex: 20,
+        borderTop: '1px solid var(--bs)', background: 'var(--sur)',
+        display: 'flex', alignItems: 'flex-start', padding: '8px 6px 0',
+      }}>
+        {TABS.map(({ id, path, label, Icon }) => {
+          const active = isActive(pathname, path);
+          return (
+            <Link
+              key={id}
+              href={path}
+              style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                gap: 4, color: active ? 'var(--hs)' : 'var(--f3)',
+                textDecoration: 'none', fontSize: 9, letterSpacing: '0.02em',
+              }}
+            >
+              <Icon size={18} />
+              <span style={{ fontFamily: 'var(--mono)', lineHeight: 1 }}>{label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* ── Left drawer ── */}
+      {drawerOpen && (
+        <>
+          {/* scrim */}
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(28,25,23,.42)', zIndex: 70 }}
+            onClick={() => setDrawerOpen(false)}
+          />
+          {/* panel */}
+          <div style={{
+            position: 'fixed', top: 0, left: 0, bottom: 0, width: 280, zIndex: 80,
+            background: 'var(--sur)', borderRight: '1px solid var(--bs)',
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '14px 0 44px -12px rgba(28,25,23,.4)',
+          }}>
+            {/* user section */}
+            <div style={{ padding: '50px 18px 15px', borderBottom: '1px solid var(--bs)' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 13, fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 700, letterSpacing: '-0.03em' }}>
+                uttu
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--hs)', alignSelf: 'flex-end', marginBottom: 3, marginLeft: 2 }} />
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--f1)' }}>
+                {user?.name ?? '…'}
+                {user?.role && (
+                  <span style={{
+                    fontSize: 10, color: 'var(--hs)', border: '1px solid var(--hs)',
+                    borderRadius: 4, padding: '1px 5px', marginLeft: 6, fontWeight: 500,
+                  }}>
+                    {user.role}
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--f3)', marginTop: 3, fontFamily: 'var(--mono)' }}>
+                {user?.email ?? ''}
+              </div>
+            </div>
+
+            {/* close button inside drawer header */}
+            <button
+              onClick={() => setDrawerOpen(false)}
+              style={{
+                position: 'absolute', top: 14, right: 14,
+                width: 28, height: 28, border: '1px solid var(--bs)', borderRadius: 7,
+                background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', color: 'var(--f3)', padding: 0,
+              }}
+            >
+              <IcX size={14} />
+            </button>
+
+            {/* nav links */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {DRAWER_NAV.map((item, i) => {
+                if ('divider' in item) {
+                  return <div key={`div-${i}`} style={{ height: 1, background: 'var(--bs)', margin: '7px 11px' }} />;
+                }
+                const { id, path, label, Icon, adminOnly } = item;
+                if (adminOnly && user?.role !== 'admin') return null;
+                const active = isActive(pathname, path);
+                return (
+                  <Link
+                    key={id}
+                    href={path}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 11, padding: '8px 11px',
+                      borderRadius: 8, fontSize: 12.5, color: active ? 'var(--hs)' : 'var(--f2)',
+                      background: active ? 'var(--hs-soft)' : 'transparent',
+                      fontWeight: active ? 600 : 400, textDecoration: 'none',
+                    }}
+                  >
+                    <span style={{ width: 18, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon size={15} />
+                    </span>
+                    {label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── AI Panel (reuses desktop component) ── */}
+      <AiPanel
+        open={aipOpen}
+        onToggle={toggleAip}
+        context={context}
+        route={pathname}
+        mobileMode
+      />
+    </div>
+  );
+}

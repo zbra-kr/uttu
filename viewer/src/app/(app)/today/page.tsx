@@ -7,6 +7,8 @@ import BriefingTabs from '@/components/briefing/BriefingTabs';
 import ExecutiveBriefingView from '@/components/briefing/ExecutiveBriefingView';
 import StaffBriefingView from '@/components/briefing/StaffBriefingView';
 import CSBriefingView from '@/components/briefing/CSBriefingView';
+import MobileTodayView from '@/components/briefing/mobile/MobileTodayView';
+import { useIsMobile } from '@/hooks/useViewport';
 
 type Tab = 'executive' | 'staff' | 'cs';
 const VALID_TABS: Tab[] = ['executive', 'staff', 'cs'];
@@ -40,6 +42,7 @@ function FutureEmptyState({ date }: { date: string }) {
 function TodayContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isMobile = useIsMobile();
 
   const rawTab = searchParams.get('tab') as Tab | null;
   const activeTab: Tab = rawTab && VALID_TABS.includes(rawTab) ? rawTab : 'executive';
@@ -77,6 +80,28 @@ function TodayContent() {
     router.push(`/today?${params.toString()}`, { scroll: false });
   }
 
+  function handleDateChange(date: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('date', date);
+    router.push(`/today?${params.toString()}`, { scroll: false });
+  }
+
+  /* ── 모바일 뷰 ── */
+  if (isMobile) {
+    return (
+      <MobileTodayView
+        data={data}
+        kpiData={kpiData}
+        loading={loading}
+        activeDate={activeDate}
+        availableDates={availableDates}
+        isFuture={isFuture}
+        onDateChange={handleDateChange}
+      />
+    );
+  }
+
+  /* ── 데스크탑 뷰 (변경 없음) ── */
   const activeBriefing = data ? data[activeTab] : null;
 
   // Full-height layout: BriefingTabs is a static header, content scrolls in its own container.

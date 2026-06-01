@@ -1258,3 +1258,17 @@ hr.hr-d { border: none; border-top: 1px dashed var(--bs); margin: 0; }
 .tl-item.lo .dot { background: var(--slf); }
 .tl-item .body { font-size: 12px; color: var(--f2); line-height: 1.55; }
 .tl-item .body .b1 { color: var(--f1); font-weight: 500; }
+
+/* ===========================================================================
+   Mobile overrides (≤767px) — prevents desktop shell overflow before JS loads
+   =========================================================================== */
+
+@media (max-width: 767px) {
+  html, body { height: 100dvh; overflow: hidden; }
+  .shell { min-width: 0; display: block; }
+  .shell .sb,
+  .shell .main .tb,
+  .shell .aip { display: none; }
+  .shell .main { display: block; overflow-y: auto; }
+  .shell .main .main-body { padding: 13px; }
+}

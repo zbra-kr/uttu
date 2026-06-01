@@ -142,14 +142,18 @@ class MagazineScraper(BaseScraper):
     async def run(self, days_back: int = 2) -> None:
         """
         증분 수집.
-        days_back: 며칠 전부터 조회할지 (기본 2일 전 — 어제 기사도 확실히 포함).
+        days_back: 어제 기준으로 며칠 전부터 조회할지 (기본 2일 전).
+        항상 어제(D-1)까지만 수집 — 당일 미완성 기사 제외.
         DB가 비어 있으면 date_from 없이 전체 수집 (MAX_PAGES 범위 내).
         """
+        yesterday = _kst_today() - timedelta(days=1)
+        yesterday_str = yesterday.strftime("%Y-%m-%d")
+
         latest = self._latest_published_at()
         if latest:
-            from_date = latest - timedelta(days=days_back)
+            from_date = yesterday - timedelta(days=days_back)
             date_from = from_date.strftime("%Y-%m-%d")
-            logger.info("magazine_incremental", from_date=date_from)
+            logger.info("magazine_incremental", from_date=date_from, to_date=yesterday_str)
         else:
             date_from = None
             logger.info("magazine_full_scan", note="DB empty, collecting all within MAX_PAGES")
@@ -157,11 +161,19 @@ class MagazineScraper(BaseScraper):
         total_articles = 0
         total_products = 0
 
+        today_str = _kst_today().strftime("%Y-%m-%d")
+
         for page in range(1, MAX_PAGES + 1):
             items = await self._fetch_page(page, date_from)
             if not items:
                 logger.info("magazine_empty_page", page=page)
                 break
+
+            # 당일 게시 기사 제외 — 어제(D-1)까지만 수집
+            items = [i for i in items if not str(i.get("displayStartDate", "")).startswith(today_str)]
+            if not items:
+                logger.debug("magazine_skip_today_page", page=page)
+                continue
 
             article_ids = [str(item["id"]) for item in items]
             existing = self._existing_article_ids(article_ids)

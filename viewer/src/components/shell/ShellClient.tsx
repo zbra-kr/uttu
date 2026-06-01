@@ -5,7 +5,9 @@ import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import AiPanel from './AiPanel';
 import CmdK from './CmdK';
+import MobileShell from './MobileShell';
 import { fetchShellStats, ShellStats } from '@/lib/queries';
+import { useIsMobile } from '@/hooks/useViewport';
 
 const BREADCRUMBS: Record<string, string[]> = {
   '/':                ['홈', '대시보드'],
@@ -46,6 +48,7 @@ const CONTEXTS: Record<string, string[]> = {
 
 export default function ShellClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isMobile = useIsMobile();
   const [theme, setTheme] = React.useState<string>('light');
   const [productCrumb, setProductCrumb] = React.useState<{ brand: string; name: string } | null>(null);
   const [brandCrumb,   setBrandCrumb]   = React.useState<{ company: string; name: string } | null>(null);
@@ -188,6 +191,17 @@ export default function ShellClient({ children }: { children: React.ReactNode })
     magazine: mag,
     reviews:  rv,
   };
+
+  if (isMobile) {
+    return (
+      <>
+        <MobileShell shellStats={shellStats} context={context}>
+          {children}
+        </MobileShell>
+        <CmdK open={cmdkOpen} onClose={() => setCmdkOpen(false)} />
+      </>
+    );
+  }
 
   return (
     <>
