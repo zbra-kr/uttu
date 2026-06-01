@@ -105,7 +105,7 @@ export default function MobileRankingView() {
   }, [displayed.length, rows.length]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {/* 카테고리 칩 */}
       <MobileFilterChips items={CATEGORIES} activeValue={cat} onChange={v => { setCat(v); setPage(1); }} />
 

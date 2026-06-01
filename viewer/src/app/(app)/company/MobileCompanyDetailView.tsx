@@ -74,7 +74,7 @@ export default function MobileCompanyDetailView() {
   }));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {/* 헤더 */}
       <div style={{ padding: '14px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -118,7 +118,7 @@ export default function MobileCompanyDetailView() {
 
       {/* 매출 추이 */}
       {chartData.length >= 2 && (
-        <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
+        <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>매출 추이 (억원)</div>
           <ResponsiveContainer width="100%" height={160}>
             <BarChart data={chartData}>

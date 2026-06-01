@@ -75,7 +75,7 @@ export default function MobileRecommendView() {
   })();
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       <MobileFilterChips items={GENDER_CHIPS} activeValue={gender} onChange={setGender} />
 
       {/* KPI */}
@@ -97,7 +97,7 @@ export default function MobileRecommendView() {
 
       {/* 7일 노출 상품 수 추이 */}
       {!loading && chartData.length > 1 && (
-        <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
+        <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 8 }}>노출 상품 수 7일 추이</div>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>

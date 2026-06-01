@@ -3,6 +3,11 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; }
 
+@media (max-width: 767px) {
+  body { overflow-x: hidden; }
+  img, video, iframe, canvas, svg { max-width: 100%; }
+}
+
 body {
   font-family: var(--sans);
   font-size: 13px;

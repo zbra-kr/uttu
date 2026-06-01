@@ -55,7 +55,7 @@ export default function MobileMatchingView() {
   const brandChips = brands.map(b => ({ value: b.id, label: b.name }));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {brandChips.length > 0 && (
         <MobileFilterChips items={brandChips} activeValue={brandId} onChange={setBrandId} />
       )}

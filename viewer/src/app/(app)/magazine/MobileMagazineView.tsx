@@ -28,7 +28,7 @@ export default function MobileMagazineView() {
   }, [cat]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       <MobileFilterChips items={CAT_CHIPS} activeValue={cat} onChange={setCat} />
 
       {loading ? (

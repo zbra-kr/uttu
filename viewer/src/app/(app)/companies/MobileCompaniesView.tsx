@@ -54,7 +54,7 @@ export default function MobileCompaniesView() {
   }, [rows, search, sortKey, listedOnly]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {/* 검색 */}
       <div style={{ position: 'sticky', top: 0, background: 'var(--bg)', paddingTop: 4, paddingBottom: 4, zIndex: 10 }}>
         <input

@@ -64,7 +64,7 @@ export default function MobileProductDetailView() {
   if (!detail) return <MobileEmptyState icon="📦" title="상품 정보를 찾을 수 없습니다" />;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {/* 헤더 */}
       <div style={{ padding: '14px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
         {detail.thumbnail_url && (
@@ -105,7 +105,7 @@ export default function MobileProductDetailView() {
 
       {/* 랭킹 추이 */}
       {rankHistory.length >= 2 && (
-        <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
+        <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>랭킹 추이 (30일)</div>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={rankHistory}>
@@ -120,7 +120,7 @@ export default function MobileProductDetailView() {
 
       {/* 가격 추이 */}
       {priceHistory.length >= 2 && (
-        <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
+        <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>가격 추이 (30일)</div>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={priceHistory}>

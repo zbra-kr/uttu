@@ -17,7 +17,7 @@ export default function MobileAdminLLMView() {
   if (models.length === 0) return <MobileEmptyState icon="🤖" title="LLM 모델이 없습니다" />;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {models.map(m => (
         <div key={m.id} style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

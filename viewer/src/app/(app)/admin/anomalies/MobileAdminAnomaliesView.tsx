@@ -36,7 +36,7 @@ export default function MobileAdminAnomaliesView() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {/* 심각도 필터 칩 */}
       <div style={{ display: 'flex', gap: 6 }}>
         {([['all', '전체', rules.length], ['high', 'HIGH', counts.high], ['medium', 'MED', counts.medium], ['low', 'LOW', counts.low]] as [typeof filter, string, number][]).map(([v, label, cnt]) => (

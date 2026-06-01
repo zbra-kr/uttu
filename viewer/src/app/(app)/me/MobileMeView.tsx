@@ -53,7 +53,7 @@ export default function MobileMeView() {
   if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {/* 프로필 */}
       {profile && (
         <div style={{ padding: '14px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>

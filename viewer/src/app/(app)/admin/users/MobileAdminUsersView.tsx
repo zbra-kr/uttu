@@ -23,7 +23,7 @@ export default function MobileAdminUsersView() {
     : users;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       <input
         type="text"
         placeholder="이름·이메일 검색"

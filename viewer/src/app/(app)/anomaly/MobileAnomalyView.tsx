@@ -121,7 +121,7 @@ export default function MobileAnomalyView() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {/* 기간 선택 */}
       <MobileFilterChips items={PERIOD_CHIPS} activeValue={period} onChange={setPeriod} />
 

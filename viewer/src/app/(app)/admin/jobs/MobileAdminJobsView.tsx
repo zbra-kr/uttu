@@ -41,7 +41,7 @@ export default function MobileAdminJobsView() {
   if (jobs.length === 0) return <MobileEmptyState icon="⚙️" title="오늘 실행된 작업이 없습니다" />;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {jobs.map(j => {
         const pct = j.target && j.target > 0 ? Math.min(100, Math.round((j.rows_done / j.target) * 100)) : null;
         return (

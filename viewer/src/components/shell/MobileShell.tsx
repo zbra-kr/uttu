@@ -90,7 +90,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
   const toggleAip = () => setAipOpen(o => !o);
 
   return (
-    <div style={{ position: 'relative', height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', height: '100dvh', width: '100vw', maxWidth: '100vw', display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
 
       {/* ── Header (52px sticky) ── */}
       <header style={{
@@ -177,6 +177,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
       {/* ── Main content ── */}
       <main style={{
         flex: 1, overflowY: 'auto', overflowX: 'hidden',
+        width: '100%', maxWidth: '100%', minWidth: 0,
         paddingTop: 52, paddingBottom: 20,
         background: 'var(--bg)',
         backgroundImage: 'radial-gradient(circle, var(--bs) 0.8px, transparent 0.8px)',

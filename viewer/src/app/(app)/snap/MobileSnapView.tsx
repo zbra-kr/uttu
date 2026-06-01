@@ -24,7 +24,7 @@ export default function MobileSnapView() {
   }, [gender]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       <MobileFilterChips items={GENDER_CHIPS} activeValue={gender} onChange={setGender} />
 
       {loading ? (

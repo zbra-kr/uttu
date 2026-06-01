@@ -24,12 +24,28 @@ def tg(title, body=None):
     send_telegram(CHAT_ID, title, body, None)
     print(f"[TG] {title}")
 
+# 태스크별 완료 마커 (여러 개면 하나라도 있으면 완료)
+_DONE_MARKERS = {
+    "ranking":         ["=== done:"],
+    "brand_ranking":   ["=== done:"],
+    "event":           ["=== done:"],
+    "dart":            ["=== done:", "=== skip:"],   # skip도 완료로 처리
+    "full_collection": ["all done"],
+    "reviews":         ["review_smart_done", "job_tracker_finish"],
+    "detect":          ["bookmark_detect_done"],
+    "news":            ["news_collection_done"],
+    "briefing":        ["briefing_run_done"],
+}
+
 def log_done(name):
     p = LOG_DIR / f"{name}_{DATE}.log"
     if not p.exists():
         return False
-    content = p.read_text()
-    return "=== done:" in content.lower() or "=== all done" in content.lower()
+    content = p.read_text(errors="replace").lower()
+    for marker in _DONE_MARKERS.get(name, ["=== done:"]):
+        if marker.lower() in content:
+            return True
+    return False
 
 def tail_stat(name, keyword):
     p = LOG_DIR / f"{name}_{DATE}.log"
@@ -74,60 +90,69 @@ while True:
 
             # 랭킹+브랜드랭킹 둘 다 완료 → 이상탐지 실행
             if {"ranking", "brand_ranking"} <= notified and "detect" not in notified:
-                tg("🔍 이상탐지 시작")
-                ret = subprocess.run(
-                    ["worker/.venv/bin/python3", "-m", "worker.detectors.runner"],
-                    capture_output=True, text=True, cwd=str(ROOT)
-                )
-                output = ret.stdout + ret.stderr
-                saved_line = next((l for l in output.splitlines() if "anomalies_saved" in l), "")
-                failed = ret.returncode != 0 or ("count=0" in saved_line and "total=0" not in output)
-                if failed:
-                    tg("🚨 이상탐지 실패", output[-300:])
+                if log_done("detect"):
+                    notified.add("detect")  # 이미 완료 (수동 실행 등)
                 else:
-                    tg("✅ 이상탐지 완료", saved_line.split(" - ")[-1] if saved_line else "")
-                notified.add("detect")
+                    tg("🔍 이상탐지 시작")
+                    ret = subprocess.run(
+                        ["worker/.venv/bin/python3", "-m", "worker.detectors.runner"],
+                        capture_output=True, text=True, cwd=str(ROOT)
+                    )
+                    output = ret.stdout + ret.stderr
+                    saved_line = next((l for l in output.splitlines() if "anomalies_saved" in l), "")
+                    failed = ret.returncode != 0 or ("count=0" in saved_line and "total=0" not in output)
+                    if failed:
+                        tg("🚨 이상탐지 실패", output[-300:])
+                    else:
+                        tg("✅ 이상탐지 완료", saved_line.split(" - ")[-1] if saved_line else "")
+                    notified.add("detect")
 
     # ── detect + full_collection + reviews 완료 → 뉴스·브리핑 순차 실행 ────────
     if {"detect", "full_collection", "reviews"} <= notified and "news" not in notified:
 
         # [a] 외부 뉴스 수집
-        tg("📰 외부 뉴스 수집 시작")
-        try:
-            ret = subprocess.run(
-                ["worker/.venv/bin/python3", "-m", "worker.agent.news_collector"],
-                capture_output=True, text=True, cwd=str(ROOT),
-                timeout=1800,
-            )
-            output = ret.stdout + ret.stderr
-            if ret.returncode != 0:
-                tg("🚨 외부 뉴스 수집 실패", output[-400:])
-            else:
-                m = re.search(r"total_inserted=(\d+)", output)
-                n_news = m.group(1) if m else "?"
-                tg(f"✅ 외부 뉴스 수집 완료 ({n_news}건)")
-        except subprocess.TimeoutExpired:
-            tg("🚨 외부 뉴스 수집 타임아웃 (30분 초과)")
-        notified.add("news")  # 실패해도 브리핑은 진행 (news_picks 없으면 빈 배열 처리)
+        if log_done("news"):
+            notified.add("news")  # 이미 완료 (수동 실행 등)
+        else:
+            tg("📰 외부 뉴스 수집 시작")
+            try:
+                ret = subprocess.run(
+                    ["worker/.venv/bin/python3", "-m", "worker.agent.news_collector"],
+                    capture_output=True, text=True, cwd=str(ROOT),
+                    timeout=1800,
+                )
+                output = ret.stdout + ret.stderr
+                if ret.returncode != 0:
+                    tg("🚨 외부 뉴스 수집 실패", output[-400:])
+                else:
+                    m = re.search(r"total_inserted=(\d+)", output)
+                    n_news = m.group(1) if m else "?"
+                    tg(f"✅ 외부 뉴스 수집 완료 ({n_news}건)")
+            except subprocess.TimeoutExpired:
+                tg("🚨 외부 뉴스 수집 타임아웃 (30분 초과)")
+            notified.add("news")  # 실패해도 브리핑 진행
 
-        # [b] 브리핑 생성 (briefing_writer 내부에 30분 재시도 로직 포함)
-        tg("✍️ 브리핑 생성 시작")
-        try:
-            ret = subprocess.run(
-                ["worker/.venv/bin/python3", "-m", "worker.agent.briefing_writer"],
-                capture_output=True, text=True, cwd=str(ROOT),
-                timeout=7200,  # 내부 30분 재시도 포함 최대 2시간
-            )
-            output = ret.stdout + ret.stderr
-            if ret.returncode != 0:
-                tg("🚨 브리핑 생성 실패", output[-400:])
-            else:
-                m = re.search(r"success=(\d+)", output)
-                n_br = m.group(1) if m else "?"
-                tg(f"✅ 브리핑 생성 완료 ({n_br}/3 audience)")
-        except subprocess.TimeoutExpired:
-            tg("🚨 브리핑 생성 타임아웃 (2시간 초과)")
-        notified.add("briefing")
+        # [b] 브리핑 생성
+        if log_done("briefing"):
+            notified.add("briefing")  # 이미 완료 (수동 실행 등)
+        else:
+            tg("✍️ 브리핑 생성 시작")
+            try:
+                ret = subprocess.run(
+                    ["worker/.venv/bin/python3", "-m", "worker.agent.briefing_writer"],
+                    capture_output=True, text=True, cwd=str(ROOT),
+                    timeout=7200,
+                )
+                output = ret.stdout + ret.stderr
+                if ret.returncode != 0:
+                    tg("🚨 브리핑 생성 실패", output[-400:])
+                else:
+                    m = re.search(r"success=(\d+)", output)
+                    n_br = m.group(1) if m else "?"
+                    tg(f"✅ 브리핑 생성 완료 ({n_br}/3 audience)")
+            except subprocess.TimeoutExpired:
+                tg("🚨 브리핑 생성 타임아웃 (2시간 초과)")
+            notified.add("briefing")
 
     # ── 1시간마다 현황 요약 ────────────────────────────────────────────────────
     if now - last_hourly >= 3600:

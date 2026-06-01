@@ -92,7 +92,7 @@ export default function MobileAdminMappingView() {
     : brandRows;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {/* 탭 */}
       <div style={{ display: 'flex', gap: 6 }}>
         {([['dart', 'DART 매핑'], ['brand', '브랜드-회사']] as [Tab, string][]).map(([t, label]) => (

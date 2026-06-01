@@ -11,15 +11,6 @@
 #   ./scripts/run_dart.sh bcave        # B.CAVE만
 set -euo pipefail
 
-# ── 월별 실행 주기 조건 ──────────────────────────────────────────────
-YYYYMM=$(date +%Y%m)
-DOW=$(date +%u)   # 1=월 … 7=일
-
-if [[ "$YYYYMM" > "202605" ]] && [[ "$DOW" != "7" ]]; then
-  echo "=== skip: $(date '+%Y-%m-%d') 6월 이후 일요일 아님 — 실행 안 함 ==="
-  exit 0
-fi
-
 TARGET="${1:-all}"
 LOG_DIR="/Users/macmini/projects/uttu/logs"
 mkdir -p "$LOG_DIR"
