@@ -9,6 +9,8 @@ import {
   IcReport, IcBrandRanking, IcCompany, IcReview, IcPromo,
   IcBook, IcSnap, IcLink, IcRecommend, IcShield, IcBell, IcX, IcChevL,
 } from '../ui/icons';
+import { fetchUnreadCount } from '@/lib/queries-me';
+import InboxList from '../me/InboxList';
 import type { ShellStats } from '@/lib/queries';
 
 /* ── left drawer nav definition ── */
@@ -58,11 +60,22 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [aipOpen, setAipOpen] = React.useState(false);
+  const [bellOpen, setBellOpen] = React.useState(false);
+  const [unreadCount, setUnreadCount] = React.useState(0);
   const [user, setUser] = React.useState<{
     name: string; email: string; initials: string; role: string; avatarUrl: string | null;
   } | null>(null);
 
   const anomalyCount = shellStats?.anomalyCount ?? 0;
+
+  React.useEffect(() => {
+    fetchUnreadCount().then(setUnreadCount);
+    const id = setInterval(() => fetchUnreadCount().then(setUnreadCount), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  /* close bell on route change */
+  React.useEffect(() => { setBellOpen(false); }, [pathname]);
 
   React.useEffect(() => {
     const sb = supabaseBrowser();
@@ -138,22 +151,26 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
         {/* right: bell + avatar */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
+            onClick={() => setBellOpen(o => !o)}
             style={{
               width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 8,
-              background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', color: 'var(--f2)', position: 'relative', padding: 0,
+              background: bellOpen ? 'var(--hs-soft)' : 'var(--snk)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              color: bellOpen ? 'var(--hs)' : 'var(--f2)',
+              position: 'relative', padding: 0,
             }}
           >
             <IcBell size={15} />
-            {anomalyCount > 0 && (
+            {unreadCount > 0 && (
               <span style={{
-                position: 'absolute', top: -6, right: -6, minWidth: 15, height: 15,
-                padding: '0 3px', background: 'var(--hs)', color: '#fff',
-                borderRadius: 8, fontSize: 9, fontWeight: 700,
+                position: 'absolute', top: -4, right: -4, minWidth: 14, height: 14,
+                padding: '0 3px', background: 'var(--shf)', color: '#fff',
+                borderRadius: 7, fontSize: 9, fontWeight: 700,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontFamily: 'var(--mono)',
+                fontFamily: 'var(--mono)', pointerEvents: 'none',
               }}>
-                {anomalyCount > 99 ? '99+' : anomalyCount}
+                {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </button>
@@ -185,6 +202,48 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
       }}>
         {children}
       </main>
+
+      {/* ── Bell bottom sheet ── */}
+      {bellOpen && (
+        <>
+          {/* scrim */}
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(28,25,23,.4)', zIndex: 60 }}
+            onClick={() => setBellOpen(false)}
+          />
+          {/* panel */}
+          <div style={{
+            position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 70,
+            background: 'var(--sur)', borderTop: '1px solid var(--bs)',
+            borderRadius: '16px 16px 0 0',
+            boxShadow: '0 -8px 32px rgba(0,0,0,0.18)',
+            maxHeight: '72dvh', display: 'flex', flexDirection: 'column',
+          }}>
+            {/* handle */}
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, paddingBottom: 4 }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--bs)' }} />
+            </div>
+            {/* header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 10px', borderBottom: '1px solid var(--bs)' }}>
+              <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--f1)' }}>알림</span>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Link href="/me#inbox" onClick={() => setBellOpen(false)}
+                  style={{ fontSize: 12, color: 'var(--hs)', textDecoration: 'none', fontWeight: 500 }}>
+                  전체 보기
+                </Link>
+                <button onClick={() => setBellOpen(false)}
+                  style={{ width: 26, height: 26, border: '1px solid var(--bs)', borderRadius: 7, background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--f3)', padding: 0 }}>
+                  <IcX size={13} />
+                </button>
+              </div>
+            </div>
+            {/* list */}
+            <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <InboxList limit={15} compact onUnreadChange={setUnreadCount} />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ── FAB (AI) ── */}
       <button

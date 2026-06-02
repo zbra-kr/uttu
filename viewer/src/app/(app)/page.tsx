@@ -2,6 +2,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useIsMobile } from '@/hooks/useViewport';
+import MobileHomeView from './MobileHomeView';
 import {
   fetchLatestRanking, fetchReviewStats, fetchAnomalySignals,
   fetchCollectionStats, fetchOwnBrandBreakdown, fetchActivePromotions, fetchTopBrandRanking,
@@ -108,6 +110,12 @@ function CollStatRow({ s, i, job, router }: {
 }
 
 export default function HomePage() {
+  const isMobile = useIsMobile();
+  if (isMobile) return <MobileHomeView />;
+  return <HomeDesktopView />;
+}
+
+function HomeDesktopView() {
   const router = useRouter();
 
   const [collStats,   setCollStats]   = React.useState<CollectionStat[]>([]);
