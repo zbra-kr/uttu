@@ -7,32 +7,14 @@ interface Props {
   title: string;
   comment: string;
   href: string;
+  onClick?: () => void;
 }
 
-export default function MobileBriefingCard({ icon, title, comment, href }: Props) {
+export default function MobileBriefingCard({ icon, title, comment, href, onClick }: Props) {
   const [pressed, setPressed] = React.useState(false);
 
-  return (
-    <Link
-      href={href}
-      onPointerDown={() => setPressed(true)}
-      onPointerUp={() => setPressed(false)}
-      onPointerLeave={() => setPressed(false)}
-      onPointerCancel={() => setPressed(false)}
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 10,
-        padding: '12px 13px',
-        border: '1px solid var(--bd)',
-        borderRadius: 10,
-        textDecoration: 'none',
-        color: 'inherit',
-        background: 'var(--sur)',
-        opacity: pressed ? 0.7 : 1,
-        transition: 'opacity 0.1s',
-      }}
-    >
+  const inner = (
+    <>
       <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icon}</span>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--f1)' }}>{title}</span>
@@ -53,6 +35,42 @@ export default function MobileBriefingCard({ icon, title, comment, href }: Props
         fontSize: 13, color: 'var(--f4)', flexShrink: 0, marginTop: 1,
         fontFamily: 'var(--mono)',
       }}>→</span>
+    </>
+  );
+
+  const sharedStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: '12px 13px',
+    border: '1px solid var(--bd)',
+    borderRadius: 10,
+    textDecoration: 'none',
+    color: 'inherit',
+    background: 'var(--sur)',
+    opacity: pressed ? 0.7 : 1,
+    transition: 'opacity 0.1s',
+    cursor: 'pointer',
+  };
+
+  const pointerProps = {
+    onPointerDown: () => setPressed(true),
+    onPointerUp:   () => setPressed(false),
+    onPointerLeave: () => setPressed(false),
+    onPointerCancel: () => setPressed(false),
+  };
+
+  if (onClick) {
+    return (
+      <div style={sharedStyle} onClick={onClick} {...pointerProps}>
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <Link href={href} style={sharedStyle} {...pointerProps}>
+      {inner}
     </Link>
   );
 }

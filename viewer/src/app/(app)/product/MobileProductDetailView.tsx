@@ -9,6 +9,7 @@ import {
   type ProductDetail, type ReviewRow, type CategoryRankRow, type BodyStats,
 } from '@/lib/queries';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
+import ReviewDetailSheet from '@/components/mobile/ReviewDetailSheet';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceDot } from 'recharts';
 
 function fmtPrice(v: number | null): string {
@@ -66,6 +67,7 @@ export default function MobileProductDetailView() {
   const [reviews,        setReviews]        = useState<ReviewRow[]>([]);
   const [bodyStats,      setBodyStats]      = useState<BodyStats | null>(null);
   const [loading,        setLoading]        = useState(true);
+  const [selectedReview, setSelectedReview] = useState<ReviewRow | null>(null);
 
   useEffect(() => {
     if (!no) return;
@@ -140,6 +142,7 @@ export default function MobileProductDetailView() {
   const activeFlags = FLAG_LABELS.filter(([key]) => (detail as any)[key]).map(([, label]) => label);
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 12px 20px', width: '100%', minWidth: 0 }}>
 
       {/* ── 헤더 ── */}
@@ -450,17 +453,19 @@ export default function MobileProductDetailView() {
             {detail.is_own ? `최근 리뷰 (${reviews.length}건)` : '최근 리뷰'}
           </div>
           {reviews.map((r, i) => (
-            <div key={r.id} style={{ borderTop: i > 0 ? '1px solid var(--bd)' : undefined, paddingTop: i > 0 ? 10 : 0, marginTop: i > 0 ? 10 : 0 }}>
+            <div key={r.id}
+              onClick={() => setSelectedReview(r)}
+              style={{ borderTop: i > 0 ? '1px solid var(--bd)' : undefined, paddingTop: i > 0 ? 10 : 0, marginTop: i > 0 ? 10 : 0, cursor: 'pointer' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 13, color: r.rating >= 4 ? 'var(--slf)' : r.rating <= 2 ? 'var(--shf)' : 'var(--f3)' }}>
                     {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
                   </span>
                   {r.has_image && (
-                    <span style={{ fontSize: 9, background: 'var(--hs)', color: '#fff', padding: '1px 4px', borderRadius: 2 }}>사진</span>
+                    <span style={{ fontSize: 9, background: 'var(--hs)', color: '#fff', padding: '1px 4px', borderRadius: 2 }}>📷 {r.image_urls.length}</span>
                   )}
                 </div>
-                <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>{r.review_date}</span>
+                <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>{r.review_date.slice(0, 10)}</span>
               </div>
               {r.review_text && (
                 <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--f2)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
@@ -485,7 +490,7 @@ export default function MobileProductDetailView() {
                 </div>
               )}
               {r.helpful_count > 0 && (
-                <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginTop: 4 }}>도움됨 {r.helpful_count}</div>
+                <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginTop: 4 }}>👍 {r.helpful_count}</div>
               )}
             </div>
           ))}
@@ -505,5 +510,14 @@ export default function MobileProductDetailView() {
         </div>
       )}
     </div>
+
+    {selectedReview && (
+      <ReviewDetailSheet
+        review={selectedReview}
+        showProductButton={false}
+        onClose={() => setSelectedReview(null)}
+      />
+    )}
+    </>
   );
 }

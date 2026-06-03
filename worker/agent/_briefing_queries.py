@@ -853,6 +853,324 @@ def fetch_strength_products(
         return []
 
 
+# ── 콘텐츠 효과 분석 ──────────────────────────────────────────────────────────
+
+def fetch_snap_effectiveness(db: Client, target_date: date) -> list[dict]:
+    """
+    최근 7일 고참여 스냅 → 연결 상품의 랭킹 변화.
+    engagement_score = view×1 + like×5 + comment×10 + goods_click×3
+    """
+    since     = _prev(target_date, 7)
+    yesterday = _prev(target_date, 1)
+    try:
+        # 고참여 스냅 로드
+        snap_rows = (
+            db.table("snap_products")
+            .select(
+                "musinsa_no, product_id, "
+                "products(name, is_own, brand_id), "
+                "snaps!inner(snap_id, view_count, like_count, "
+                "comment_count, goods_click_count, collected_at)"
+            )
+            .gte("snaps.collected_at", since.isoformat())
+            .limit(500)
+            .execute()
+        ).data or []
+
+        def _eng(s: dict) -> int:
+            return (
+                (s.get("view_count") or 0) * 1
+                + (s.get("like_count") or 0) * 5
+                + (s.get("comment_count") or 0) * 10
+                + (s.get("goods_click_count") or 0) * 3
+            )
+
+        top_snaps = sorted(
+            [r for r in snap_rows if _eng(r.get("snaps") or {}) >= 100],
+            key=lambda r: _eng(r.get("snaps") or {}),
+            reverse=True,
+        )[:20]
+
+        if not top_snaps:
+            return []
+
+        musinsa_nos = list({r["musinsa_no"] for r in top_snaps if r.get("musinsa_no")})
+        if not musinsa_nos:
+            return []
+
+        # 랭킹 전후 조회 (수집일 -3일 ~ 오늘)
+        date_from = since - timedelta(days=3)
+        rank_rows = (
+            db.table("ranking_snapshots")
+            .select("musinsa_no, snapshot_date, rank_position")
+            .in_("musinsa_no", musinsa_nos[:200])
+            .gte("snapshot_date", date_from.isoformat())
+            .lte("snapshot_date", yesterday.isoformat())
+            .eq("category_code", "000")
+            .eq("gender_filter", "A")
+            .limit(2000)
+            .execute()
+        ).data or []
+
+        from collections import defaultdict
+        rank_by_no: dict = defaultdict(dict)
+        for row in rank_rows:
+            d = date.fromisoformat(row["snapshot_date"])
+            rank_by_no[row["musinsa_no"]][d] = row["rank_position"]
+
+        results = []
+        seen: set = set()
+        for r in top_snaps:
+            mno  = r.get("musinsa_no")
+            snap = r.get("snaps") or {}
+            p    = r.get("products") or {}
+            if not mno or mno in seen:
+                continue
+            seen.add(mno)
+
+            col_str = snap.get("collected_at", "")
+            if not col_str:
+                continue
+            col_dt = date.fromisoformat(str(col_str)[:10])
+            ranks  = rank_by_no.get(mno, {})
+            eng    = _eng(snap)
+
+            before_rank = None
+            for offset in range(1, 4):
+                d = col_dt - timedelta(days=offset)
+                if d in ranks:
+                    before_rank = ranks[d]
+                    break
+
+            after_rank = None
+            for offset in range(1, 4):
+                d = col_dt + timedelta(days=offset)
+                if d in ranks:
+                    r2 = ranks[d]
+                    if after_rank is None or r2 < after_rank:
+                        after_rank = r2
+
+            rank_delta = (before_rank - after_rank) if (before_rank and after_rank) else None
+
+            results.append({
+                "snap_id":        snap.get("snap_id"),
+                "collected_at":   col_str[:10],
+                "engagement":     eng,
+                "view_count":     snap.get("view_count", 0),
+                "like_count":     snap.get("like_count", 0),
+                "goods_click":    snap.get("goods_click_count", 0),
+                "musinsa_no":     mno,
+                "product_name":   p.get("name", ""),
+                "is_own":         p.get("is_own", False),
+                "rank_before":    before_rank,
+                "rank_after":     after_rank,
+                "rank_delta":     rank_delta,
+            })
+
+        return sorted(results, key=lambda x: abs(x.get("rank_delta") or 0), reverse=True)[:10]
+    except Exception as e:
+        logger.warning("snap_effectiveness_failed", error=str(e))
+        return []
+
+
+def fetch_promo_effectiveness(db: Client, target_date: date) -> list[dict]:
+    """
+    최근 14일 프로모션 → 연결 상품의 랭킹·리뷰 변화.
+    프로모션 타입별 효과 비교 포함.
+    """
+    since     = _prev(target_date, 14)
+    yesterday = _prev(target_date, 1)
+    try:
+        item_rows = (
+            db.table("promotion_items")
+            .select(
+                "musinsa_no, product_id, product_name, musinsa_brand_slug, "
+                "discount_rate, snapshot_date, "
+                "promotions!inner(id, title, promotion_type)"
+            )
+            .gte("snapshot_date", since.isoformat())
+            .limit(500)
+            .execute()
+        ).data or []
+
+        if not item_rows:
+            return []
+
+        musinsa_nos = list({r["musinsa_no"] for r in item_rows if r.get("musinsa_no")})
+
+        rank_rows = (
+            db.table("ranking_snapshots")
+            .select("musinsa_no, snapshot_date, rank_position, review_count")
+            .in_("musinsa_no", musinsa_nos[:200])
+            .gte("snapshot_date", (since - timedelta(days=3)).isoformat())
+            .lte("snapshot_date", yesterday.isoformat())
+            .eq("category_code", "000")
+            .eq("gender_filter", "A")
+            .limit(3000)
+            .execute()
+        ).data or []
+
+        from collections import defaultdict
+        rank_by_no: dict = defaultdict(dict)
+        for row in rank_rows:
+            d = date.fromisoformat(row["snapshot_date"])
+            rank_by_no[row["musinsa_no"]][d] = (
+                row["rank_position"],
+                row.get("review_count") or 0,
+            )
+
+        results = []
+        seen: set = set()
+        for item in item_rows:
+            mno   = item.get("musinsa_no")
+            promo = item.get("promotions") or {}
+            key   = (mno, str(promo.get("id")))
+            if not mno or key in seen:
+                continue
+            seen.add(key)
+
+            promo_d = date.fromisoformat(item["snapshot_date"])
+            ranks   = rank_by_no.get(mno, {})
+
+            before_rank, before_reviews = 9999, 0
+            for offset in range(1, 4):
+                d = promo_d - timedelta(days=offset)
+                if d in ranks:
+                    before_rank, before_reviews = ranks[d]
+                    break
+
+            after_rank, after_reviews = None, 0
+            for offset in range(1, 6):
+                d = promo_d + timedelta(days=offset)
+                if d in ranks:
+                    r2, rev = ranks[d]
+                    if after_rank is None or r2 < after_rank:
+                        after_rank, after_reviews = r2, rev
+
+            if after_rank is None:
+                continue
+
+            rank_delta   = (before_rank - after_rank) if before_rank < 9999 else None
+            review_delta = after_reviews - before_reviews
+
+            results.append({
+                "promo_title":     promo.get("title", ""),
+                "promo_type":      promo.get("promotion_type", ""),
+                "promo_date":      item["snapshot_date"],
+                "discount_rate":   float(item.get("discount_rate") or 0),
+                "musinsa_no":      mno,
+                "product_name":    item.get("product_name", ""),
+                "brand_slug":      item.get("musinsa_brand_slug", ""),
+                "rank_before":     before_rank if before_rank < 9999 else None,
+                "rank_after":      after_rank,
+                "rank_delta":      rank_delta,
+                "review_before":   before_reviews,
+                "review_after":    after_reviews,
+                "review_delta":    review_delta,
+            })
+
+        return sorted(results, key=lambda x: abs(x.get("rank_delta") or 0), reverse=True)[:10]
+    except Exception as e:
+        logger.warning("promo_effectiveness_failed", error=str(e))
+        return []
+
+
+def fetch_magazine_effectiveness(db: Client, target_date: date) -> list[dict]:
+    """
+    최근 7일 매거진 기사 → 연결 상품의 랭킹 변화.
+    조회수 높은 기사 우선.
+    """
+    since     = _prev(target_date, 7)
+    yesterday = _prev(target_date, 1)
+    try:
+        art_rows = (
+            db.table("magazine_article_products")
+            .select(
+                "musinsa_no, product_id, "
+                "products(name, is_own), "
+                "magazine_articles!inner(id, title, view_count, published_at)"
+            )
+            .gte("magazine_articles.published_at", since.isoformat())
+            .limit(500)
+            .execute()
+        ).data or []
+
+        if not art_rows:
+            return []
+
+        musinsa_nos = list({r["musinsa_no"] for r in art_rows if r.get("musinsa_no")})
+
+        rank_rows = (
+            db.table("ranking_snapshots")
+            .select("musinsa_no, snapshot_date, rank_position")
+            .in_("musinsa_no", musinsa_nos[:200])
+            .gte("snapshot_date", (since - timedelta(days=3)).isoformat())
+            .lte("snapshot_date", yesterday.isoformat())
+            .eq("category_code", "000")
+            .eq("gender_filter", "A")
+            .limit(3000)
+            .execute()
+        ).data or []
+
+        from collections import defaultdict
+        rank_by_no: dict = defaultdict(dict)
+        for row in rank_rows:
+            d = date.fromisoformat(row["snapshot_date"])
+            rank_by_no[row["musinsa_no"]][d] = row["rank_position"]
+
+        results = []
+        seen: set = set()
+        for r in art_rows:
+            mno = r.get("musinsa_no")
+            art = r.get("magazine_articles") or {}
+            p   = r.get("products") or {}
+            pub_str = art.get("published_at", "")
+            key = (mno, art.get("id"))
+            if not mno or not pub_str or key in seen:
+                continue
+            seen.add(key)
+
+            pub_dt = date.fromisoformat(pub_str[:10])
+            ranks  = rank_by_no.get(mno, {})
+
+            before_rank = None
+            for offset in range(1, 4):
+                d = pub_dt - timedelta(days=offset)
+                if d in ranks:
+                    before_rank = ranks[d]
+                    break
+
+            after_rank = None
+            for offset in range(1, 4):
+                d = pub_dt + timedelta(days=offset)
+                if d in ranks:
+                    r2 = ranks[d]
+                    if after_rank is None or r2 < after_rank:
+                        after_rank = r2
+
+            if after_rank is None:
+                continue
+
+            rank_delta = (before_rank - after_rank) if before_rank else None
+
+            results.append({
+                "article_title":  art.get("title", ""),
+                "published_at":   pub_str[:10],
+                "view_count":     art.get("view_count", 0),
+                "musinsa_no":     mno,
+                "product_name":   p.get("name", ""),
+                "is_own":         p.get("is_own", False),
+                "rank_before":    before_rank,
+                "rank_after":     after_rank,
+                "rank_delta":     rank_delta,
+            })
+
+        return sorted(results, key=lambda x: abs(x.get("rank_delta") or 0), reverse=True)[:10]
+    except Exception as e:
+        logger.warning("magazine_effectiveness_failed", error=str(e))
+        return []
+
+
 # ── 공통: weekday 한국어 변환 ─────────────────────────────────────────────────
 
 WEEKDAY_KO: dict[str, str] = {
@@ -901,6 +1219,10 @@ def collect_staff_inputs(db: Client, target_date: date) -> dict:
         "competitor_brand_movers":       fetch_competitor_brand_significant_movers(db, target_date),
         "active_promotions":             fetch_active_promotions(db, target_date, own_slugs),
         "anomalies_all":                 fetch_anomalies_combined(db, target_date),
+        # 콘텐츠 효과 분석 (스냅·프로모션·매거진 → 랭킹 변화)
+        "snap_effectiveness":      fetch_snap_effectiveness(db, target_date),
+        "promo_effectiveness":     fetch_promo_effectiveness(db, target_date),
+        "magazine_effectiveness":  fetch_magazine_effectiveness(db, target_date),
     }
 
 

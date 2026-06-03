@@ -1,7 +1,8 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchCompanyList, type CompanyListRow } from '@/lib/queries';
+import { supabaseBrowser } from '@/lib/supabase/client';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
 
@@ -29,12 +30,32 @@ export default function MobileCompaniesView() {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('revenue');
   const [listedOnly, setListedOnly] = useState(false);
+  // 브랜드명으로 검색 시 매칭되는 company_id 집합
+  const [brandMatchIds, setBrandMatchIds] = useState<Set<string>>(new Set());
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fetchCompanyList()
       .then(data => { setRows(data); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  // 검색어 변경 시 brands 테이블에서 회사 ID 조회 (top_brands 3개 한계 우회)
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    const q = search.trim();
+    if (!q) { setBrandMatchIds(new Set()); return; }
+    timerRef.current = setTimeout(() => {
+      supabaseBrowser()
+        .from('brands')
+        .select('company_id')
+        .ilike('name', `%${q}%`)
+        .not('company_id', 'is', null)
+        .then(({ data }) => {
+          setBrandMatchIds(new Set((data ?? []).map((r: any) => r.company_id as string)));
+        });
+    }, 250);
+  }, [search]);
 
   const filtered = useMemo(() => {
     let list = rows;
@@ -43,7 +64,8 @@ export default function MobileCompaniesView() {
       const q = search.toLowerCase();
       list = list.filter(r =>
         r.corp_name.toLowerCase().includes(q) ||
-        r.top_brands.some(b => b.toLowerCase().includes(q))
+        r.top_brands.some(b => b.toLowerCase().includes(q)) ||
+        brandMatchIds.has(r.id)
       );
     }
     return [...list].sort((a, b) => {
@@ -51,7 +73,7 @@ export default function MobileCompaniesView() {
       if (sortKey === 'op_margin')   return (b.op_margin ?? -Infinity) - (a.op_margin ?? -Infinity);
       return b.brand_count - a.brand_count;
     });
-  }, [rows, search, sortKey, listedOnly]);
+  }, [rows, search, sortKey, listedOnly, brandMatchIds]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>

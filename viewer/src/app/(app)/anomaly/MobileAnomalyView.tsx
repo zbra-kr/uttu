@@ -81,7 +81,7 @@ export default function MobileAnomalyView() {
       .gte('detection_date', from)
       .lte('detection_date', today)
       .order('detected_at', { ascending: false })
-      .limit(300)
+      .limit(1000)
       .then(({ data, error }) => {
         if (!error && data) {
           setRows(data.map((r: any) => ({ ...r, sev: sevKey(r.severity) })));

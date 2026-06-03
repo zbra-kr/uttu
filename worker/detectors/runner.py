@@ -19,8 +19,10 @@ from worker.detectors.base import Anomaly, save_anomalies, supabase_client
 from worker.detectors.bookmark_detector import detect_bookmark_changes
 from worker.detectors.brand_ranking_detector import detect_brand_ranking
 from worker.detectors.magazine_boost_detector import detect_magazine_boost
+from worker.detectors.promo_effectiveness_detector import detect_promo_effectiveness
 from worker.detectors.ranking_detector import detect_promo_anomalies, detect_promo_discount, detect_ranking
 from worker.detectors.review_detector import detect_review
+from worker.detectors.snap_boost_detector import detect_snap_boost
 from worker.notifications.enqueue import enqueue_for_subscribers
 
 _ANOMALY_LABELS: dict[str, str] = {
@@ -38,6 +40,11 @@ _ANOMALY_LABELS: dict[str, str] = {
     "promo_heavy_discount":  "프로모션 대폭 할인",
     "promo_item_count_drop": "프로모션 상품 급감",
     "promo_own_exit":        "자사 프로모션 이탈",
+    "promo_rank_boost":      "프로모션 후 순위 급등",
+    "promo_review_surge":    "프로모션 후 리뷰 급증",
+    # 스냅
+    "snap_rank_boost":       "스냅 등장 후 순위 급등",
+    "snap_rank_new_entry":   "스냅 등장 후 랭킹 신규 진입",
     # 브랜드 랭킹
     "brand_rank_drop_own":         "자사 브랜드 순위 하락",
     "brand_rank_spike_competitor": "경쟁 브랜드 순위 급등",
@@ -102,9 +109,18 @@ def run(target_date: date) -> None:
     # 상품기획 — 브랜드 랭킹
     all_anomalies.extend(detect_brand_ranking(client, target_date))
 
-    # 상품기획 — 프로모션
+    # 상품기획 — 프로모션 (패턴 탐지)
     all_anomalies.extend(detect_promo_discount(client, target_date))
     all_anomalies.extend(detect_promo_anomalies(client, target_date))
+
+    # 콘텐츠 효과 — 매거진 피처링 → 순위 급등
+    all_anomalies.extend(detect_magazine_boost(client, target_date))
+
+    # 콘텐츠 효과 — 스냅 고참여 → 순위 급등
+    all_anomalies.extend(detect_snap_boost(client, target_date))
+
+    # 콘텐츠 효과 — 프로모션 실행 → 순위/리뷰 변화
+    all_anomalies.extend(detect_promo_effectiveness(client, target_date))
 
     # CS — 리뷰
     all_anomalies.extend(detect_review(client, target_date))
@@ -114,9 +130,6 @@ def run(target_date: date) -> None:
 
     _enqueue_anomalies(all_anomalies, target_date)
     logger.info(f"enqueue_done date={target_date} high={sum(1 for a in all_anomalies if a.severity=='high')} med={sum(1 for a in all_anomalies if a.severity=='medium')}")
-
-    # 매거진 피처링 → 순위 급등
-    all_anomalies.extend(detect_magazine_boost(client, target_date))
 
     # 북마크 기반 랭킹 변동 알림
     try:
