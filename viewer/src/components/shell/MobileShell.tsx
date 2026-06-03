@@ -97,6 +97,25 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
     });
   }, []);
 
+  /* enable window scroll for iOS tap-to-top */
+  React.useEffect(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    const prev = {
+      bodyH:  body.style.height,
+      bodyOX: body.style.overflowX,
+      htmlH:  html.style.height,
+    };
+    body.style.height    = 'auto';
+    body.style.overflowX = 'visible'; // outer div clips horizontal; body must not be a scroll container
+    html.style.height    = 'auto';
+    return () => {
+      body.style.height    = prev.bodyH;
+      body.style.overflowX = prev.bodyOX;
+      html.style.height    = prev.htmlH;
+    };
+  }, []);
+
   /* close drawer on route change */
   React.useEffect(() => { setDrawerOpen(false); }, [pathname]);
 
