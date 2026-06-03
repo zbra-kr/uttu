@@ -23,8 +23,8 @@ bash "$ROOT/scripts/run_recommend.sh"     > "$LOG_DIR/recommend_${DATE}.log"    
 bash "$ROOT/scripts/run_full_collection.sh" > "$LOG_DIR/full_collection_${DATE}.log" 2>&1 &
 
 # ── 2.5단계: 리뷰 스마트 수집 (전체 자사 상품, 증분) ────────────────────
-# SKIP_REVIEWS_SMART — force-full 전수조사 완료 후 자동 복구 예정
-# bash "$ROOT/scripts/run_reviews.sh" --smart  > "$LOG_DIR/reviews_${DATE}.log"        2>&1 &
+
+bash "$ROOT/scripts/run_reviews.sh" --smart  > "$LOG_DIR/reviews_${DATE}.log"        2>&1 &
 
 # ── 3단계: 모니터 (완료 감지 + 이상탐지 + 리뷰 + 텔레그램) ──────────────
 "$PYTHON" -u "$ROOT/scripts/collection_monitor.py" >> "$LOG_DIR/monitor_${DATE}.log" 2>&1
