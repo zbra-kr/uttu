@@ -97,44 +97,22 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
     });
   }, []);
 
-  /* enable window scroll for iOS tap-to-top
-   *
-   * CSS (app.css) sets:
-   *   html, body { height: 100% }      → fixed 100vh, content can't grow
-   *   body { overflow-x: hidden }      → forces overflow-y: auto on body
-   *                                       → body becomes scroll container
-   *                                       → window.scrollY stays 0 always
-   *
-   * Fix:
-   *   html { overflow-x: hidden }      → html is root = viewport scroll container
-   *                                       → window.scrollY works ✓
-   *                                       → iOS tap-to-top fires scrollTo(0,0) on window ✓
-   *   body { overflow: visible;        → body NOT a scroll container, propagates to html
-   *          height: auto }            → body can grow with content
-   *   html { height: auto }            → html can grow with content
-   */
+  const mainRef = React.useRef<HTMLElement>(null);
+
+  /* iOS tap-to-top: status bar tap fires touchstart at y < 20px on window.
+   * Since <main> is the scroll container (not window), we detect the touch
+   * and manually scroll main to top. */
   React.useEffect(() => {
-    const body = document.body;
-    const html = document.documentElement;
-    const prev = {
-      htmlH:  html.style.height,
-      htmlOX: html.style.overflowX,
-      bodyH:  body.style.height,
-      bodyOX: body.style.overflowX,
-      bodyOY: body.style.overflowY,
+    const handleTouchStart = (e: TouchEvent) => {
+      const main = mainRef.current;
+      if (!main || main.scrollTop === 0) return;
+      const touch = e.touches[0];
+      if (touch && touch.clientY < 20) {
+        main.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     };
-    html.style.height    = 'auto';
-    html.style.overflowX = 'hidden';   // horizontal clip on html (not body)
-    body.style.height    = 'auto';
-    body.style.overflowX = 'visible';  // body must NOT be a scroll container
-    body.style.overflowY = 'visible';
-    return () => {
-      html.style.height    = prev.htmlH;
-      html.style.overflowX = prev.htmlOX;
-      body.style.height    = prev.bodyH;
-      body.style.overflowX = prev.bodyOX;
-      body.style.overflowY = prev.bodyOY;
-    };
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    return () => window.removeEventListener('touchstart', handleTouchStart);
   }, []);
 
   /* close drawer on route change */
@@ -143,7 +121,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
   const toggleAip = () => setAipOpen(o => !o);
 
   return (
-    <div style={{ position: 'relative', minHeight: '100dvh', width: '100%', maxWidth: '100vw', background: 'var(--bg)' }}>
+    <div style={{ position: 'relative', height: '100dvh', width: '100vw', maxWidth: '100vw', display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
 
       {/* ── Header (52px sticky) ── */}
       <header style={{
@@ -232,12 +210,14 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
       </header>
 
       {/* ── Main content ── */}
-      <main style={{
+      <main ref={mainRef} style={{
+        flex: 1, overflowY: 'auto', overflowX: 'hidden',
         width: '100%', maxWidth: '100%', minWidth: 0,
         paddingTop: 52, paddingBottom: 20,
         background: 'var(--bg)',
         backgroundImage: 'radial-gradient(circle, var(--bs) 0.8px, transparent 0.8px)',
         backgroundSize: '14px 14px',
+        WebkitOverflowScrolling: 'touch',
       }}>
         {children}
       </main>
