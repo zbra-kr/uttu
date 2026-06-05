@@ -29,7 +29,7 @@ function InsightChart({ chart }: { chart: NonNullable<InsightPage['chart']> }) {
         {chart.type === 'bar' ? (
           <BarChart data={data} margin={CM}>
             <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--f4)' }} />
-            <YAxis tick={{ fontSize: 9, fill: 'var(--f4)' }} />
+            <YAxis tick={{ fontSize: 9, fill: 'var(--f4)' }} reversed={chart.reversed} />
             <Tooltip contentStyle={{ background: 'var(--sur)', border: '1px solid var(--bd)', fontSize: 12 }} />
             {chart.series.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
             {chart.series.map((s, i) => (
@@ -39,7 +39,7 @@ function InsightChart({ chart }: { chart: NonNullable<InsightPage['chart']> }) {
         ) : (
           <LineChart data={data} margin={CM}>
             <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--f4)' }} />
-            <YAxis tick={{ fontSize: 9, fill: 'var(--f4)' }} />
+            <YAxis tick={{ fontSize: 9, fill: 'var(--f4)' }} reversed={chart.reversed} />
             <Tooltip contentStyle={{ background: 'var(--sur)', border: '1px solid var(--bd)', fontSize: 12 }} />
             {chart.series.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
             {chart.series.map((s, i) => (

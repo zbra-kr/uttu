@@ -31,7 +31,7 @@ export const Line = ({ h = 180, series, yMin, yMax, style = {}, dots = true, acc
     series.forEach((s, si) => { row[`s${si}`] = s.points[i] ?? null; });
     return row;
   });
-  const domain: [number | string, number | string] = reversed ? [domainMax, domainMin] : [domainMin, domainMax];
+  const domain: [number | string, number | string] = [domainMin, domainMax];
   return (
     <div style={{ width: '100%', height: h, ...style }}>
       <ResponsiveContainer width="100%" height="100%">

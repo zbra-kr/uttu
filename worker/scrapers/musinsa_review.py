@@ -109,7 +109,7 @@ class ReviewScraper(BaseScraper):
             async with httpx.AsyncClient(timeout=30) as http:
                 resp = await http.get(
                     REVIEW_URL,
-                    params={"goodsNo": musinsa_no, "page": page, "pageSize": PAGE_SIZE},
+                    params={"goodsNo": musinsa_no, "page": page, "pageSize": PAGE_SIZE, "sort": "recent"},
                     headers={
                         **self.DEFAULT_HEADERS,
                         "Referer": f"https://www.musinsa.com/products/{musinsa_no}",

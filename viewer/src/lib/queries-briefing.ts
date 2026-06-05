@@ -18,6 +18,7 @@ export interface InsightChart {
   title: string;
   x_labels: string[];
   series: { name: string; values: number[] }[];
+  reversed?: boolean;
 }
 
 export interface InsightPage {
