@@ -291,6 +291,38 @@ _SYSTEM_PROMPTS: dict[str, str] = {
     "cs":        _SYSTEM_CS,
 }
 
+# ── 인사이트 상세 페이지 생성 시스템 프롬프트 ────────────────────────────────────
+
+_SYSTEM_INSIGHT_PAGE = """당신은 B.CAVE 인텔리전스 시스템의 인사이트 상세 페이지를 작성하는 데이터 저널리스트다.
+
+## 역할
+브리핑의 인사이트 한 줄 요약을 받아, 배경 데이터를 근거로 신문 기사 형식의 심층 분석 페이지를 생성한다.
+
+## 출력 형식 — JSON 외 절대 금지
+
+{
+  "article": "300~500자 분석 기사. 단락 구분은 \\n\\n. 첫 단락은 핵심 팩트, 이후 배경·맥락·시사점 순. 숫자는 데이터에 있는 것만 사용.",
+  "key_metrics": [
+    {"label": "지표명 (8자 이내)", "value": "값 (단위 포함)", "change": "+5위 또는 생략 가능"},
+    {"label": "...", "value": "...", "change": "..."}
+  ],
+  "chart": {
+    "type": "bar",
+    "title": "차트 제목 (20자 이내)",
+    "x_labels": ["레이블1", "레이블2"],
+    "series": [{"name": "시리즈명", "values": [숫자1, 숫자2]}]
+  }
+}
+
+## 규칙
+- article은 반드시 입력 데이터에 있는 사실만 서술. 없는 수치 생성 금지
+- key_metrics는 2~4개. 인사이트에서 가장 중요한 숫자들
+- chart는 데이터가 있을 때만 생성. 없으면 null
+- chart type: "bar"(비교), "line"(추이) 중 택1
+- x_labels와 series[].values 길이 반드시 일치
+- 데이터가 희박하면 article만 작성하고 chart는 null로
+- 출력 JSON 외 다른 텍스트 절대 포함 금지"""
+
 
 # ── 사용자 메시지 포맷 (audience별 분리) ──────────────────────────────────────
 
@@ -458,6 +490,69 @@ async def generate_briefing(
     }
 
 
+# ── 인사이트 상세 페이지 생성 ─────────────────────────────────────────────────
+
+async def generate_insight_page(
+    idx: int,
+    insight: dict,
+    inputs: dict,
+    audience: str,
+    client: anthropic.AsyncAnthropic,
+) -> dict:
+    """단일 인사이트에 대한 상세 페이지 생성."""
+    user_msg = (
+        f"## 인사이트 ({audience}, #{idx + 1})\n"
+        f"제목: {insight.get('title', '')}\n"
+        f"요약: {insight.get('body', '')}\n"
+        f"링크: {insight.get('link', '')}\n\n"
+        f"## 배경 데이터\n{_j(inputs)}"
+    )
+    try:
+        resp = await client.messages.create(
+            model=MODEL,
+            max_tokens=1500,
+            system=_SYSTEM_INSIGHT_PAGE,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        parsed = _extract_json_dict(resp.content[0].text)
+        return {
+            "idx":         idx,
+            "title":       insight.get("title", ""),
+            "body":        insight.get("body", ""),
+            "link":        insight.get("link", ""),
+            "article":     parsed.get("article", ""),
+            "key_metrics": parsed.get("key_metrics") or [],
+            "chart":       parsed.get("chart"),
+        }
+    except Exception as e:
+        logger.warning("insight_page_failed", idx=idx, audience=audience, error=str(e))
+        return {
+            "idx":         idx,
+            "title":       insight.get("title", ""),
+            "body":        insight.get("body", ""),
+            "link":        insight.get("link", ""),
+            "article":     insight.get("body", ""),
+            "key_metrics": [],
+            "chart":       None,
+        }
+
+
+async def generate_insight_pages(
+    result: dict,
+    inputs: dict,
+    client: anthropic.AsyncAnthropic,
+) -> list[dict]:
+    """브리핑 결과의 모든 인사이트에 대해 상세 페이지를 병렬 생성."""
+    insights = result.get("insights") or []
+    audience = result["audience"]
+    tasks = [
+        generate_insight_page(i, ins, inputs, audience, client)
+        for i, ins in enumerate(insights)
+    ]
+    pages = await asyncio.gather(*tasks)
+    return list(pages)
+
+
 # ── DB 적재 ───────────────────────────────────────────────────────────────────
 
 def _upsert_briefing(db, result: dict, briefing_date: date) -> None:
@@ -557,6 +652,7 @@ async def run(
     # 4. upsert 성공한 것만
     success_count = 0
     error_msgs: list[str] = []
+    upserted_results: list[dict] = []
 
     for r in results:
         if isinstance(r, Exception):
@@ -566,6 +662,7 @@ async def run(
         try:
             _upsert_briefing(db, r, target_date)
             success_count += 1
+            upserted_results.append(r)
             logger.info(
                 "briefing_upserted",
                 audience=r["audience"],
@@ -577,6 +674,32 @@ async def run(
         except Exception as e:
             error_msgs.append(f"upsert/{r['audience']}: {e}")
             logger.error("briefing_upsert_failed", audience=r["audience"], error=str(e))
+
+    # 4-1. 인사이트 상세 페이지 생성 (upsert 성공한 것만, 병렬)
+    if upserted_results and not dry_run:
+        logger.info("insight_pages_start", count=len(upserted_results))
+        page_tasks = [
+            generate_insight_pages(r, inputs_map[r["audience"]], anth)
+            for r in upserted_results
+        ]
+        all_pages = await asyncio.gather(*page_tasks, return_exceptions=True)
+        for r, pages in zip(upserted_results, all_pages):
+            if isinstance(pages, Exception):
+                logger.warning("insight_pages_failed", audience=r["audience"], error=str(pages))
+                continue
+            try:
+                db.table("daily_briefings").update(
+                    {"insight_pages": pages}
+                ).eq("briefing_date", target_date.isoformat()).eq(
+                    "audience", r["audience"]
+                ).execute()
+                logger.info(
+                    "insight_pages_saved",
+                    audience=r["audience"],
+                    count=len(pages),
+                )
+            except Exception as e:
+                logger.warning("insight_pages_save_failed", audience=r["audience"], error=str(e))
 
     # 5. collection_jobs 상태 업데이트
     if tracker.job_id is not None:

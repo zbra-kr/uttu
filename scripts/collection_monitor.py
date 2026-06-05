@@ -107,6 +107,13 @@ while True:
                         tg("✅ 이상탐지 완료", saved_line.split(" - ")[-1] if saved_line else "")
                     notified.add("detect")
 
+    # ── full_collection 6시간 타임아웃 — product_detail 장기화 대비 ───────────
+    if "full_collection" not in notified:
+        fc_elapsed = int((now - start_time) / 60)
+        if fc_elapsed >= 360:  # 6시간
+            tg("⏰ full_collection 타임아웃 (6h) — 강제 통과", f"경과 {fc_elapsed}분")
+            notified.add("full_collection")
+
     # ── detect + full_collection + reviews 완료 → 뉴스·브리핑 순차 실행 ────────
     if {"detect", "full_collection", "reviews"} <= notified and "news" not in notified:
 

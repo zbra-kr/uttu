@@ -7,7 +7,6 @@ import MobileBriefingHeadline from './MobileBriefingHeadline';
 import MobileBriefingCard from './MobileBriefingCard';
 import MobileBriefingInsight from './MobileBriefingInsight';
 import MobileNewsPickList from './MobileNewsPickList';
-import MobileCsReviewSheet, { type CsReviewFilter } from './MobileCsReviewSheet';
 
 type AudienceKey = 'executive' | 'staff' | 'cs';
 
@@ -65,58 +64,37 @@ function EmptyState({ date, future }: { date: string; future?: boolean }) {
   );
 }
 
-const CS_REVIEW_FILTERS: Record<string, CsReviewFilter> = {
-  today_reviews: 'today',
-  low_pattern:   'low',
-  high_pattern:  'high',
-};
-
 /* ── 단일 audience 뷰 ── */
 function BriefingContent({ briefing, audience }: { briefing: Briefing; audience: AudienceKey }) {
   const comments = briefing.card_comments ?? {};
   const cards = CARDS_BY_AUDIENCE[audience];
-  const [reviewSheet, setReviewSheet] = React.useState<CsReviewFilter | null>(null);
 
   return (
-    <>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <MobileBriefingHeadline briefing={briefing} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <MobileBriefingHeadline briefing={briefing} />
 
-        {cards
-          .filter(c => !!comments[c.key])
-          .map(({ key, icon, title, href }) => {
-            const csFilter = audience === 'cs' ? CS_REVIEW_FILTERS[key] : undefined;
-            return (
-              <MobileBriefingCard
-                key={key}
-                icon={icon}
-                title={title}
-                comment={comments[key]}
-                href={href}
-                onClick={csFilter ? () => setReviewSheet(csFilter) : undefined}
-              />
-            );
-          })
-        }
+      {cards
+        .filter(c => !!comments[c.key])
+        .map(({ key, icon, title, href }) => (
+          <MobileBriefingCard
+            key={key}
+            icon={icon}
+            title={title}
+            comment={comments[key]}
+            href={href}
+          />
+        ))
+      }
 
-        {/* executive/staff: 뉴스픽 표시 (CS는 자체 카드에서 처리) */}
-        {audience !== 'cs' && briefing.news_picks && briefing.news_picks.length > 0 && (
-          <MobileNewsPickList picks={briefing.news_picks} />
-        )}
-
-        {briefing.insights && briefing.insights.length > 0 && (
-          <MobileBriefingInsight insights={briefing.insights} />
-        )}
-      </div>
-
-      {reviewSheet && (
-        <MobileCsReviewSheet
-          filter={reviewSheet}
-          briefingDate={briefing.briefing_date}
-          onClose={() => setReviewSheet(null)}
-        />
+      {/* executive/staff: 뉴스픽 표시 (CS는 자체 카드에서 처리) */}
+      {audience !== 'cs' && briefing.news_picks && briefing.news_picks.length > 0 && (
+        <MobileNewsPickList picks={briefing.news_picks} />
       )}
-    </>
+
+      {briefing.insights && briefing.insights.length > 0 && (
+        <MobileBriefingInsight insights={briefing.insights} briefingDate={briefing.briefing_date} audience={audience} />
+      )}
+    </div>
   );
 }
 

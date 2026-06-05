@@ -31,26 +31,15 @@ export default function MobileBriefingCard({ icon, title, comment, href, onClick
           {comment}
         </p>
       </div>
-      <span style={{
-        fontSize: 13, color: 'var(--f4)', flexShrink: 0, marginTop: 1,
-        fontFamily: 'var(--mono)',
-      }}>→</span>
+      <span style={{ fontSize: 13, color: 'var(--f4)', flexShrink: 0, marginTop: 1, fontFamily: 'var(--mono)' }}>→</span>
     </>
   );
 
   const sharedStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 10,
-    padding: '12px 13px',
-    border: '1px solid var(--bd)',
-    borderRadius: 10,
-    textDecoration: 'none',
-    color: 'inherit',
-    background: 'var(--sur)',
-    opacity: pressed ? 0.7 : 1,
-    transition: 'opacity 0.1s',
-    cursor: 'pointer',
+    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 13px',
+    border: '1px solid var(--bd)', borderRadius: 10, textDecoration: 'none',
+    color: 'inherit', background: 'var(--sur)',
+    opacity: pressed ? 0.7 : 1, transition: 'opacity 0.1s', cursor: 'pointer',
   };
 
   const pointerProps = {
@@ -61,16 +50,8 @@ export default function MobileBriefingCard({ icon, title, comment, href, onClick
   };
 
   if (onClick) {
-    return (
-      <div style={sharedStyle} onClick={onClick} {...pointerProps}>
-        {inner}
-      </div>
-    );
+    return <div style={sharedStyle} onClick={onClick} {...pointerProps}>{inner}</div>;
   }
 
-  return (
-    <Link href={href} style={sharedStyle} {...pointerProps}>
-      {inner}
-    </Link>
-  );
+  return <Link href={href} style={sharedStyle} {...pointerProps}>{inner}</Link>;
 }

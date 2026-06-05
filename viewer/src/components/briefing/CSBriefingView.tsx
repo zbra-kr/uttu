@@ -41,7 +41,7 @@ export default function CSBriefingView({ briefing }: Props) {
       </div>
 
       {briefing.insights && briefing.insights.length > 0 && (
-        <BriefingInsight insights={briefing.insights} />
+        <BriefingInsight insights={briefing.insights} briefingDate={briefing.briefing_date} audience="cs" />
       )}
     </div>
   );

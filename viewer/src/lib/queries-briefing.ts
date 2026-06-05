@@ -7,6 +7,29 @@ export interface BriefingInsight {
   link?: string;
 }
 
+export interface InsightKeyMetric {
+  label: string;
+  value: string;
+  change?: string;
+}
+
+export interface InsightChart {
+  type: 'bar' | 'line';
+  title: string;
+  x_labels: string[];
+  series: { name: string; values: number[] }[];
+}
+
+export interface InsightPage {
+  idx: number;
+  title: string;
+  body: string;
+  link: string;
+  article: string;
+  key_metrics: InsightKeyMetric[];
+  chart: InsightChart | null;
+}
+
 export interface BriefingNewsPick {
   headline: string;
   summary: string;
@@ -23,6 +46,7 @@ export interface Briefing {
   weekly_brief?: string[];
   card_comments: Record<string, string>;
   insights: BriefingInsight[];
+  insight_pages?: InsightPage[];
   news_picks?: BriefingNewsPick[];
   generated_at: string;
   model: string;
@@ -72,7 +96,7 @@ export async function fetchAllBriefings(date?: string): Promise<AllBriefings> {
 
   const { data, error } = await sb
     .from('daily_briefings')
-    .select('briefing_date,audience,headline,daily_brief,weekly_brief,card_comments,insights,news_picks,generated_at,model')
+    .select('briefing_date,audience,headline,daily_brief,weekly_brief,card_comments,insights,insight_pages,news_picks,generated_at,model')
     .eq('briefing_date', target)
     .limit(3);
 
