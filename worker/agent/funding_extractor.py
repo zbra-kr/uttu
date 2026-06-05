@@ -1,5 +1,5 @@
 """
-UTTU 투자유치 정보 NLP 추출 (Ollama gemma4:e4b)
+UTTU 투자유치 정보 NLP 추출 (Claude Haiku)
 
 뉴스 기사 본문에서 투자유치/자금조달 라운드 정보를 추출한다.
 08-funding.md §5의 프롬프트를 그대로 사용.
@@ -10,12 +10,13 @@ UTTU 투자유치 정보 NLP 추출 (Ollama gemma4:e4b)
 """
 from __future__ import annotations
 
+import asyncio
 import json
-import os
 import re
 
-import httpx
 from loguru import logger
+
+from worker.agent.claude_client import extract_json, FUNDING_EXTRACT_MODEL
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 
@@ -28,7 +29,6 @@ _PROMPT_TEMPLATE = """\
 }} ] }}
 본문: \"\"\"{article}\"\"\""""
 
-_TIMEOUT_SEC = 120
 _MAX_ARTICLE_CHARS = 4000  # 너무 긴 기사는 잘라서 전달
 
 
@@ -39,41 +39,66 @@ def _build_prompt(article_text: str) -> str:
     return _PROMPT_TEMPLATE.format(article=truncated)
 
 
-def _parse_response(raw: str) -> list[dict]:
-    """Ollama 응답 텍스트에서 rounds 배열 추출."""
-    # 코드블록 마커 제거
-    text = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
-    # JSON 객체 추출
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    if not m:
-        logger.warning("funding_extractor_no_json", raw=raw[:200])
+def _parse_result(result: dict | list | None) -> list[dict]:
+    """extract_json 결과에서 rounds 배열 추출."""
+    if result is None:
         return []
-    try:
-        data = json.loads(m.group())
-        rounds = data.get("rounds", [])
-        if not isinstance(rounds, list):
-            return []
-        return rounds
-    except json.JSONDecodeError as e:
-        logger.warning("funding_extractor_json_error", error=str(e), raw=raw[:300])
-        return []
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict):
+        rounds = result.get("rounds", [])
+        if isinstance(rounds, list):
+            return rounds
+    return []
+
+
+def _normalize_company(s: str) -> str:
+    """
+    회사명 정규화: 법인 접두·접미어 제거, 소문자, 공백·특수문자 제거.
+    """
+    s = s.strip().lower()
+    for pat in ["주식회사", "㈜", "(주)", "유한회사", "유한책임회사",
+                " inc", " corp", " co.", " ltd", "."]:
+        s = s.replace(pat, "")
+    # 괄호 안 영문 제거: "(apr)" 등
+    s = re.sub(r"\([a-z0-9\s]+\)", "", s)
+    # 공백·특수문자 제거
+    s = re.sub(r"[\s\-_()+]+", "", s)
+    return s.strip()
 
 
 def _match_company(round_dict: dict, company_name: str) -> bool:
     """
     추출된 라운드의 company 필드가 검색한 회사와 일치하는지 검증.
-    엉뚱한 회사 기사 필터링.
+    엉뚱한 회사 기사 필터링 (precision-first).
+
+    Rules
+    -----
+    - company 필드 없으면 통과 (추출 실패 허용)
+    - 정규화 후 완전 일치 → True
+    - 양방향 부분 일치: 짧은 쪽이 긴 쪽에 포함되면 True
+      단, 짧은 쪽이 3자 미만이면 오탐 위험 → False
     """
     extracted_company = (round_dict.get("company") or "").strip()
     if not extracted_company:
         return True  # company 필드 없으면 통과 (추출 실패일 수 있음)
-    # 회사명 단순 포함 검사 (약칭 대응)
-    # e.g. "에이피알" in "주식회사 에이피알" → True
-    return (
-        company_name in extracted_company
-        or extracted_company in company_name
-        or extracted_company[:4] in company_name
-    )
+
+    a = _normalize_company(extracted_company)
+    t = _normalize_company(company_name)
+
+    if not a or not t:
+        return False
+
+    # 완전 일치
+    if a == t:
+        return True
+
+    # 양방향 부분 일치 — 짧은 쪽 ≥ 3자여야 오탐 방지
+    shorter, longer = (a, t) if len(a) <= len(t) else (t, a)
+    if len(shorter) >= 3 and shorter in longer:
+        return True
+
+    return False
 
 
 # ── 공개 함수 ───────────────────────────────────────────────────────────────────
@@ -101,32 +126,28 @@ async def extract_funding_rounds(
     if not article_text or not article_text.strip():
         return []
 
-    ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-    model = os.environ.get("OLLAMA_LLM_MODEL", "gemma4:e4b")
     prompt = _build_prompt(article_text)
 
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT_SEC) as client:
-            resp = await client.post(
-                f"{ollama_host}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "format": "json",
-                    "stream": False,
-                },
-            )
-            resp.raise_for_status()
-            payload = resp.json()
-            raw_text = payload.get("response", "")
-    except httpx.HTTPError as e:
-        logger.warning("funding_extractor_http_error", error=str(e))
-        return []
+    # extract_json 은 동기 함수이므로 asyncio.to_thread 사용
+    result = await asyncio.to_thread(
+        extract_json,
+        prompt,
+        "",  # system (JSON 지시는 claude_client 내부에서 추가)
+        FUNDING_EXTRACT_MODEL,
+        2048,
+    )
 
-    rounds_raw = _parse_response(raw_text)
+    rounds_raw = _parse_result(result)
 
     # 회사 매칭 검증 — 엉뚱한 회사 기사 필터링
     matched = [r for r in rounds_raw if _match_company(r, company_name)]
+    logger.info(
+        "funding_extractor_company_filter",
+        company=company_name,
+        extracted=len(rounds_raw),
+        matched=len(matched),
+        dropped=len(rounds_raw) - len(matched),
+    )
     if len(matched) < len(rounds_raw):
         logger.debug(
             "funding_extractor_filtered",
@@ -136,7 +157,7 @@ async def extract_funding_rounds(
         )
 
     # funding_rounds 테이블 형식으로 변환
-    result: list[dict] = []
+    result_list: list[dict] = []
     for r in matched:
         # announced_date: "null" 문자열 → None 처리
         raw_date = r.get("announced_date")
@@ -144,7 +165,7 @@ async def extract_funding_rounds(
         if raw_date and str(raw_date).strip().lower() not in ("null", "none", ""):
             announced_date = str(raw_date).strip()
 
-        result.append({
+        result_list.append({
             "round_type":      r.get("round_type"),
             "amount_krw":      _to_int(r.get("amount_krw")),
             "announced_date":  announced_date,
@@ -159,14 +180,24 @@ async def extract_funding_rounds(
     logger.debug(
         "funding_extractor_done",
         company=company_name,
-        rounds_found=len(result),
+        rounds_found=len(result_list),
         url=article_url[:60] if article_url else "",
     )
-    return result
+    return result_list
 
 
 def _to_int(val) -> int | None:
-    """다양한 형태의 금액 값을 정수(원)로 변환."""
+    """
+    다양한 형태의 금액 값을 정수(원)로 변환.
+
+    지원 형식:
+      - 순수 정수/실수: 1234, 3.14
+      - 조 단위: "1조", "1.5조"
+      - 억+만 복합: "557억1300만", "50억원", "100억"
+      - 만 단위: "5000만", "2000만원"
+      - 쉼표 포함 숫자: "50,000,000,000"
+      - None / "비공개" 등 → None
+    """
     if val is None:
         return None
     if isinstance(val, int):
@@ -174,15 +205,38 @@ def _to_int(val) -> int | None:
     if isinstance(val, float):
         return int(val)
     s = str(val).strip()
-    # "50억" → 50_0000_0000
-    if "억" in s:
-        m = re.match(r"([\d.]+)\s*억", s)
-        if m:
-            return int(float(m.group(1)) * 100_000_000)
+
+    # 조 단위 (억보다 먼저 검사) — 복합: "1조2천억", "1조2000억" 지원
     if "조" in s:
+        # 조 + 억 복합: "1조2천억" → "1조" + "2000억"
+        m_jo_eok = re.match(r"([\d.]+)\s*조\s*([\d,천백]+)?\s*억", s)
+        if m_jo_eok:
+            jo = float(m_jo_eok.group(1))
+            eok_str = m_jo_eok.group(2) or "0"
+            # "천" → 1000 처리
+            eok_str = eok_str.replace("천", "000").replace(",", "")
+            eok = float(eok_str)
+            return int(jo * 1_000_000_000_000 + eok * 100_000_000)
+        # 조 단독: "1조", "1.5조"
         m = re.match(r"([\d.]+)\s*조", s)
         if m:
             return int(float(m.group(1)) * 1_000_000_000_000)
+
+    # 억 단위 — 억+만 복합 표현 지원 ("557억1300만" → 55,713,000,000)
+    if "억" in s:
+        m = re.match(r"([\d.]+)\s*억\s*([\d]+)?\s*만?", s)
+        if m:
+            eok = float(m.group(1))
+            man = int(m.group(2)) if m.group(2) else 0
+            return int(eok * 100_000_000 + man * 10_000)
+
+    # 만 단위
+    if "만" in s:
+        m = re.match(r"([\d.]+)\s*만", s)
+        if m:
+            return int(float(m.group(1)) * 10_000)
+
+    # 숫자만 (쉼표·단위 문자 제거)
     cleaned = re.sub(r"[^\d]", "", s)
     if cleaned:
         return int(cleaned)

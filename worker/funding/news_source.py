@@ -1,122 +1,234 @@
 """
-UTTU 뉴스 기반 투자유치 정보 수집
+UTTU 뉴스 기반 투자유치 정보 수집 — Naver News API
 
-/today 기능의 news_collector.py 는 패션 뉴스 9개 쿼리 고정이라 재사용 불가.
-Anthropic web_search 도구를 직접 호출해 특정 회사의 투자유치 뉴스를 검색한다.
-추출은 worker/agent/funding_extractor.py (Ollama gemma4:e4b) 에 위임.
+Naver 뉴스 검색 API로 특정 회사의 투자유치 뉴스를 검색한다.
+추출은 worker/agent/funding_extractor.py (Claude Haiku) 에 위임.
+
+API: https://openapi.naver.com/v1/search/news.json
+인증: NAVER_CLIENT_ID, NAVER_CLIENT_SECRET (X-Naver-Client-Id, X-Naver-Client-Secret)
 """
 from __future__ import annotations
 
-import json
+import html
 import os
 import re
-from typing import Any
+import time
+import random
 
-import anthropic
+import httpx
 from loguru import logger
 
 from worker.agent.funding_extractor import extract_funding_rounds
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────────
 
-_MODEL = "claude-haiku-4-5-20251001"
-_SEARCH_LIMIT_PER_QUERY = 3  # 쿼리당 최대 기사 수
+_NAVER_SEARCH_URL = "https://openapi.naver.com/v1/search/news.json"
+_DISPLAY = 10          # 쿼리당 기사 수
+_BODY_FETCH_LIMIT = 5  # 본문 직접 fetch 최대 건수 (상위 5건만 직접 fetch)
+_MIN_DELAY_SEC = 1.0   # Naver API 요청 간 최소 딜레이
+_BODY_TIMEOUT_SEC = 8.0  # 본문 fetch 타임아웃 (기존 10초 → 8초로 단축)
 
-_SYSTEM_PROMPT = """\
-당신은 투자유치 뉴스 수집 도우미다.
-주어진 회사명으로 web_search를 실행하고, 투자유치·자금조달 관련 뉴스의 본문을 수집해
-아래 JSON 배열 형식으로만 응답하라. JSON 외 다른 텍스트 금지. 뉴스가 없으면 [].
-
-[
-  {
-    "headline": "기사 제목 (100자 이내)",
-    "body": "기사 본문 전체 또는 핵심 내용 (최대 2000자)",
-    "source_url": "https://...",
-    "published_at": "YYYY-MM-DD 또는 null"
-  }
-]
-
-규칙:
-- 투자유치·시리즈 라운드·유상증자·자금조달·상장(IPO)·크라우드펀딩 내용만 수집
-- 무관한 일반 사업 뉴스는 제외
-- source_url 없으면 null
-- 동일 기사는 1건만 (중복 제거)
-- 1쿼리당 최대 3건"""
+# 법인 접두·접미어 패턴 (core name 추출에 사용)
+_LEGAL_PREFIXES = re.compile(
+    r"^(?:주식회사|㈜|\(주\)|유한회사|유한책임회사|합자회사|합명회사)\s*",
+)
+_LEGAL_SUFFIXES = re.compile(
+    r"\s*(?:주식회사|㈜|\(주\)|유한회사|유한책임회사)$",
+)
+# 괄호 안 영문 사명 제거: "(COVERNAT)", "(CHILDY Co., Ltd.)" 등
+_PAREN_ENGLISH = re.compile(r"\s*\([A-Za-z0-9\s\.\-,]+\)\s*$")
 
 
 # ── 내부 헬퍼 ─────────────────────────────────────────────────────────────────────
 
-def _build_queries(corp_name: str) -> list[str]:
-    """회사명 기반 검색 쿼리 3종."""
-    return [
-        f"{corp_name} 투자유치 시리즈 라운드",
-        f"{corp_name} 유상증자 자금조달",
-        f"{corp_name} IPO 상장 크라우드펀딩",
-    ]
+def _core_name(corp_name: str) -> str:
+    """
+    법인 접두·접미어를 제거하여 핵심 사명만 반환.
+
+    Examples
+    --------
+    '주식회사 에스제이그룹' → '에스제이그룹'
+    '(주)커버낫'            → '커버낫'
+    '주식회사 차일디(CHILDY Co., Ltd.)' → '차일디'
+    """
+    name = corp_name.strip()
+    name = _LEGAL_PREFIXES.sub("", name)
+    name = _LEGAL_SUFFIXES.sub("", name)
+    name = _PAREN_ENGLISH.sub("", name)
+    return name.strip()
 
 
-def _extract_json(text: str) -> list[dict]:
-    """응답 텍스트에서 JSON 배열 추출. 파싱 실패 시 빈 리스트."""
-    text = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`").strip()
-    m = re.search(r"\[.*\]", text, re.DOTALL)
-    if not m:
+def _fetch_brand_names(company_id: str) -> list[str]:
+    """
+    brands 테이블에서 해당 회사의 브랜드 이름 목록을 반환 (최대 5개).
+    실패 시 빈 리스트 반환.
+    """
+    if not company_id:
         return []
     try:
-        data = json.loads(m.group())
-        return data if isinstance(data, list) else []
-    except json.JSONDecodeError as e:
-        logger.warning("news_source_json_error", error=str(e), raw=text[:200])
+        from supabase import create_client
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_SERVICE_KEY"]
+        sb = create_client(os.environ["SUPABASE_URL"], service_key)
+        r = sb.from_("brands").select("name").eq("company_id", company_id).limit(5).execute()
+        return [b["name"] for b in (r.data or []) if b.get("name")]
+    except Exception as e:
+        logger.warning("brand_fetch_failed", company_id=company_id, error=str(e))
         return []
 
 
-def _run_search_query(client: anthropic.Anthropic, query: str) -> list[dict]:
+def _build_queries(corp_name: str, company_id: str = "") -> list[str]:
     """
-    단일 쿼리로 web_search 실행 → 기사 리스트 반환.
-    agentic loop (tool_use stop_reason 처리).
+    회사명 기반 검색 쿼리 생성 (최대 5개, 각 display=10 → 최대 50건).
+
+    개선:
+      - 법인 접두어 제거한 핵심명으로 검색 (정확도 향상)
+      - brands 테이블 브랜드명 추가 쿼리 (최대 2개 더)
+      - 일일 한도: 5 queries × 10 = 50 API 호출 (25,000 한도 내)
     """
-    msgs: list[Any] = [
-        {"role": "user", "content": f"다음 키워드로 투자 뉴스를 검색해줘: {query}"},
+    core = _core_name(corp_name)
+
+    queries = [
+        f"{core} 투자유치",
+        f"{core} 유상증자",
+        f"{core} 시리즈",
     ]
 
-    for _ in range(8):
-        resp = client.messages.create(
-            model=_MODEL,
-            max_tokens=3000,
-            system=_SYSTEM_PROMPT,
-            tools=[{"type": "web_search_20250305", "name": "web_search"}],
-            messages=msgs,
-        )
+    # 브랜드명 쿼리 추가 (최대 2개, core와 다른 것만)
+    if company_id:
+        brand_names = _fetch_brand_names(company_id)
+        added = 0
+        core_tokens = {core}
+        for brand in brand_names:
+            brand_core = _core_name(brand)
+            if brand_core and brand_core not in core_tokens and len(brand_core) >= 2:
+                queries.append(f"{brand_core} 투자유치")
+                core_tokens.add(brand_core)
+                added += 1
+                if added >= 2:
+                    break
 
-        text_parts: list[str] = []
-        tool_use_ids: list[str] = []
+    # Naver daily limit 대응: 최대 5 쿼리
+    return queries[:5]
 
-        for block in resp.content:
-            btype = getattr(block, "type", None)
-            if btype == "text":
-                text_parts.append(block.text)
-            elif btype == "tool_use":
-                tool_use_ids.append(block.id)
 
-        if resp.stop_reason == "end_turn":
-            return _extract_json("\n".join(text_parts))
+def _strip_html(text: str) -> str:
+    """HTML 태그 및 엔티티 제거."""
+    text = re.sub(r"<[^>]+>", "", text)
+    text = html.unescape(text)
+    return text.strip()
 
-        if resp.stop_reason == "tool_use" and tool_use_ids:
-            tool_results = [
-                {"type": "tool_result", "tool_use_id": tid, "content": ""}
-                for tid in tool_use_ids
-            ]
-            msgs = [
-                *msgs,
-                {"role": "assistant", "content": resp.content},
-                {"role": "user", "content": tool_results},
-            ]
+
+def _naver_search(client_id: str, client_secret: str, query: str) -> list[dict]:
+    """
+    Naver News API 단일 쿼리 실행 → 기사 메타데이터 리스트 반환.
+    중복은 originallink 기준으로 제거.
+    """
+    headers = {
+        "X-Naver-Client-Id":     client_id,
+        "X-Naver-Client-Secret": client_secret,
+    }
+    params = {
+        "query":   query,
+        "display": _DISPLAY,
+        "sort":    "date",
+    }
+    try:
+        with httpx.Client(timeout=15.0) as http:
+            resp = http.get(_NAVER_SEARCH_URL, headers=headers, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        logger.warning("naver_search_http_error", query=query[:50], error=str(e))
+        return []
+    except Exception as e:
+        logger.warning("naver_search_error", query=query[:50], error=str(e))
+        return []
+
+    items = data.get("items") or []
+    results: list[dict] = []
+    for item in items:
+        results.append({
+            "title":         _strip_html(item.get("title") or ""),
+            "description":   _strip_html(item.get("description") or ""),
+            "source_url":    item.get("originallink") or item.get("link") or "",
+            "published_at":  item.get("pubDate") or None,
+            # 본문 fetch를 위해 두 URL 모두 보존
+            "link":          item.get("link") or "",
+            "originallink":  item.get("originallink") or "",
+        })
+    return results
+
+
+def _fetch_article_body_single(url: str) -> str | None:
+    """
+    단일 URL에서 본문 텍스트 fetch. 실패 시 None 반환.
+    """
+    if not url:
+        return None
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/136.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ko-KR,ko;q=0.9",
+            "Referer": "https://search.naver.com/",
+        }
+        with httpx.Client(timeout=_BODY_TIMEOUT_SEC, follow_redirects=True) as http:
+            resp = http.get(url, headers=headers)
+            resp.raise_for_status()
+            text = resp.text
+            # 태그 제거 후 공백 정규화
+            clean = re.sub(r"<[^>]+>", " ", text)
+            clean = html.unescape(clean)
+            clean = re.sub(r"\s{3,}", "\n\n", clean).strip()
+            if len(clean) < 100:
+                return None
+            return clean[:4000]
+    except Exception as e:
+        logger.debug("article_body_fetch_failed", url=url[:80], error=str(e))
+        return None
+
+
+def _fetch_article_body(item: dict) -> str | None:
+    """
+    기사 dict에서 본문 텍스트 fetch.
+    우선순위: Naver 리더(n.news.naver.com) → originallink → link(일반)
+    실패 시 None 반환 (fallback to description).
+    """
+    link = item.get("link") or ""
+    original = item.get("originallink") or ""
+
+    # URL 우선순위 결정
+    urls_to_try: list[str] = []
+    if link and "naver.com" in link:
+        urls_to_try.append(link)       # Naver 리더 — 보통 파싱 용이
+    if original and original not in urls_to_try:
+        urls_to_try.append(original)   # 원본 출처
+    if link and link not in urls_to_try:
+        urls_to_try.append(link)       # 기타 링크
+
+    for url in urls_to_try:
+        body = _fetch_article_body_single(url)
+        if body:
+            return body
+    return None
+
+
+def _dedup_articles(articles: list[dict]) -> list[dict]:
+    """originallink 기준 중복 제거."""
+    seen: set[str] = set()
+    result: list[dict] = []
+    for a in articles:
+        url = a.get("source_url") or ""
+        key = url if url else id(a)
+        if key in seen:
             continue
-
-        if text_parts:
-            return _extract_json("\n".join(text_parts))
-        break
-
-    return []
+        seen.add(key)
+        result.append(a)
+    return result
 
 
 # ── 공개 함수 ──────────────────────────────────────────────────────────────────────
@@ -124,14 +236,16 @@ def _run_search_query(client: anthropic.Anthropic, query: str) -> list[dict]:
 async def fetch_news_rounds(
     company_name: str,
     corp_name: str,
+    company_id: str = "",
 ) -> list[dict]:
     """
-    회사명으로 투자유치 뉴스 검색 → Ollama NLP 추출 → rounds 리스트 반환.
+    회사명으로 Naver 뉴스 검색 → Claude Haiku NLP 추출 → rounds 리스트 반환.
 
     Parameters
     ----------
-    company_name : companies 테이블의 name 필드 (쿼리 + 매칭 검증에 사용)
-    corp_name    : DART corp_name (fallback — 없으면 company_name 사용)
+    company_name : companies 테이블의 corp_name (쿼리 + 매칭 검증에 사용)
+    corp_name    : DART corp_name (corp_name이 있으면 우선 사용, 없으면 company_name 사용)
+    company_id   : companies.id (brands 테이블 조회로 추가 쿼리 생성에 사용)
 
     Returns
     -------
@@ -139,56 +253,101 @@ async def fetch_news_rounds(
     """
     search_name = corp_name or company_name
 
-    # ANTHROPIC_API_KEY 없으면 스킵
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        logger.warning("news_source_no_anthropic_key", company=search_name)
+    # Naver 키 확인
+    client_id     = os.environ.get("NAVER_CLIENT_ID")
+    client_secret = os.environ.get("NAVER_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        logger.warning("news_source_no_naver_keys", company=search_name)
         return []
 
-    client = anthropic.Anthropic(api_key=api_key)
-    queries = _build_queries(search_name)
-
+    # 핵심 사명으로 쿼리 생성 (법인 접두어 자동 제거)
+    core = _core_name(search_name)
+    queries = _build_queries(search_name, company_id=company_id)
+    logger.info(
+        "naver_queries_built",
+        company=search_name,
+        core_name=core,
+        queries=queries,
+    )
     all_articles: list[dict] = []
-    seen_urls: set[str] = set()
+    query_counts: dict[str, int] = {}
 
     for query in queries:
-        try:
-            articles = _run_search_query(client, query)
-            for article in articles:
-                url = article.get("source_url") or ""
-                if url and url in seen_urls:
-                    continue
-                if url:
-                    seen_urls.add(url)
-                all_articles.append(article)
-            logger.debug(
-                "news_query_done",
-                query=query[:50],
-                found=len(articles),
-                company=search_name,
-            )
-        except Exception as e:
-            logger.warning("news_query_failed", query=query[:50], error=str(e))
+        articles = _naver_search(client_id, client_secret, query)
+        all_articles.extend(articles)
+        query_counts[query] = len(articles)
+        logger.info(
+            "naver_query_done",
+            query=query,
+            found=len(articles),
+            company=search_name,
+        )
+        # Naver API 요청 간 딜레이
+        time.sleep(_MIN_DELAY_SEC + random.uniform(0, 0.5))
 
+    raw_total = len(all_articles)
     logger.info(
-        "news_articles_found",
+        "naver_search_stage",
         company=search_name,
-        total_articles=len(all_articles),
+        queries=len(queries),
+        raw_total=raw_total,
+        per_query=query_counts,
     )
 
-    # Ollama 추출
+    # 중복 제거
+    all_articles = _dedup_articles(all_articles)
+    dedup_total = len(all_articles)
+    logger.info(
+        "naver_articles_found",
+        company=search_name,
+        raw_total=raw_total,
+        after_dedup=dedup_total,
+        duplicates_removed=raw_total - dedup_total,
+    )
+
+    # 상위 5건 본문 fetch (나머지는 description fallback)
+    body_success = 0
+    body_fallback = 0
+    for i, article in enumerate(all_articles):
+        if i < _BODY_FETCH_LIMIT:
+            body = _fetch_article_body(article)
+            if body:
+                article["body"] = body
+                body_success += 1
+            else:
+                article["body"] = article.get("description") or ""
+                body_fallback += 1
+            if i < len(all_articles) - 1 and i < _BODY_FETCH_LIMIT - 1:
+                time.sleep(_MIN_DELAY_SEC + random.uniform(0, 0.3))
+        else:
+            article["body"] = article.get("description") or ""
+            body_fallback += 1
+
+    logger.info(
+        "naver_body_fetch_stage",
+        company=search_name,
+        body_success=body_success,
+        body_fallback=body_fallback,
+        total_articles=dedup_total,
+    )
+
+    # Claude Haiku 추출
+    # 매칭 검증에는 core_name(법인 접두어 제거)을 사용해 정확도 향상 (core와 동일)
     all_rounds: list[dict] = []
+    articles_with_rounds = 0
     for article in all_articles:
         body = article.get("body") or ""
-        url = article.get("source_url") or ""
+        url  = article.get("source_url") or ""
         if not body:
             continue
         try:
             rounds = await extract_funding_rounds(
                 article_text=body,
-                company_name=company_name,
+                company_name=core,
                 article_url=url,
             )
+            if rounds:
+                articles_with_rounds += 1
             all_rounds.extend(rounds)
         except Exception as e:
             logger.warning(
@@ -196,6 +355,14 @@ async def fetch_news_rounds(
                 url=url[:60],
                 error=str(e),
             )
+
+    logger.info(
+        "naver_extract_stage",
+        company=search_name,
+        articles_processed=dedup_total,
+        articles_with_rounds=articles_with_rounds,
+        rounds_extracted=len(all_rounds),
+    )
 
     logger.info(
         "news_rounds_extracted",

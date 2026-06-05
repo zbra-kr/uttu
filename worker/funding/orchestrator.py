@@ -24,6 +24,7 @@ from worker.funding.dart_source import fetch_dart_rounds
 from worker.funding.news_source import fetch_news_rounds
 from worker.funding.datago_source import fetch_datago_rounds
 from worker.funding.merge import merge_rounds
+from worker.funding.brief_writer import generate_brief
 
 load_dotenv()
 
@@ -174,6 +175,7 @@ async def run_job(
         news_rounds = await fetch_news_rounds(
             company_name=company_name,
             corp_name=corp_name,
+            company_id=company_id,
         )
         all_rounds.extend(news_rounds)
         logger.info("news_done", count=len(news_rounds), company=company_name)
@@ -197,10 +199,22 @@ async def run_job(
         st = r.get("source_type", "unknown")
         by_source[st] = by_source.get(st, 0) + 1
 
-    # 7. DB 쓰기 (dry_run 아닐 때만)
+    # 7. 브리핑 생성
+    brief_md = await generate_brief(company_name, merged)
+
+    # 8. DB 쓰기 (dry_run 아닐 때만)
     if not dry_run:
         upserted = _upsert_rounds(db, merged)
         _update_company_collected_at(db, company_id)
+        # funding_brief_md, funding_brief_at 업데이트
+        try:
+            db.table("companies").update({
+                "funding_brief_md": brief_md,
+                "funding_brief_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", company_id).execute()
+            logger.info("funding_brief_saved", company=company_name, chars=len(brief_md))
+        except Exception as e:
+            logger.warning("funding_brief_save_failed", company=company_name, error=str(e))
         if job_id:
             _set_job_status(db, job_id, "done", rounds_found=upserted)
     else:
@@ -210,23 +224,27 @@ async def run_job(
             total=len(merged),
             by_source=by_source,
         )
-        if merged:
-            sample = merged[0]
+        for idx, r in enumerate(merged):
             logger.info(
-                "dry_run_sample",
-                round_type=sample.get("round_type"),
-                amount_krw=sample.get("amount_krw"),
-                announced_date=sample.get("announced_date"),
-                source_type=sample.get("source_type"),
-                confidence=sample.get("confidence"),
+                "dry_run_round",
+                idx=idx,
+                round_type=r.get("round_type"),
+                amount_krw=r.get("amount_krw"),
+                announced_date=r.get("announced_date"),
+                source_type=r.get("source_type"),
+                confidence=r.get("confidence"),
+                investors=r.get("investors"),
             )
         if job_id:
             _set_job_status(db, job_id, "done", rounds_found=len(merged))
 
+    brief_preview = brief_md[:200] if brief_md else None
+
     result = {
-        "rounds_found": len(merged),
-        "by_source":    by_source,
-        "dry_run":      dry_run,
+        "rounds_found":   len(merged),
+        "by_source":      by_source,
+        "dry_run":        dry_run,
+        "brief_preview":  brief_preview,
     }
     if errors:
         result["errors"] = errors
