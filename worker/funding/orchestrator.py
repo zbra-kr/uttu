@@ -25,6 +25,7 @@ from worker.funding.news_source import fetch_news_rounds
 from worker.funding.datago_source import fetch_datago_rounds
 from worker.funding.merge import merge_rounds
 from worker.funding.brief_writer import generate_brief
+from worker.notifications.enqueue import enqueue_notification
 
 load_dotenv()
 
@@ -217,6 +218,22 @@ async def run_job(
             logger.warning("funding_brief_save_failed", company=company_name, error=str(e))
         if job_id:
             _set_job_status(db, job_id, "done", rounds_found=upserted)
+            # 요청자에게 완료 알림
+            try:
+                job_row = db.table("funding_collection_jobs").select("requested_by").eq("id", job_id).single().execute()
+                requested_by = (job_row.data or {}).get("requested_by")
+                if requested_by:
+                    enqueue_notification(
+                        user_id=requested_by,
+                        event_type="funding_collection_done",
+                        title=f"투자정보 수집 완료 — {company_name}",
+                        body=f"{upserted}건 수집됨" if upserted else "신규 데이터 없음",
+                        link=f"/company?id={company_id}",
+                        client=db,
+                    )
+                    logger.info("funding_notify_sent", user_id=requested_by, company=company_name)
+            except Exception as e:
+                logger.warning("funding_notify_failed", job_id=job_id, error=str(e))
     else:
         logger.info(
             "dry_run_result",

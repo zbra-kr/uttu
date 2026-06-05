@@ -123,9 +123,10 @@ export async function createFundingJob(
   }
 
   // 2) 잡 INSERT
+  const { data: { user } } = await supabase.auth.getUser();
   const { data: jobData, error: insertError } = await supabase
     .from('funding_collection_jobs')
-    .insert({ company_id: companyId, status: 'pending' })
+    .insert({ company_id: companyId, status: 'pending', requested_by: user?.id ?? null })
     .select(
       'id, company_id, status, requested_by, started_at, finished_at, rounds_found, error, created_at',
     )

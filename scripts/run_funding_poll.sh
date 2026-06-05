@@ -7,5 +7,6 @@ LOG_DIR="${PROJECT_DIR}/logs"
 mkdir -p "$LOG_DIR"
 LOG="${LOG_DIR}/funding_poll_$(date +%Y%m%d).log"
 echo "=== start: $(date '+%Y-%m-%d %H:%M:%S KST') ===" >> "$LOG"
+cd "$PROJECT_DIR"
 "${PROJECT_DIR}/worker/.venv/bin/python3" -m worker.main --mode funding-poll --limit 3 >> "$LOG" 2>&1
 echo "=== done: $(date '+%Y-%m-%d %H:%M:%S KST') ===" >> "$LOG"

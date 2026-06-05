@@ -10,6 +10,7 @@ EventType = Literal[
     "daily_summary", "anomaly_high", "anomaly_med",
     "mention", "dart_new_disclosure",
     "review_low_rating", "rank_change_bookmarked",
+    "funding_collection_done",
 ]
 
 

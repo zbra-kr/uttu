@@ -128,12 +128,16 @@ COMMENT ON COLUMN funding_collection_jobs.requested_by IS '요청자 식별자 (
 -- Realtime 활성화 (Supabase 대시보드에서 정호철 직접 활성화 필요)
 ALTER PUBLICATION supabase_realtime ADD TABLE funding_collection_jobs;
 
--- RLS: anon INSERT (Viewer가 잡 생성), anon/authenticated SELECT
+-- RLS: anon+authenticated INSERT (Viewer가 잡 생성), anon/authenticated SELECT
 ALTER TABLE funding_collection_jobs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "funding_jobs_insert_anon"
   ON funding_collection_jobs FOR INSERT
   TO anon WITH CHECK (true);
+
+CREATE POLICY "funding_jobs_insert_auth"
+  ON funding_collection_jobs FOR INSERT
+  TO authenticated WITH CHECK (true);
 
 CREATE POLICY "funding_jobs_select_anon"
   ON funding_collection_jobs FOR SELECT

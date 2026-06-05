@@ -2,6 +2,7 @@
 import React from 'react';
 import {
   createFundingJob,
+  getLatestFundingJob,
   pollFundingJob,
   type FundingJob,
 } from '@/lib/queries-funding';
@@ -51,6 +52,18 @@ export function FundingCollectButton({ companyId, fundingLastCollectedAt, onDone
       }
     }, 4000);
   }, [stopPolling, onDone]);
+
+  // 마운트 시 진행 중인 잡 복원 — 다른 페이지 갔다 와도 수집중 상태 유지
+  React.useEffect(() => {
+    getLatestFundingJob(companyId).then((latest) => {
+      if (!latest) return;
+      if (latest.status === 'pending' || latest.status === 'running') {
+        setJob(latest);
+        setBusy(true);
+        startPolling(companyId);
+      }
+    });
+  }, [companyId, startPolling]);
 
   React.useEffect(() => () => stopPolling(), [stopPolling]);
 
