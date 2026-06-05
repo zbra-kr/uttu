@@ -142,15 +142,88 @@ def _parse_estkrs(groups: list[dict]) -> list[dict]:
 
 
 def _estkrs_round_type(stksen: str, slmthn: str) -> str:
-    """증권신고서 주식유형·발행방법 → round_type 레이블."""
-    combined = f"{stksen} {slmthn}".lower()
-    if "ipo" in combined or "공모" in combined:
-        return "IPO"
-    if "유상증자" in combined or "신주" in combined:
+    """
+    증권신고서 주식유형(stksen)·발행방법(slmthn) → round_type 레이블.
+
+    ⚠️ estkRs 엔드포인트는 상장 전 IPO뿐 아니라 상장 후 공모증자도 포함한다.
+       "공모" 단어만으로 IPO를 단정하면 안 된다 — slmthn 원문 기반 세분류.
+
+    실제 slmthn 값 예시:
+      "주주배정후 실권주 일반공모"  → 공모증자 (주주배정후 실권주 일반공모)
+      "주주우선공모"               → 공모증자 (주주우선공모)
+      "일반공모"                   → 공모증자 (일반공모)
+      "우리사주조합"               → 공모증자 (우리사주)
+      "제3자배정"                  → 제3자배정 공모증자
+    """
+    s = slmthn.strip() if slmthn else ""
+    if not s:
+        s = stksen.strip() if stksen else ""
+    if not s:
+        return "기타"
+
+    sl = s.lower()
+
+    # 제3자배정 — 공모/비공모 모두 포함
+    if "제3자배정" in s:
+        return "제3자배정 공모증자"
+
+    # 우리사주조합
+    if "우리사주" in s:
+        return "공모증자 (우리사주)"
+
+    # 주주우선공모 (단독, "주주배정후 실권주" 아닌 경우)
+    if s == "주주우선공모":
+        return "공모증자 (주주우선공모)"
+
+    # 일반공모 (단독)
+    if s == "일반공모":
+        return "공모증자 (일반공모)"
+
+    # 주주배정 계열 — 가장 흔한 상장 후 유상증자
+    if "주주배정" in s:
+        return f"공모증자 ({s})"
+
+    # 나머지 공모 포함 케이스 — IPO로 단정 금지, 원문 유지
+    if "공모" in sl:
+        return f"공모증자 ({s})"
+
+    # 유상증자·신주 키워드
+    if "유상증자" in sl or "신주" in sl:
+        return f"유상증자 ({s})"
+
+    # 그 외
+    return s or "기타"
+
+
+def _piic_round_type(ic_mthn: str) -> str:
+    """
+    piicDecsn ic_mthn 원문 → round_type 레이블.
+
+    실제 ic_mthn 값 예시:
+      "주주배정후 실권주 일반공모" → 주주배정 유상증자 (주주배정후 실권주 일반공모)
+      "제3자배정증자"             → 제3자배정 유상증자
+      "주주우선공모증자"           → 주주우선공모 유상증자
+      ""  / "-"                   → 유상증자
+    """
+    s = ic_mthn.strip() if ic_mthn else ""
+    if not s or s == "-":
         return "유상증자"
-    if stksen or slmthn:
-        return f"{stksen or ''}{' ' + slmthn if slmthn else ''}".strip() or "기타"
-    return "기타"
+
+    if "제3자배정" in s:
+        return f"제3자배정 유상증자"
+
+    if "주주우선공모" in s:
+        return f"주주우선공모 유상증자"
+
+    if "주주배정" in s:
+        return f"주주배정 유상증자 ({s})"
+
+    # 기타 공모 케이스
+    if "공모" in s:
+        return f"유상증자 ({s})"
+
+    # 그 외 원문 유지
+    return s
 
 
 # ── piicDecsn 파싱 ───────────────────────────────────────────────────────────────
@@ -185,9 +258,9 @@ def _parse_piic(items: list[dict]) -> list[dict]:
         # 날짜: ssl_bgd (이사회결의일)
         announced_date = _parse_date_ko(item.get("ssl_bgd", ""))
 
-        # round_type: ic_mthn
+        # round_type: ic_mthn 원문 기반 세분류
         ic_mthn = (item.get("ic_mthn") or "").strip()
-        round_type = ic_mthn if ic_mthn and ic_mthn != "-" else "유상증자"
+        round_type = _piic_round_type(ic_mthn)
 
         rounds.append({
             "round_type":     round_type,

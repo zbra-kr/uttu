@@ -6,15 +6,16 @@ labels 배열을 [] 또는 ['skip-detail'] 로 직접 덮어씀 → 개별 array
 
 포함 조건 (labels = []):
   - is_own = true
-  - 랭킹 TOP50 (rank_position <= 50, 어느 조합이든)
-  - 프로모션 상품
-  - 최근 스냅 2건 상품
-  - 최근 매거진 2건 상품
+  - 랭킹 TOP50 (rank_position <= 50, 최근 7일)
+  - 프로모션 상품 (당일)
+  - 스냅 당일 상품
+  - 매거진 당일 상품
 
 나머지 미수집 stub → labels = ['skip-detail']
 """
 
 import os
+from datetime import date, timedelta
 from loguru import logger
 from dotenv import load_dotenv
 from supabase import Client, create_client
@@ -22,6 +23,8 @@ from supabase import Client, create_client
 load_dotenv()
 
 BATCH = 500
+RANKING_LOOKBACK_DAYS = 7
+DAILY_LOOKBACK_DAYS = 1
 
 
 def _supabase_client() -> Client:
@@ -32,6 +35,8 @@ def _supabase_client() -> Client:
 def _get_safe_ids(client: Client) -> set[str]:
     """수집 대상 product UUID 집합 반환."""
     safe: set[str] = set()
+    since_ranking = (date.today() - timedelta(days=RANKING_LOOKBACK_DAYS)).isoformat()
+    since_daily = (date.today() - timedelta(days=DAILY_LOOKBACK_DAYS)).isoformat()
 
     # 1. 자사 상품
     rows = (
@@ -43,14 +48,16 @@ def _get_safe_ids(client: Client) -> set[str]:
     )
     for r in rows:
         safe.add(r["id"])
+    logger.info("safe_own", count=len(safe))
 
-    # 2. 랭킹 TOP50 — 페이지네이션
+    # 2. 랭킹 TOP50 — 최근 7일
     offset = 0
     while True:
         rows = (
             client.table("ranking_snapshots")
             .select("product_id")
             .lte("rank_position", 50)
+            .gte("snapshot_date", since_ranking)
             .range(offset, offset + 999)
             .execute().data or []
         )
@@ -59,39 +66,51 @@ def _get_safe_ids(client: Client) -> set[str]:
         if len(rows) < 1000:
             break
         offset += 1000
+    logger.info("safe_after_ranking", count=len(safe))
 
-    # 3. 프로모션
-    rows = client.table("promotion_items").select("product_id").execute().data or []
+    # 3. 프로모션 — 당일
+    rows = (
+        client.table("promotion_items")
+        .select("product_id")
+        .gte("snapshot_date", since_daily)
+        .execute().data or []
+    )
     for r in rows:
-        safe.add(r["product_id"])
+        if r.get("product_id"):
+            safe.add(r["product_id"])
+    logger.info("safe_after_promo", count=len(safe))
 
-    # 4. 최근 스냅 2건
+    # 4. 스냅 — 당일
     snap_rows = (
         client.table("snaps")
         .select("snap_id")
-        .order("published_at", desc=True)
-        .limit(2)
+        .gte("collected_at", since_daily)
         .execute().data or []
     )
     snap_ids = [r["snap_id"] for r in snap_rows]
-    if snap_ids:
-        rows = client.table("snap_products").select("product_id").in_("snap_id", snap_ids).execute().data or []
+    for i in range(0, len(snap_ids), 200):
+        chunk = snap_ids[i:i+200]
+        rows = client.table("snap_products").select("product_id").in_("snap_id", chunk).execute().data or []
         for r in rows:
-            safe.add(r["product_id"])
+            if r.get("product_id"):
+                safe.add(r["product_id"])
+    logger.info("safe_after_snap", count=len(safe))
 
-    # 5. 최근 매거진 2건
+    # 5. 매거진 — 당일
     mag_rows = (
         client.table("magazine_articles")
         .select("article_id")
-        .order("published_at", desc=True)
-        .limit(2)
+        .gte("published_at", since_daily)
         .execute().data or []
     )
-    article_ids = [r["article_id"] for r in mag_rows]
-    if article_ids:
-        rows = client.table("magazine_article_products").select("product_id").in_("article_id", article_ids).execute().data or []
+    article_ids = [str(r["article_id"]) for r in mag_rows]
+    for i in range(0, len(article_ids), 200):
+        chunk = article_ids[i:i+200]
+        rows = client.table("magazine_article_products").select("product_id").in_("article_id", chunk).execute().data or []
         for r in rows:
-            safe.add(r["product_id"])
+            if r.get("product_id"):
+                safe.add(r["product_id"])
+    logger.info("safe_after_magazine", count=len(safe))
 
     logger.info("safe_ids_collected", count=len(safe))
     return safe
@@ -128,9 +147,7 @@ def run() -> None:
     to_revive  = [r["id"] for r in all_stubs if r["id"] in safe_ids]
     to_exclude = [r["id"] for r in all_stubs if r["id"] not in safe_ids and not r.get("is_own")]
 
-    # REVIVE: labels = []
     _batch_set_labels(client, to_revive, [])
-    # EXCLUDE: labels = ['skip-detail']
     _batch_set_labels(client, to_exclude, ["skip-detail"])
 
     logger.info("skip_detail_policy_applied", revived=len(to_revive), excluded=len(to_exclude))

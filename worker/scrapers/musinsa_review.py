@@ -421,18 +421,16 @@ class ReviewScraper(BaseScraper):
         product_idx / product_total: 진행 상황 추적용 (0이면 로그 생략).
         반환값: 실제 새로 삽입된 리뷰 수.
         """
-        last_date = None if full_collect else self._get_last_review_date(product_id)
+        cutoff_date: date = date.today() - timedelta(days=5)  # 5일치 윈도우
         page = 1
         total_inserted = 0
-        stop_early = False
-        review_total_count = 0           # API가 알려주는 해당 상품 전체 리뷰 수
-        reviews_seen = 0                 # 이번 순회에서 페이지를 넘기며 본 리뷰 수
+        review_total_count = 0
+        reviews_seen = 0
 
-        # 실시간 진행 상태 초기화
         self.progress_review_collected = 0
         self.progress_review_total = 0
 
-        while not stop_early:
+        while True:
             resp = await self._fetch_page(musinsa_no, page)
             if not resp:
                 break
@@ -451,15 +449,16 @@ class ReviewScraper(BaseScraper):
                 break
 
             rows_to_insert: list[dict] = []
+            page_has_recent = False
+
             for item in items:
                 create_date_str = item.get("createDate", "")
                 review_date = date.fromisoformat(create_date_str[:10]) if create_date_str else None
 
-                if last_date and review_date and review_date < last_date:
-                    stop_early = True
-                    break
-
                 rows_to_insert.append(self._parse_review(item, product_id))
+
+                if not full_collect and review_date and review_date >= cutoff_date:
+                    page_has_recent = True
 
             reviews_seen += len(rows_to_insert)
             self.progress_review_collected = reviews_seen
@@ -467,7 +466,6 @@ class ReviewScraper(BaseScraper):
             if rows_to_insert:
                 total_inserted += self._upsert_reviews(rows_to_insert)
 
-            # 페이지 단위 진행 로그 + 1시간 알림 체크 (backfill + 10페이지마다)
             if product_idx and page % 10 == 0:
                 prod_pct = product_idx / product_total * 100 if product_total else 0
                 rev_pct  = reviews_seen / review_total_count * 100 if review_total_count else 0
@@ -478,6 +476,8 @@ class ReviewScraper(BaseScraper):
                 )
                 self._send_hourly()
 
+            if not full_collect and not page_has_recent:
+                break
             if page >= total_pages:
                 break
             page += 1
@@ -561,14 +561,15 @@ class ReviewScraper(BaseScraper):
 
         return grand_total
 
-    async def run_smart(self, limit: int | None = None, force_full: bool = False) -> int:
+    async def run_smart(self, limit: int | None = None, force_full: bool = False, force_smart: bool = False) -> int:
         """
         스마트 수집: 그룹 기반 증분 + 전수 자동 결정.
-        force_full=True: review_checked_at 무시, 모든 그룹·상품 전수 스캔 (전수조사 모드).
+        force_full=True:  review_checked_at 무시 + 모든 그룹 전수 스캔 (전수조사 모드).
+        force_smart=True: review_checked_at 무시 + 증분 스캔 유지 (전체 그룹 대상, 일별 방식).
         """
         from worker.tasks.schedule_notify import send_progress as _notify, send_done as _notify_done
 
-        daily_cutoff = None if force_full else (datetime.now(KST) - timedelta(hours=23)).isoformat()
+        daily_cutoff = None if (force_full or force_smart) else (datetime.now(KST) - timedelta(hours=23)).isoformat()
         groups, standalones = self._get_groups_for_smart(daily_cutoff)
 
         if limit:
@@ -740,13 +741,11 @@ class ReviewScraper(BaseScraper):
         force_full=True 이면 db_count 비율 무관, 항상 전수 모드 (total_pages까지 전부 스캔).
         """
         product_map = self._get_group_product_map(color_group_id)
-        db_count = self._get_db_count_for_group(color_group_id)
 
+        cutoff_date: date = date.today() - timedelta(days=5)  # 5일치 윈도우
         page = 1
         total_inserted = 0
         api_total = 0
-        incremental = False
-        last_date: date | None = None
 
         while True:
             resp = await self._fetch_page(rep_no, page)
@@ -760,39 +759,29 @@ class ReviewScraper(BaseScraper):
 
             if page == 1:
                 api_total = data.get("total") or (total_pages * PAGE_SIZE)
-                if force_full:
-                    incremental = False
-                else:
-                    incremental = db_count >= api_total * 0.95
-                if incremental:
-                    last_date = self._get_last_date_for_group(color_group_id)
                 logger.info(
                     f"[그룹{group_idx}/{group_total}] cg={color_group_id} rep={rep_no} "
-                    f"api={api_total:,} db={db_count:,} "
-                    f"mode={'증분' if incremental else '전수'}"
+                    f"api={api_total:,} mode={'전수' if force_full else '5일'}"
                 )
 
             if not items:
                 break
 
             rows_to_insert: list[dict] = []
-            stop_early = False
+            page_has_recent = False
 
             for item in items:
                 create_date_str = item.get("createDate", "")
                 review_date = date.fromisoformat(create_date_str[:10]) if create_date_str else None
 
-                if incremental and last_date and review_date and review_date < last_date:
-                    stop_early = True
-                    break
-
-                # goods.goodsNo → product_id 매핑 (없으면 대표 상품으로 fallback)
                 item_goods_no = str((item.get("goods") or {}).get("goodsNo") or "")
                 pid = product_map.get(item_goods_no, rep_id)
-
                 rows_to_insert.append(
                     self._parse_review(item, pid, color_group_id=color_group_id)
                 )
+
+                if not force_full and review_date and review_date >= cutoff_date:
+                    page_has_recent = True
 
             if rows_to_insert:
                 inserted = self._upsert_reviews(rows_to_insert)
@@ -805,7 +794,8 @@ class ReviewScraper(BaseScraper):
                 )
                 self._send_hourly()
 
-            if stop_early:
+            # force_full: 전 페이지 / 일반: 이 페이지에 5일 이내 리뷰 없으면 중단
+            if not force_full and not page_has_recent:
                 break
             if page >= total_pages:
                 break
@@ -849,7 +839,7 @@ class ReviewScraper(BaseScraper):
         return grand_total
 
 
-async def main(backfill: bool = False, smart: bool = False, force_full: bool = False, limit: int | None = None) -> None:
+async def main(backfill: bool = False, smart: bool = False, force_full: bool = False, force_smart: bool = False, limit: int | None = None) -> None:
     from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = ReviewScraper(client)
@@ -857,6 +847,8 @@ async def main(backfill: bool = False, smart: bool = False, force_full: bool = F
         label = "리뷰 전체수집(backfill)"
     elif force_full:
         label = "리뷰 전수조사(force-full)"
+    elif force_smart:
+        label = "리뷰 전체증분수집(force-smart)"
     elif smart:
         label = "리뷰 스마트수집"
     else:
@@ -866,8 +858,10 @@ async def main(backfill: bool = False, smart: bool = False, force_full: bool = F
     try:
         if backfill:
             total = await scraper.run_backfill(limit=limit)
-        elif smart or force_full:
-            total = await scraper.run_smart(limit=limit, force_full=force_full)
+        elif force_full:
+            total = await scraper.run_smart(limit=limit, force_full=True)
+        elif smart or force_smart:
+            total = await scraper.run_smart(limit=limit, force_smart=force_smart)
         else:
             total = await scraper.run_daily(limit=limit)
         await tracker.finish(rows_done=total or 0)
@@ -898,10 +892,15 @@ if __name__ == "__main__":
         help="전수조사 모드. review_checked_at 무시, 모든 그룹·상품 전 페이지 스캔."
     )
     parser.add_argument(
+        "--force-smart",
+        action="store_true",
+        help="전체증분 모드. review_checked_at 무시하고 전체 3,971개 대상, 증분(신규만) 스캔."
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
         help="테스트용 상품 수 제한 (모든 모드 공통)"
     )
     args = parser.parse_args()
-    asyncio.run(main(backfill=args.backfill, smart=args.smart, force_full=args.force_full, limit=args.limit))
+    asyncio.run(main(backfill=args.backfill, smart=args.smart, force_full=args.force_full, force_smart=args.force_smart, limit=args.limit))

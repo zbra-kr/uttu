@@ -60,13 +60,24 @@ class ProductScraper(BaseScraper):
 
     @staticmethod
     def _parse_state(html: str) -> dict[str, Any] | None:
+        # 1) 구 방식: window.__MSS__.product.state
         m = _STATE_RE.search(html)
-        if not m:
-            return None
-        try:
-            return json.loads(m.group(1))
-        except json.JSONDecodeError:
-            return None
+        if m:
+            try:
+                return json.loads(m.group(1))
+            except json.JSONDecodeError:
+                pass
+        # 2) 신 방식: __NEXT_DATA__.props.pageProps.meta.data
+        m2 = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+        if m2:
+            try:
+                next_data = json.loads(m2.group(1))
+                meta = next_data.get("props", {}).get("pageProps", {}).get("meta", {})
+                if meta.get("meta", {}).get("result") == "SUCCESS":
+                    return meta.get("data")
+            except (json.JSONDecodeError, AttributeError):
+                pass
+        return None
 
     @staticmethod
     def _extract_company(state: dict[str, Any]) -> dict[str, Any] | None:
