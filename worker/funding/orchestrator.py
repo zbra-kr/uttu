@@ -21,6 +21,7 @@ from loguru import logger
 from supabase import create_client, Client
 
 from worker.funding.dart_source import fetch_dart_rounds
+from worker.funding.audit_source import fetch_audit_rounds
 from worker.funding.news_source import fetch_news_rounds
 from worker.funding.datago_source import fetch_datago_rounds
 from worker.funding.merge import merge_rounds
@@ -158,7 +159,7 @@ async def run_job(
     all_rounds: list[dict] = []
     errors: list[str] = []
 
-    # 3. Tier 2: DART
+    # 3. Tier 2: DART 공시 + 감사보고서 SCE
     if corp_code:
         try:
             dart_rounds = await fetch_dart_rounds(corp_code)
@@ -166,6 +167,15 @@ async def run_job(
             logger.info("dart_done", count=len(dart_rounds), company=company_name)
         except Exception as e:
             err = f"dart_error: {e}"
+            errors.append(err)
+            logger.warning(err, company=company_name)
+
+        try:
+            audit_rounds = fetch_audit_rounds(corp_code)
+            all_rounds.extend(audit_rounds)
+            logger.info("audit_done", count=len(audit_rounds), company=company_name)
+        except Exception as e:
+            err = f"audit_error: {e}"
             errors.append(err)
             logger.warning(err, company=company_name)
     else:

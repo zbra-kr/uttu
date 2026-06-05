@@ -99,26 +99,28 @@ export type CreateFundingJobResult =
  */
 export async function createFundingJob(
   companyId: string,
+  force = false,
 ): Promise<CreateFundingJobResult> {
   const supabase = supabaseBrowser();
 
-  // 1) 캐시 확인
-  const { data: companyRow, error: companyError } = await supabase
-    .from('companies')
-    .select('funding_last_collected_at')
-    .eq('id', companyId)
-    .limit(1)
-    .maybeSingle();
+  // 1) 캐시 확인 (force=true면 건너뜀)
+  if (!force) {
+    const { data: companyRow, error: companyError } = await supabase
+      .from('companies')
+      .select('funding_last_collected_at')
+      .eq('id', companyId)
+      .limit(1)
+      .maybeSingle();
 
-  if (companyError) {
-    console.error('[createFundingJob] companies query failed', companyError);
-    // 캐시 확인 실패 시 그냥 잡 생성 시도
-  } else if (companyRow?.funding_last_collected_at) {
-    const lastAt = new Date(companyRow.funding_last_collected_at);
-    const diffMs = Date.now() - lastAt.getTime();
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-    if (diffMs < sevenDaysMs) {
-      return { type: 'cached', collectedAt: companyRow.funding_last_collected_at };
+    if (companyError) {
+      console.error('[createFundingJob] companies query failed', companyError);
+    } else if (companyRow?.funding_last_collected_at) {
+      const lastAt = new Date(companyRow.funding_last_collected_at);
+      const diffMs = Date.now() - lastAt.getTime();
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+      if (diffMs < sevenDaysMs) {
+        return { type: 'cached', collectedAt: companyRow.funding_last_collected_at };
+      }
     }
   }
 

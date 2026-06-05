@@ -1,15 +1,137 @@
 """
-투자유치 라운드 dedup·merge 정책
+투자유치 라운드 dedup·merge·교차검증 정책
 
 08-funding.md §6 규칙:
   - 동일 (company_id, source_type, source_ref) → unique 제약으로 자동 차단
   - 같은 라운드가 뉴스+공시 양쪽에 있으면 공시(confidence=1.00) 우선, 뉴스는 보조 유지
   - amount_krw 단위: 항상 원 (이미 정규화된 것으로 가정)
   - announced_date 없으면 null 허용. 정렬: announced_date desc nulls last
+교차검증 (이번 라운드 추가):
+  - news 라운드를 공시(dart_*/confidence=1.0)와 대조 → 매칭/충돌/유지 처리
+  - 공시 라운드는 절대 삭제·강등 금지 (투자자 병합만 허용)
 """
 from __future__ import annotations
 
+from datetime import date as _date
+
 from loguru import logger
+
+
+# ── 교차검증 헬퍼 ────────────────────────────────────────────────────────────────
+
+def _same_fiscal_year(d1: str | None, d2: str | None) -> bool:
+    """두 날짜가 같은 연도인지 (dart_audit 연 단위 매칭용)."""
+    if not d1 or not d2:
+        return False
+    return d1[:4] == d2[:4]
+
+
+def _dates_within(d1: str | None, d2: str | None, days: int = 45) -> bool:
+    """두 날짜가 N일 이내인지."""
+    if not d1 or not d2:
+        return False
+    try:
+        dt1 = _date.fromisoformat(d1)
+        dt2 = _date.fromisoformat(d2)
+        return abs((dt1 - dt2).days) <= days
+    except (ValueError, TypeError):
+        return False
+
+
+def _cross_validate(merged: list[dict], company_id: str) -> list[dict]:
+    """
+    news 라운드를 공시(confidence=1.0) 라운드와 교차검증.
+
+    매칭 규칙 (같은 company_id 내):
+      - 금액 일치: |news.amount - auth.amount| / auth.amount ≤ 0.10
+      - 시점 일치: ±45일, dart_audit은 같은 사업연도면 일치
+
+    처리:
+      - 매칭 → 공시 라운드에 news.investors 병합, news 라운드 폐기
+      - 충돌 (같은 시점 공시 금액 >10% 차이) → news 라운드 폐기 (로그)
+      - 대응 공시 없음 → news 라운드 유지 (미검증)
+
+    ⚠️ 공시 라운드(confidence=1.0)는 삭제·강등 금지.
+    """
+    authoritative = [r for r in merged if (r.get("confidence") or 0) >= 1.0]
+    news_rounds   = [r for r in merged if r.get("source_type", "").startswith("news")]
+    others        = [r for r in merged if r not in authoritative and r not in news_rounds]
+
+    if not authoritative or not news_rounds:
+        return merged
+
+    stats = {"merged": 0, "conflict": 0, "kept": 0}
+    kept_news: list[dict] = []
+
+    for nr in news_rounds:
+        n_amount = nr.get("amount_krw")
+        n_date   = nr.get("announced_date")
+        matched  = False
+        conflict = False
+
+        for ar in authoritative:
+            a_amount = ar.get("amount_krw")
+            a_date   = ar.get("announced_date")
+            a_source = ar.get("source_type", "")
+
+            # 시점 일치 확인
+            is_audit = a_source == "dart_audit"
+            date_ok = (
+                _same_fiscal_year(n_date, a_date) if is_audit
+                else _dates_within(n_date, a_date, 45)
+            )
+            if not date_ok:
+                continue
+
+            # 금액 일치 확인
+            if n_amount and a_amount and a_amount > 0:
+                ratio = abs(n_amount - a_amount) / a_amount
+                if ratio <= 0.10:
+                    # 매칭: investors 병합
+                    existing = set(ar.get("investors") or [])
+                    new_inv  = [i for i in (nr.get("investors") or []) if i and i not in existing]
+                    if new_inv:
+                        ar["investors"] = list(existing) + new_inv
+                    matched = True
+                    stats["merged"] += 1
+                    logger.info(
+                        "cross_match",
+                        news_ref=nr.get("source_ref", "")[:60],
+                        auth_ref=ar.get("source_ref", "")[:40],
+                        amount_news=n_amount,
+                        amount_auth=a_amount,
+                        company_id=company_id,
+                    )
+                    break
+                else:
+                    # 같은 시점인데 금액 >10% 차이 → 충돌
+                    conflict = True
+                    stats["conflict"] += 1
+                    logger.info(
+                        "cross_conflict_drop",
+                        news_ref=nr.get("source_ref", "")[:60],
+                        auth_ref=ar.get("source_ref", "")[:40],
+                        ratio=round(ratio, 3),
+                        company_id=company_id,
+                    )
+                    break
+            elif n_amount is None or a_amount is None:
+                # 금액 불명 상태에서 시점만 일치 → 충돌로 보지 않고 유지
+                pass
+
+        if not matched and not conflict:
+            kept_news.append(nr)
+            stats["kept"] += 1
+
+    logger.info(
+        "cross_validate_done",
+        merged_to_auth=stats["merged"],
+        conflict_dropped=stats["conflict"],
+        news_only_kept=stats["kept"],
+        company_id=company_id,
+    )
+
+    return authoritative + others + kept_news
 
 
 def merge_rounds(rounds: list[dict], company_id: str) -> list[dict]:
@@ -88,9 +210,7 @@ def merge_rounds(rounds: list[dict], company_id: str) -> list[dict]:
 
     merged = list(seen.values()) + no_ref
 
-    # ── 저신뢰도 뉴스 라운드 필터 ────────────────────────────────────────
-    # source_type이 'news'로 시작하고 confidence < 0.5인 라운드를 제거.
-    # DART 라운드(confidence=1.0) 및 confidence가 None인 라운드는 유지.
+    # ── 저신뢰도 뉴스 라운드 필터 (Round8 정책 유지) ───────────────────────
     before_filter = len(merged)
     merged = [
         r for r in merged
@@ -107,6 +227,11 @@ def merge_rounds(rounds: list[dict], company_id: str) -> list[dict]:
             dropped=dropped,
             company_id=company_id,
         )
+
+    # ── 공시 교차검증 ─────────────────────────────────────────────────────
+    # news 라운드를 공시(dart_*/dart_audit)와 대조 → 매칭/충돌/유지
+    # 공시 라운드는 삭제·강등 금지
+    merged = _cross_validate(merged, company_id)
 
     # 정렬: announced_date desc nulls last
     def _sort_key(r: dict):

@@ -74,9 +74,9 @@ export function FundingCollectButton({ companyId, fundingLastCollectedAt, onDone
     setJob(null);
     setCached(null);
 
-    const result = await createFundingJob(companyId);
+    const result = await createFundingJob(companyId, forceMode);
 
-    if (result.type === 'cached' && !forceMode) {
+    if (result.type === 'cached') {
       setCached(result.collectedAt);
       setBusy(false);
       return;
@@ -91,14 +91,6 @@ export function FundingCollectButton({ companyId, fundingLastCollectedAt, onDone
     if (result.type === 'created') {
       setJob(result.job);
       startPolling(companyId);
-      return;
-    }
-
-    // cached but forceMode — createFundingJob still returned cached because
-    // we didn't bypass server-side; just show the date and stop
-    if (result.type === 'cached') {
-      setCached(result.collectedAt);
-      setBusy(false);
     }
   };
 

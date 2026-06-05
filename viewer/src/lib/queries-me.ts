@@ -71,7 +71,8 @@ export type NotificationEvent =
   | 'mention'
   | 'dart_new_disclosure'
   | 'review_low_rating'
-  | 'rank_change_bookmarked';
+  | 'rank_change_bookmarked'
+  | 'funding_collection_done';
 
 export type NotificationChannel = 'teams' | 'telegram';
 
