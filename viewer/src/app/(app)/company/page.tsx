@@ -24,6 +24,10 @@ import {
   type CompanyInfo, type CompanyBrand, type DartFinancial, type DartDisclosure,
   type CompanyRankStats, type CompanyProductDist, type BrandTrendRow,
 } from '@/lib/queries';
+import { getFundingRounds, type FundingRound } from '@/lib/queries-funding';
+import { FundingCollectButton } from '@/components/uttu/funding-collect-button';
+import { FundingTimeline } from '@/components/uttu/funding-timeline';
+import { FundingBrief } from '@/components/uttu/funding-brief';
 
 // ── 상수 ──────────────────────────────────────────────────────────────
 const TT: any = {
@@ -897,6 +901,43 @@ function TabDisclosure({ disclosures }: { disclosures: DartDisclosure[] }) {
   );
 }
 
+// ── 탭: 투자정보 ──────────────────────────────────────────────────────
+function TabFunding({
+  companyId,
+  fundingLastCollectedAt,
+  rounds,
+  onRefresh,
+}: {
+  companyId: string;
+  fundingLastCollectedAt: string | null;
+  rounds: FundingRound[];
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="col-flex gap-14">
+      <SecPanel title="투자정보 수집" action={
+        <FundingCollectButton
+          companyId={companyId}
+          fundingLastCollectedAt={fundingLastCollectedAt}
+          onDone={onRefresh}
+        />
+      }>
+        <div style={{ fontSize: 11, color: 'var(--f4)' }}>
+          DART 공시 + 뉴스 NLP 추출 (on-demand) · 비상장 사모 라운드는 뉴스에만 의존
+        </div>
+      </SecPanel>
+
+      <SecPanel title={`투자 라운드 타임라인${rounds.length > 0 ? ` (${rounds.length}건)` : ''}`}>
+        <FundingTimeline rounds={rounds} />
+      </SecPanel>
+
+      <SecPanel title="AI 투자 브리핑">
+        <FundingBrief companyId={companyId} />
+      </SecPanel>
+    </div>
+  );
+}
+
 function CompanyPageRoot() {
   const isMobile = useIsMobile();
   if (isMobile) return <MobileCompanyDetailView />;
@@ -929,9 +970,10 @@ function CompanyPageInner() {
   const [top100Trend, setTop100Trend] = React.useState<{ date: string; top100_count: number }[]>([]);
   const [productDist, setProductDist] = React.useState<CompanyProductDist | null>(null);
   const [brandTrend,  setBrandTrend]  = React.useState<BrandTrendRow[]>([]);
-  const [loading,     setLoading]     = React.useState(!!idFromUrl);
-  const [rankLoading, setRankLoading] = React.useState(false);
-  const [tab, setTab] = React.useState<'overview' | 'ranking' | 'financial' | 'disclosure'>('overview');
+  const [fundingRounds,   setFundingRounds]   = React.useState<FundingRound[]>([]);
+  const [loading,         setLoading]         = React.useState(!!idFromUrl);
+  const [rankLoading,     setRankLoading]     = React.useState(false);
+  const [tab, setTab] = React.useState<'overview' | 'ranking' | 'financial' | 'disclosure' | 'funding'>('overview');
   const [noteCount, setNoteCount] = React.useState(0);
   const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(
     () => (params.get('notes') === 'open' || !!params.get('note')) && !!idFromUrl,
@@ -944,13 +986,16 @@ function CompanyPageInner() {
     }
     setLoading(true);
     setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]);
+    setFundingRounds([]);
     Promise.all([
       fetchCompanyInfo(idFromUrl),
       fetchCompanyBrands(idFromUrl),
       fetchCompanyFinancials(idFromUrl),
       fetchCompanyDisclosures(idFromUrl),
-    ]).then(async ([ci, cb, cf, cd]) => {
+      getFundingRounds(idFromUrl, 50),
+    ]).then(async ([ci, cb, cf, cd, fr]) => {
       setInfo(ci); setBrands(cb); setFinancials(cf); setDisclosures(cd);
+      setFundingRounds(fr);
       if (ci) {
         window.dispatchEvent(new CustomEvent('uttu:crumb', { detail: { brand: ci.corp_name, name: '' } }));
         window.dispatchEvent(new CustomEvent('uttu:ai-context', { detail: [
@@ -983,6 +1028,11 @@ function CompanyPageInner() {
   React.useEffect(() => {
     if (idFromUrl && info?.corp_name) logView('company', idFromUrl, info.corp_name).catch(() => {});
   }, [idFromUrl, info?.corp_name]);
+
+  // 투자정보 수집 완료 후 라운드 목록 갱신
+  const handleFundingDone = React.useCallback(() => {
+    getFundingRounds(idFromUrl, 50).then(setFundingRounds).catch(() => {});
+  }, [idFromUrl]);
 
   if (!idFromUrl) return <CompanyPortal onSelect={id => router.push(`/company?id=${id}`)} />;
 
@@ -1037,6 +1087,7 @@ function CompanyPageInner() {
           ['ranking',     '랭킹·상품', rankStats?.sku_count ? `${rankStats.sku_count} SKU` : null],
           ['financial',   '재무',     financials.length ? `${financials.length}개년` : null],
           ['disclosure',  '공시',     disclosures.length || null],
+          ['funding',     '투자정보',  fundingRounds.length || null],
         ] as [string, string, string | number | null][]).map(([key, label, badge]) => (
           <div key={key} className={`tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key as any)}>
             {label}
@@ -1055,6 +1106,7 @@ function CompanyPageInner() {
           {tab === 'ranking'     && <TabRanking rankStats={rankStats} top100Trend={top100Trend} brandTrend={brandTrend} productDist={productDist} rankLoading={rankLoading} brands={brands} />}
           {tab === 'financial'   && <TabFinancial financials={financials} top100Trend={top100Trend} rankStats={rankStats} />}
           {tab === 'disclosure'  && <TabDisclosure disclosures={disclosures} />}
+          {tab === 'funding'     && <TabFunding companyId={idFromUrl} fundingLastCollectedAt={info.funding_last_collected_at ?? null} rounds={fundingRounds} onRefresh={handleFundingDone} />}
         </>
       )}
     </div>
