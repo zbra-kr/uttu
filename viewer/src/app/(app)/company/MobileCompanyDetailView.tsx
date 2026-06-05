@@ -8,6 +8,10 @@ import {
   type CompanyInfo, type CompanyBrand, type DartFinancial, type DartDisclosure,
   type CompanyRankStats, type CompanyProductDist, type BrandTrendRow,
 } from '@/lib/queries';
+import { getFundingRounds, type FundingRound } from '@/lib/queries-funding';
+import { FundingCollectButton } from '@/components/uttu/funding-collect-button';
+import { FundingTimeline } from '@/components/uttu/funding-timeline';
+import { FundingBrief } from '@/components/uttu/funding-brief';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
 import {
   BarChart, Bar, LineChart, Line, Cell,
@@ -161,7 +165,7 @@ function Chart({ h, children }: { h?: number; children: React.ReactNode }) {
 
 // ── 탭 컴포넌트 ──────────────────────────────────────────────────────────
 
-type TabKey = 'overview' | 'ranking' | 'financial' | 'disclosure';
+type TabKey = 'overview' | 'ranking' | 'financial' | 'disclosure' | 'funding';
 
 function TabOverview({
   info, brands, financials, rankStats, top100Trend, router,
@@ -763,35 +767,82 @@ function TabDisclosure({ disclosures }: { disclosures: DartDisclosure[] }) {
   );
 }
 
+function TabFundingMobile({
+  companyId,
+  fundingLastCollectedAt,
+  rounds,
+  briefMd,
+  briefAt,
+  onRefresh,
+}: {
+  companyId: string;
+  fundingLastCollectedAt: string | null;
+  rounds: FundingRound[];
+  briefMd: string | null;
+  briefAt: string | null;
+  onRefresh: () => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Section title="투자정보 수집">
+        <div style={{ marginBottom: 10 }}>
+          <FundingCollectButton
+            companyId={companyId}
+            fundingLastCollectedAt={fundingLastCollectedAt}
+            onDone={onRefresh}
+          />
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--f4)' }}>
+          DART 공시 + 뉴스 NLP 추출 (on-demand) · 비상장 사모 라운드는 뉴스에만 의존
+        </div>
+      </Section>
+
+      <Section title={`투자 라운드 타임라인${rounds.length > 0 ? ` (${rounds.length}건)` : ''}`}>
+        <div style={{ overflowX: 'auto' }}>
+          <FundingTimeline rounds={rounds} />
+        </div>
+      </Section>
+
+      <Section title="AI 투자 브리핑">
+        <FundingBrief companyId={companyId} briefMd={briefMd} briefAt={briefAt} />
+      </Section>
+    </div>
+  );
+}
+
 // ── 메인 ─────────────────────────────────────────────────────────────────
 export default function MobileCompanyDetailView() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const companyId = searchParams.get('id') ?? '';
 
-  const [info,        setInfo]        = useState<CompanyInfo | null>(null);
-  const [brands,      setBrands]      = useState<CompanyBrand[]>([]);
-  const [financials,  setFinancials]  = useState<DartFinancial[]>([]);
-  const [disclosures, setDisclosures] = useState<DartDisclosure[]>([]);
-  const [rankStats,   setRankStats]   = useState<CompanyRankStats | null>(null);
-  const [top100Trend, setTop100Trend] = useState<{ date: string; top100_count: number }[]>([]);
-  const [productDist, setProductDist] = useState<CompanyProductDist | null>(null);
-  const [brandTrend,  setBrandTrend]  = useState<BrandTrendRow[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [rankLoading, setRankLoading] = useState(false);
+  const [info,          setInfo]          = useState<CompanyInfo | null>(null);
+  const [brands,        setBrands]        = useState<CompanyBrand[]>([]);
+  const [financials,    setFinancials]    = useState<DartFinancial[]>([]);
+  const [disclosures,   setDisclosures]   = useState<DartDisclosure[]>([]);
+  const [rankStats,     setRankStats]     = useState<CompanyRankStats | null>(null);
+  const [top100Trend,   setTop100Trend]   = useState<{ date: string; top100_count: number }[]>([]);
+  const [productDist,   setProductDist]   = useState<CompanyProductDist | null>(null);
+  const [brandTrend,    setBrandTrend]    = useState<BrandTrendRow[]>([]);
+  const [fundingRounds, setFundingRounds] = useState<FundingRound[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [rankLoading,   setRankLoading]   = useState(false);
   const [tab, setTab] = useState<TabKey>('overview');
 
   useEffect(() => {
     if (!companyId) return;
     setLoading(true);
     setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]);
+    setFundingRounds([]);
     Promise.all([
       fetchCompanyInfo(companyId),
       fetchCompanyBrands(companyId),
       fetchCompanyFinancials(companyId),
       fetchCompanyDisclosures(companyId),
-    ]).then(async ([ci, cb, cf, cd]) => {
+      getFundingRounds(companyId, 50),
+    ]).then(async ([ci, cb, cf, cd, fr]) => {
       setInfo(ci); setBrands(cb); setFinancials(cf); setDisclosures(cd);
+      setFundingRounds(fr);
       setLoading(false);
 
       if (cb.length > 0) {
@@ -820,6 +871,7 @@ export default function MobileCompanyDetailView() {
     { key: 'ranking', label: '랭킹·상품', badge: rankStats?.sku_count ? `${rankStats.sku_count} SKU` : null },
     { key: 'financial', label: '재무', badge: financials.length ? `${financials.length}개년` : null },
     { key: 'disclosure', label: '공시', badge: disclosures.length || null },
+    { key: 'funding', label: '투자정보', badge: fundingRounds.length || null },
   ];
 
   return (
@@ -885,6 +937,18 @@ export default function MobileCompanyDetailView() {
       )}
       {tab === 'disclosure' && (
         <TabDisclosure disclosures={disclosures} />
+      )}
+      {tab === 'funding' && (
+        <TabFundingMobile
+          companyId={companyId}
+          fundingLastCollectedAt={info.funding_last_collected_at ?? null}
+          rounds={fundingRounds}
+          briefMd={info.funding_brief_md ?? null}
+          briefAt={info.funding_brief_at ?? null}
+          onRefresh={() => {
+            getFundingRounds(companyId, 50).then(setFundingRounds).catch(() => {});
+          }}
+        />
       )}
     </div>
   );

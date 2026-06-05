@@ -88,6 +88,26 @@ def merge_rounds(rounds: list[dict], company_id: str) -> list[dict]:
 
     merged = list(seen.values()) + no_ref
 
+    # ── 저신뢰도 뉴스 라운드 필터 ────────────────────────────────────────
+    # source_type이 'news'로 시작하고 confidence < 0.5인 라운드를 제거.
+    # DART 라운드(confidence=1.0) 및 confidence가 None인 라운드는 유지.
+    before_filter = len(merged)
+    merged = [
+        r for r in merged
+        if not (
+            r.get("source_type", "").startswith("news")
+            and r.get("confidence") is not None
+            and r.get("confidence") < 0.5
+        )
+    ]
+    dropped = before_filter - len(merged)
+    if dropped > 0:
+        logger.info(
+            "merge_low_confidence_dropped",
+            dropped=dropped,
+            company_id=company_id,
+        )
+
     # 정렬: announced_date desc nulls last
     def _sort_key(r: dict):
         d = r.get("announced_date")

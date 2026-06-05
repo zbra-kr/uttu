@@ -906,11 +906,15 @@ function TabFunding({
   companyId,
   fundingLastCollectedAt,
   rounds,
+  briefMd,
+  briefAt,
   onRefresh,
 }: {
   companyId: string;
   fundingLastCollectedAt: string | null;
   rounds: FundingRound[];
+  briefMd: string | null;
+  briefAt: string | null;
   onRefresh: () => void;
 }) {
   return (
@@ -932,7 +936,7 @@ function TabFunding({
       </SecPanel>
 
       <SecPanel title="AI 투자 브리핑">
-        <FundingBrief companyId={companyId} />
+        <FundingBrief companyId={companyId} briefMd={briefMd} briefAt={briefAt} />
       </SecPanel>
     </div>
   );
@@ -1106,7 +1110,7 @@ function CompanyPageInner() {
           {tab === 'ranking'     && <TabRanking rankStats={rankStats} top100Trend={top100Trend} brandTrend={brandTrend} productDist={productDist} rankLoading={rankLoading} brands={brands} />}
           {tab === 'financial'   && <TabFinancial financials={financials} top100Trend={top100Trend} rankStats={rankStats} />}
           {tab === 'disclosure'  && <TabDisclosure disclosures={disclosures} />}
-          {tab === 'funding'     && <TabFunding companyId={idFromUrl} fundingLastCollectedAt={info.funding_last_collected_at ?? null} rounds={fundingRounds} onRefresh={handleFundingDone} />}
+          {tab === 'funding'     && <TabFunding companyId={idFromUrl} fundingLastCollectedAt={info.funding_last_collected_at ?? null} rounds={fundingRounds} briefMd={info.funding_brief_md ?? null} briefAt={info.funding_brief_at ?? null} onRefresh={handleFundingDone} />}
         </>
       )}
     </div>

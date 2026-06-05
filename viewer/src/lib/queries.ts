@@ -806,12 +806,14 @@ export interface CompanyInfo {
   website: string | null;
   dart_fetched_at: string | null;
   funding_last_collected_at: string | null;
+  funding_brief_md: string | null;
+  funding_brief_at: string | null;
 }
 
 export async function fetchCompanyInfo(id: string): Promise<CompanyInfo | null> {
   const { data, error } = await supabase
     .from('companies')
-    .select('id, corp_name, business_number, ceo_name, address, phone, email, mail_order_no, corp_code, stock_code, is_listed, website, dart_fetched_at, funding_last_collected_at')
+    .select('id, corp_name, business_number, ceo_name, address, phone, email, mail_order_no, corp_code, stock_code, is_listed, website, dart_fetched_at, funding_last_collected_at, funding_brief_md, funding_brief_at')
     .eq('id', id).single();
   if (error || !data) return null;
   return data as CompanyInfo;
