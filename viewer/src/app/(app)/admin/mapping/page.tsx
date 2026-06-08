@@ -862,6 +862,7 @@ function MappingDesktopView() {
 
   // ── 필터 상태 ──────────────────────────────────────────────────────────────
   const [showDone,          setShowDone]          = React.useState(false);
+  const [doneOnly,          setDoneOnly]           = React.useState(false);
   const [showSkipped,       setShowSkipped]        = React.useState(false);
   const [listedOnly,        setListedOnly]         = React.useState(false);
   const [unlistedOnly,      setUnlistedOnly]       = React.useState(false);
@@ -877,12 +878,12 @@ function MappingDesktopView() {
   const [hasRemark,         setHasRemark]          = React.useState(false);
 
   const activeFilterCount = [
-    showDone, showSkipped, listedOnly, unlistedOnly, hasParent, noParent, hasSubs,
+    showDone, doneOnly, showSkipped, listedOnly, unlistedOnly, hasParent, noParent, hasSubs,
     hasBrands, noBrands, hasUnconfirmed, hasOwnBrands, hasSkippedBrands, noBizNo, hasRemark,
   ].filter(Boolean).length;
 
   const resetFilters = () => {
-    setShowDone(false); setShowSkipped(false); setListedOnly(false); setUnlistedOnly(false);
+    setShowDone(false); setDoneOnly(false); setShowSkipped(false); setListedOnly(false); setUnlistedOnly(false);
     setHasParent(false); setNoParent(false); setHasSubs(false);
     setHasBrands(false); setNoBrands(false); setHasUnconfirmed(false);
     setHasOwnBrands(false); setHasSkippedBrands(false);
@@ -896,7 +897,7 @@ function MappingDesktopView() {
   }, [search]);
 
   React.useEffect(() => { setCheckedIds(new Set()); }, [
-    page, debouncedSearch, showDone, showSkipped, listedOnly, unlistedOnly,
+    page, debouncedSearch, showDone, doneOnly, showSkipped, listedOnly, unlistedOnly,
     hasParent, noParent, hasSubs, hasBrands, noBrands, hasUnconfirmed,
     hasOwnBrands, hasSkippedBrands, noBizNo, hasRemark,
   ]);
@@ -909,6 +910,7 @@ function MappingDesktopView() {
         p_offset:             page * PAGE_SIZE,
         p_search:             debouncedSearch.trim() || null,
         p_show_done:          showDone,
+        p_done_only:          doneOnly,
         p_show_skipped:       showSkipped,
         p_listed_only:        listedOnly,
         p_unlisted_only:      unlistedOnly,
@@ -929,7 +931,7 @@ function MappingDesktopView() {
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   }, [
-    page, debouncedSearch, showDone, showSkipped, listedOnly, unlistedOnly,
+    page, debouncedSearch, showDone, doneOnly, showSkipped, listedOnly, unlistedOnly,
     hasParent, noParent, hasSubs, hasBrands, noBrands, hasUnconfirmed,
     hasOwnBrands, hasSkippedBrands, noBizNo, hasRemark,
   ]);
@@ -1033,8 +1035,9 @@ function MappingDesktopView() {
               {/* DART 상태 */}
               <div className="col-flex gap-4">
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--f4)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>DART</div>
-                <FilterChk label="완료 포함" checked={showDone}        onChange={v => { setShowDone(v);    setPage(0); }} />
-                <FilterChk label="건너뜀 포함" checked={showSkipped}   onChange={v => { setShowSkipped(v); setPage(0); }} />
+                <FilterChk label="완료 포함" checked={showDone}    onChange={v => { setShowDone(v);    if (v) setDoneOnly(false); setPage(0); }} />
+                <FilterChk label="완료만"   checked={doneOnly}    onChange={v => { setDoneOnly(v);    if (v) setShowDone(false); setPage(0); }} />
+                <FilterChk label="건너뜀 포함" checked={showSkipped} onChange={v => { setShowSkipped(v); setPage(0); }} />
               </div>
               {/* 상장 */}
               <div className="col-flex gap-4">

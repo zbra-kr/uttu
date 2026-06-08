@@ -3,6 +3,7 @@ CREATE OR REPLACE FUNCTION get_mapping_company_list(
   p_offset             int     DEFAULT 0,
   p_search             text    DEFAULT NULL,
   p_show_done          boolean DEFAULT false,
+  p_done_only          boolean DEFAULT false,
   p_show_skipped       boolean DEFAULT false,
   p_listed_only        boolean DEFAULT false,
   p_unlisted_only      boolean DEFAULT false,
@@ -27,7 +28,9 @@ CREATE OR REPLACE FUNCTION get_mapping_company_list(
     LEFT JOIN companies p ON p.id = c.parent_company_id
     WHERE
       -- DART 완료 포함 여부
-      (p_show_done    OR c.corp_code IS NULL)
+      (p_show_done    OR p_done_only OR c.corp_code IS NULL)
+      -- DART 완료 건만
+      AND (NOT p_done_only OR c.corp_code IS NOT NULL)
       -- 건너뜀 포함 여부
       AND (p_show_skipped OR NOT c.dart_skip)
       -- 상장사만
