@@ -1077,7 +1077,7 @@ hr.hr-d { border: none; border-top: 1px dashed var(--bs); margin: 0; }
 
 .brand-cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .brand-cell .bname { font-size: 12px; color: var(--f1); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -0.012em; }
-.brand-cell .cname { font-family: var(--mono); font-size: 10px; color: var(--f4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand-cell .cname { font-family: var(--sans); font-size: 10px; color: var(--f4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .dual-cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .dual-cell .top { font-size: 12px; color: var(--f1); letter-spacing: -0.012em; }
