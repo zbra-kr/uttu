@@ -15,6 +15,7 @@ const EVENT_LABELS: Record<NotificationEvent, string> = {
   dart_new_disclosure:    '신규 공시',
   review_low_rating:      '저평점 리뷰',
   rank_change_bookmarked: '랭킹 변동',
+  funding_collection_done: '투자정보 수집 완료',
 };
 
 const EVENTS = Object.keys(EVENT_LABELS) as NotificationEvent[];

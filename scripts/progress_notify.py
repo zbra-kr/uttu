@@ -83,8 +83,16 @@ def parse_product_log(session: dict) -> dict:
     product_detail_YYYYMMDD.log 파싱 → {start, done, total, status}
     로그 파일은 여러 실행이 append되므로 마지막 '=== START' 마커 이후만 카운트.
     """
-    date_str = datetime.now(KST).strftime("%Y%m%d")
-    log_path = LOG_DIR / f"product_detail_{date_str}.log"
+    # 세션 시작 날짜 기준으로 로그 파일 찾기 (자정 넘어도 유지)
+    start_str = session.get("product_start", "")
+    if start_str:
+        try:
+            start_date = datetime.fromisoformat(start_str).strftime("%Y%m%d")
+        except ValueError:
+            start_date = datetime.now(KST).strftime("%Y%m%d")
+    else:
+        start_date = datetime.now(KST).strftime("%Y%m%d")
+    log_path = LOG_DIR / f"product_detail_{start_date}.log"
 
     total = session.get("product_target", 0)
     start_str = session.get("product_start", "")
@@ -212,7 +220,9 @@ def main() -> None:
             session = json.loads(session_file.read_text())
         except Exception:
             pass
-    review_output_path = session.get("review_output", "")
+    # review_log 우선, 없으면 review_output(temp file) fallback
+    review_log = session.get("review_log", "")
+    review_output_path = str(LOG_DIR / review_log) if review_log else session.get("review_output", "")
 
     # 리뷰 예상 총 리뷰 수 (is_own 상품 review_count 합계)
     try:

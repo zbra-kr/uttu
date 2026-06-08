@@ -19,6 +19,7 @@ import httpx
 from loguru import logger
 
 from worker.agent.funding_extractor import extract_funding_rounds
+from worker.funding.name_utils import name_in_text, is_high_risk
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────────
 
@@ -225,10 +226,13 @@ def _fetch_article_body(item: dict) -> str | None:
 
 def _passes_funding_gate(body: str, core_name: str) -> bool:
     """
-    하드 게이트: core_name AND ≥1 펀딩키워드가 본문에 동시 등장.
+    하드 게이트: core_name 이 토큰 경계로 본문에 등장 AND ≥1 펀딩키워드 동시 등장.
     통과 못 하면 Claude 추출 대상에서 제외 (오기사·무관기사 컷).
+
+    name_in_text 로 토큰 경계 검사 — "레이어" 검색 시 "레이어제로" 불일치.
+    펀딩 키워드(투자/유치/시리즈 등)는 substring 검사로 충분 (고유어 오탐 없음).
     """
-    if core_name not in body:
+    if not name_in_text(core_name, body):
         return False
     return any(kw in body for kw in _FUNDING_KEYWORDS)
 
@@ -243,6 +247,25 @@ def _brand_confidence_delta(body: str, brand_names: list[str]) -> float:
     if any(b in body for b in brand_names if b):
         return 0.1
     return -0.05
+
+
+def _passes_disambiguator(round_dict: dict, body: str, brand_names: list[str]) -> bool:
+    """
+    high-risk 회사 라운드 채택 조건 (OR 1개 이상 충족).
+
+    (a) brand(≥2자)가 본문에 토큰 경계로 등장
+    (b) 추출된 투자자명(investors) 1개 이상
+
+    투자 기사는 투자자명이 거의 항상 등장하므로 정상 라운드는 (b)로 살아남는다.
+    레이어제로 오매칭은 1차 방어(_match_company/name_in_text)에서 이미 차단.
+    """
+    # (a) ≥2자 브랜드가 본문에 토큰 경계로 등장
+    if any(name_in_text(b, body) for b in brand_names if len(b) >= 2):
+        return True
+    # (b) LLM이 투자자명을 1개 이상 추출
+    if round_dict.get("investors"):
+        return True
+    return False
 
 
 def _dedup_articles(articles: list[dict]) -> list[dict]:
@@ -288,8 +311,22 @@ async def fetch_news_rounds(
         logger.warning("news_source_no_naver_keys", company=search_name)
         return []
 
-    # 핵심 사명으로 쿼리 생성 (법인 접두어 자동 제거)
+    # 핵심 사명 추출 + high-risk 판별 (짧거나 일반명)
     core = _core_name(search_name)
+    high_risk = is_high_risk(core)
+
+    # brands early fetch (디스앰비규에이터 + brand_confidence_delta + 쿼리 생성 재사용)
+    brand_names = _fetch_brand_names(company_id) if company_id else []
+
+    if high_risk:
+        logger.info(
+            "high_risk_detected",
+            core=core,
+            company=search_name,
+            brand_count=len(brand_names),
+            note="라운드 레벨 디스앰비규에이터 적용 예정 (brand OR investors)",
+        )
+
     queries = _build_queries(search_name, company_id=company_id)
     logger.info(
         "naver_queries_built",
@@ -360,7 +397,7 @@ async def fetch_news_rounds(
     )
 
     # Claude Haiku 추출 + 정밀도 필터
-    brand_names = _fetch_brand_names(company_id) if company_id else []
+    # brand_names 는 함수 앞에서 early fetch 완료 (중복 fetch 제거)
     all_rounds: list[dict] = []
     articles_with_rounds = 0
     gate_cut = 0
@@ -370,7 +407,7 @@ async def fetch_news_rounds(
         if not body:
             continue
 
-        # ① 하드 게이트: core_name AND 펀딩키워드 동시 등장
+        # ① 하드 게이트: core_name 토큰 경계 AND 펀딩키워드 동시 등장
         if not _passes_funding_gate(body, core):
             gate_cut += 1
             logger.debug("funding_gate_cut", url=url[:60], company=search_name)
@@ -391,6 +428,21 @@ async def fetch_news_rounds(
                 for r in rounds:
                     orig = float(r.get("confidence") or 0.0)
                     r["confidence"] = max(0.0, min(0.9, orig + delta))
+
+            # ③ high-risk 회사: 라운드 레벨 디스앰비규에이터
+            #    (a) brand≥2자 동반  OR  (b) 투자자명≥1
+            #    투자기사는 (b)가 항상 있어 정상 라운드 살아남음.
+            if high_risk and rounds:
+                before = len(rounds)
+                rounds = [r for r in rounds if _passes_disambiguator(r, body, brand_names)]
+                dropped = before - len(rounds)
+                if dropped:
+                    logger.info(
+                        "high_risk_disambig_cut",
+                        url=url[:60],
+                        core=core,
+                        dropped=dropped,
+                    )
 
             all_rounds.extend(rounds)
         except Exception as e:

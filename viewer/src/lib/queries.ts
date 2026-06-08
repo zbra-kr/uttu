@@ -808,15 +808,63 @@ export interface CompanyInfo {
   funding_last_collected_at: string | null;
   funding_brief_md: string | null;
   funding_brief_at: string | null;
+  parent_company_id: string | null;
 }
 
 export async function fetchCompanyInfo(id: string): Promise<CompanyInfo | null> {
   const { data, error } = await supabase
     .from('companies')
-    .select('id, corp_name, business_number, ceo_name, address, phone, email, mail_order_no, corp_code, stock_code, is_listed, website, dart_fetched_at, funding_last_collected_at, funding_brief_md, funding_brief_at')
+    .select('id, corp_name, business_number, ceo_name, address, phone, email, mail_order_no, corp_code, stock_code, is_listed, website, dart_fetched_at, funding_last_collected_at, funding_brief_md, funding_brief_at, parent_company_id')
     .eq('id', id).single();
   if (error || !data) return null;
   return data as CompanyInfo;
+}
+
+export interface CompanyChild {
+  id: string;
+  corp_name: string;
+  brands: { id: string; name: string; slug: string; is_own: boolean; nation_name: string | null }[];
+}
+
+export async function fetchChildCompanies(companyId: string): Promise<CompanyChild[]> {
+  const { data, error } = await supabase
+    .from('companies')
+    .select('id, corp_name, brands(id, name, slug, is_own, nation_name)')
+    .eq('parent_company_id', companyId)
+    .order('corp_name');
+  if (error) return [];
+  return (data ?? []).map((c: any) => ({
+    id: c.id,
+    corp_name: c.corp_name,
+    brands: (c.brands ?? []).sort((a: any, b: any) =>
+      Number(b.is_own) - Number(a.is_own) || a.name.localeCompare(b.name)
+    ),
+  }));
+}
+
+export async function fetchParentCompany(parentId: string | null): Promise<{ id: string; corp_name: string } | null> {
+  if (!parentId) return null;
+  const { data, error } = await supabase
+    .from('companies')
+    .select('id, corp_name')
+    .eq('id', parentId)
+    .single();
+  if (error || !data) return null;
+  return data as { id: string; corp_name: string };
+}
+
+export interface GroupBrandRow {
+  brand_id: string;
+  brand_name: string;
+  company_id: string;
+  company_name: string;
+  depth: number;
+}
+
+export async function fetchGroupBrands(rootCompanyId: string): Promise<GroupBrandRow[]> {
+  const { data, error } = await supabase.rpc('group_brands', { root_company_id: rootCompanyId });
+  if (error) return [];
+  return (data ?? []) as GroupBrandRow[];
 }
 
 export interface CompanyBrand {
@@ -891,96 +939,79 @@ export interface CompanyListRow {
   debt_ratio: number | null;
   roe: number | null;
   rev_yoy: number | null;
-  rev_history: (number | null)[];  // [oldest → newest]
-  top_brands: string[];            // is_own 우선, 최대 3개
-  latest_disclosure_dt: string | null;   // YYYYMMDD
+  top_brands: string[];
+  latest_disclosure_dt: string | null;
   latest_disclosure_nm: string | null;
 }
 
-export async function fetchCompanyList(): Promise<CompanyListRow[]> {
-  const [companiesRes, finsRes, discRes] = await Promise.all([
-    supabase
-      .from('companies')
-      .select('id, corp_name, is_listed, corp_code, brands(id, is_own, name)')
-      .order('corp_name')
-      .limit(500),
-    supabase
-      .from('dart_financials')
-      .select('company_id, fiscal_year, revenue, operating_income, net_income, total_assets, total_liabilities')
-      .order('company_id')
-      .order('fiscal_year', { ascending: false })
-      .limit(2000),
-    supabase
-      .from('dart_disclosures')
-      .select('company_id, rcept_dt, report_nm')
-      .order('rcept_dt', { ascending: false })
-      .limit(2000),
-  ]);
+export type CompanySortKey =
+  | 'revenue' | 'net_income' | 'op_margin' | 'roe'
+  | 'debt_ratio' | 'rev_yoy' | 'brand_count' | 'name' | 'dart';
 
-  const companies = companiesRes.data ?? [];
-  const fins      = finsRes.data ?? [];
-  const discs     = discRes.data ?? [];
+export type RevRange = '대기업' | '중견기업' | '소기업' | '미수집';
 
-  // company_id별로 연도 내림차순 그룹
-  const finMap = new Map<string, typeof fins>();
-  for (const f of fins) {
-    const arr = finMap.get(f.company_id) ?? [];
-    arr.push(f);
-    finMap.set(f.company_id, arr);
-  }
+export interface CompanyPageResult {
+  total: number;
+  rows: CompanyListRow[];
+}
 
-  // company_id별 최신 공시 (이미 rcept_dt 내림차순 정렬됨)
-  const discMap = new Map<string, { rcept_dt: string; report_nm: string }>();
-  for (const d of discs) {
-    if (!discMap.has(d.company_id)) discMap.set(d.company_id, { rcept_dt: d.rcept_dt, report_nm: d.report_nm });
-  }
+function mapCompanyRow(c: any): CompanyListRow {
+  return {
+    id:                   c.id,
+    corp_name:            c.corp_name,
+    is_listed:            c.is_listed,
+    corp_code:            c.corp_code ?? null,
+    brand_count:          Number(c.brand_count),
+    own_brand_count:      Number(c.own_brand_count),
+    fiscal_year:          c.fiscal_year ?? null,
+    revenue:              c.revenue ?? null,
+    operating_income:     c.operating_income ?? null,
+    net_income:           c.net_income ?? null,
+    total_assets:         c.total_assets ?? null,
+    total_liabilities:    c.total_liabilities ?? null,
+    op_margin:            c.op_margin  != null ? Number(c.op_margin)  : null,
+    net_margin:           c.net_margin != null ? Number(c.net_margin) : null,
+    debt_ratio:           c.debt_ratio != null ? Number(c.debt_ratio) : null,
+    roe:                  c.roe        != null ? Number(c.roe)        : null,
+    rev_yoy:              c.rev_yoy    != null ? Number(c.rev_yoy)    : null,
+    top_brands:           (c.top_brands as string[]) ?? [],
+    latest_disclosure_dt: c.latest_disclosure_dt ?? null,
+    latest_disclosure_nm: c.latest_disclosure_nm ?? null,
+  };
+}
 
-  return companies.map(c => {
-    const brands  = (c.brands as any[]) ?? [];
-    const fList   = finMap.get(c.id) ?? [];   // 최신 연도 먼저
-    const latest  = fList[0] ?? null;
-    const prev    = fList[1] ?? null;
-
-    const eq        = latest?.total_assets != null && latest?.total_liabilities != null
-      ? latest.total_assets - latest.total_liabilities : null;
-    const opMargin  = latest?.revenue && latest.revenue > 0 && latest.operating_income != null
-      ? Math.round((latest.operating_income / latest.revenue) * 1000) / 10 : null;
-    const netMargin = latest?.revenue && latest.revenue > 0 && latest.net_income != null
-      ? Math.round((latest.net_income / latest.revenue) * 1000) / 10 : null;
-    const debtRatio = eq != null && eq > 0 && latest?.total_liabilities != null
-      ? Math.round((latest.total_liabilities / eq) * 10) / 10 : null;
-    const roe       = latest?.net_income != null && eq != null && eq > 0
-      ? Math.round((latest.net_income / eq) * 1000) / 10 : null;
-    const revYoy    = prev?.revenue && prev.revenue > 0 && latest?.revenue != null
-      ? Math.round(((latest.revenue - prev.revenue) / prev.revenue) * 1000) / 10 : null;
-
-    return {
-      id:                c.id,
-      corp_name:         c.corp_name,
-      is_listed:         c.is_listed,
-      corp_code:         c.corp_code,
-      brand_count:       brands.length,
-      own_brand_count:   brands.filter((b: any) => b.is_own).length,
-      fiscal_year:       latest?.fiscal_year ?? null,
-      revenue:           latest?.revenue ?? null,
-      operating_income:  latest?.operating_income ?? null,
-      net_income:        latest?.net_income ?? null,
-      total_assets:      latest?.total_assets ?? null,
-      total_liabilities: latest?.total_liabilities ?? null,
-      op_margin:         opMargin,
-      net_margin:        netMargin,
-      debt_ratio:        debtRatio,
-      roe,
-      rev_yoy:           revYoy,
-      rev_history:           [...fList].reverse().map(f => f.revenue),
-      top_brands: [
-        ...brands.filter((b: any) => b.is_own).map((b: any) => b.name as string),
-        ...brands.filter((b: any) => !b.is_own).map((b: any) => b.name as string),
-      ].slice(0, 3),
-      latest_disclosure_dt:  discMap.get(c.id)?.rcept_dt ?? null,
-      latest_disclosure_nm:  discMap.get(c.id)?.report_nm ?? null,
-    };
+export async function fetchCompanyPage(params: {
+  page: number;
+  limit?: number;
+  search?: string;
+  sort?: CompanySortKey | null;
+  listedOnly?: boolean;
+  ownOnly?: boolean;
+  hasFin?: boolean;
+  revRanges?: RevRange[] | null;
+}): Promise<CompanyPageResult> {
+  const { page, limit = 50, search, sort, listedOnly, ownOnly, hasFin, revRanges } = params;
+  const { data, error } = await supabase.rpc('get_company_list_page', {
+    p_limit:       limit,
+    p_offset:      page * limit,
+    p_search:      search?.trim() || null,
+    p_sort:        sort ?? null,
+    p_listed_only: listedOnly ?? false,
+    p_own_only:    ownOnly    ?? false,
+    p_has_fin:     hasFin     ?? false,
+    p_rev_ranges:  revRanges  ?? null,
   });
+  if (error) throw error;
+  const result = data as { total: number; rows: any[] };
+  return {
+    total: result.total,
+    rows: (result.rows ?? []).map(mapCompanyRow),
+  };
+}
+
+export async function fetchCompanyList(): Promise<CompanyListRow[]> {
+  const { rows } = await fetchCompanyPage({ page: 0, limit: 9999 });
+  return rows;
 }
 
 // ── 회사 랭킹 통계 ──────────────────────────────────────────────────

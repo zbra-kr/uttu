@@ -49,11 +49,21 @@ def fetch_own_ranking_delta(
     db: Client, target_date: date, own_slugs: list[str]
 ) -> list[dict]:
     """
-    자사 브랜드 상품 TOP 순위 변동 — 어제 vs 그제.
-    gender=A, age=AGE_BAND_ALL 기준 브랜드별 최고 순위 비교.
+    자사 브랜드 순위 변동 — 14일 이력 기반 변동성 분류 포함.
+
+    volatility_class:
+      "anomaly"  — |delta| ≥ 2σ: LLM 필수 전달 (이상 변동)
+      "notable"  — |delta| ≥ 1σ: LLM 전달 (주목할 변동)
+      "normal"   — |delta| < 1σ: LLM 전달 제외 (일상 노이즈)
+
+    structural_trend: 최근 7일 best_rank 추세
+      "상승" — 후반 7일 best_rank가 전반보다 2위 이상 개선
+      "하락" — 후반 7일 best_rank가 전반보다 2위 이상 악화
+      "안정" — 그 외
     """
     yesterday  = _prev(target_date, 1)
     day_before = _prev(target_date, 2)
+    since_14d  = _prev(target_date, 14)
     if not own_slugs:
         return []
 
@@ -82,16 +92,71 @@ def fetch_own_ranking_delta(
                 .limit(1)
                 .execute()
             )
+            # 14일 이력 — 일별 best_rank 계산에 사용
+            r_hist = (
+                db.table("ranking_snapshots")
+                .select("snapshot_date, rank_position")
+                .eq("brand_slug", slug)
+                .gte("snapshot_date", since_14d.isoformat())
+                .lte("snapshot_date", day_before.isoformat())
+                .eq("gender_filter", "A")
+                .eq("age_filter", "AGE_BAND_ALL")
+                .limit(2000)
+                .execute()
+            )
+
             items_y = r_y.data or []
             best_y  = items_y[0]["rank_position"] if items_y else None
             best_db = r_db.data[0]["rank_position"] if r_db.data else None
             delta   = (best_db - best_y) if (best_y and best_db) else None  # 양수=상승
+
+            # 일별 best_rank 집계 (rank_position 최소 = 가장 높은 순위)
+            by_date: dict[str, int] = {}
+            for row in (r_hist.data or []):
+                ds = row["snapshot_date"]
+                rp = row["rank_position"]
+                if ds not in by_date or rp < by_date[ds]:
+                    by_date[ds] = rp
+
+            daily_best_values = [by_date[d] for d in sorted(by_date)]
+
+            # Historical std 계산
+            historical_std: float | None = None
+            volatility_class = "normal"
+            if len(daily_best_values) >= 3 and delta is not None:
+                mean_r = sum(daily_best_values) / len(daily_best_values)
+                variance = sum((x - mean_r) ** 2 for x in daily_best_values) / len(daily_best_values)
+                historical_std = variance ** 0.5
+                if historical_std > 0:
+                    ratio = abs(delta) / historical_std
+                    if ratio >= 2.0:
+                        volatility_class = "anomaly"
+                    elif ratio >= 1.0:
+                        volatility_class = "notable"
+
+            # Structural trend: 최근 7일을 전반/후반 분할 비교
+            structural_trend: str | None = None
+            recent_dates = sorted(by_date.keys())[-7:]
+            if len(recent_dates) >= 4:
+                half = len(recent_dates) // 2
+                avg_first  = sum(by_date[d] for d in recent_dates[:half]) / half
+                avg_second = sum(by_date[d] for d in recent_dates[half:]) / (len(recent_dates) - half)
+                diff = avg_first - avg_second  # 양수 = 후반 rank 더 낮음 = 순위 상승
+                if diff > 2:
+                    structural_trend = "상승"
+                elif diff < -2:
+                    structural_trend = "하락"
+                else:
+                    structural_trend = "안정"
 
             results.append({
                 "brand_slug":           slug,
                 "best_rank_yesterday":  best_y,
                 "best_rank_day_before": best_db,
                 "rank_delta":           delta,
+                "historical_std":       round(historical_std, 1) if historical_std is not None else None,
+                "volatility_class":     volatility_class,
+                "structural_trend":     structural_trend,
                 "top5_yesterday": [
                     {
                         "product_name": x["product_name"],
@@ -404,8 +469,26 @@ def fetch_review_summary(
 
 # ── DART ──────────────────────────────────────────────────────────────────────
 
+# DART 공시 importance 스코어링 테이블
+# 5=CRITICAL, 4=HIGH, 3=MEDIUM — 이 기준 미만은 브리핑에서 제외
+_DART_IMPORTANCE: list[tuple[int, list[str]]] = [
+    (5, ["합병", "분할", "상장폐지", "유상증자", "전환사채", "신주인수권부사채", "공개매수", "주식교환", "포괄적 주식교환", "기업인수합병"]),
+    (4, ["영업이익", "매출액", "당기순이익", "주요사항보고서", "주요계약", "특수관계인", "대규모내부거래", "IPO", "상장예비심사", "공모", "사업보고서", "반기보고서", "분기보고서", "결산"]),
+    (3, ["임원", "대표이사", "특허", "소송", "최대주주", "조회공시", "기업설명회", "자기주식"]),
+]
+
+
+def _dart_importance(report_nm: str) -> int:
+    """report_nm 키워드 기반 importance 스코어. 미해당=1(LOW)."""
+    rn = report_nm or ""
+    for score, keywords in _DART_IMPORTANCE:
+        if any(kw in rn for kw in keywords):
+            return score
+    return 1
+
+
 def fetch_dart_disclosures(db: Client, target_date: date) -> list[dict]:
-    """어제 DART 공시 목록 + 회사 정보 (자사·경쟁사 구분은 LLM이 판단)."""
+    """어제 DART 공시 목록 + importance 스코어링 (MEDIUM 이상만 반환, importance 내림차순)."""
     yesterday = _prev(target_date, 1)
     try:
         res = (
@@ -413,7 +496,7 @@ def fetch_dart_disclosures(db: Client, target_date: date) -> list[dict]:
             .select("report_nm, rcept_dt, flr_nm, companies(id, corp_name, is_listed, stock_code)")
             .eq("rcept_dt", yesterday.isoformat())
             .order("rcept_dt", desc=True)
-            .limit(30)
+            .limit(50)
             .execute()
         )
         rows = res.data or []
@@ -421,7 +504,12 @@ def fetch_dart_disclosures(db: Client, target_date: date) -> list[dict]:
             co = r.get("companies") or {}
             if co.get("id"):
                 r["link"] = f"/company?id={co['id']}"
-        return rows
+            r["importance"] = _dart_importance(r.get("report_nm", ""))
+
+        # MEDIUM(3) 이상만 필터, importance 내림차순
+        rows = [r for r in rows if r.get("importance", 1) >= 3]
+        rows.sort(key=lambda r: r.get("importance", 1), reverse=True)
+        return rows[:20]
     except Exception as e:
         logger.warning("dart_disclosures_failed", error=str(e))
         return []
@@ -432,7 +520,13 @@ def fetch_dart_disclosures(db: Client, target_date: date) -> list[dict]:
 def fetch_external_news(
     db: Client, target_date: date, min_relevance: int = 3
 ) -> list[dict]:
-    """당일 수집된 외부 패션 뉴스 (relevance ≥ min_relevance)."""
+    """
+    최근 7일 수집된 외부 패션 뉴스 (relevance ≥ min_relevance).
+
+    수집일(collected_date) 기준 7일 창을 사용하되,
+    published_at이 있는 항목은 발행일 7일 초과 시 추가 필터링.
+    """
+    since = (target_date - timedelta(days=7)).isoformat()
     try:
         res = (
             db.table("external_news")
@@ -440,16 +534,142 @@ def fetch_external_news(
                 "headline, summary, source_name, source_url, category, "
                 "relevance, published_at, related_brands, related_companies"
             )
-            .eq("collected_date", target_date.isoformat())
+            .gte("collected_date", since)
             .gte("relevance", min_relevance)
             .order("relevance", desc=True)
-            .limit(20)
+            .order("collected_date", desc=True)
+            .limit(30)
             .execute()
         )
-        return res.data or []
+        rows = res.data or []
+
+        # published_at 있으면 발행일 7일 초과 항목 제거
+        cutoff_iso = since + "T00:00:00+00:00"
+        filtered: list[dict] = []
+        for r in rows:
+            pub = r.get("published_at")
+            if pub:
+                try:
+                    if pub < cutoff_iso:
+                        continue
+                except TypeError:
+                    pass
+            filtered.append(r)
+
+        return filtered[:20]
     except Exception as e:
         logger.warning("external_news_failed", error=str(e))
         return []
+
+
+# ── 외부 뉴스 슬롯 (4-slot 큐레이션) ────────────────────────────────────────
+
+def fetch_external_news_slots(db: Client, target_date: date) -> dict:
+    """
+    2일 이내 기사를 4개 슬롯으로 분류. 없으면 빈 리스트 (강제 채움 없음).
+
+    슬롯:
+      hot:       화제성 — mention_count 높은 순 (동일 이슈 다매체 보도)
+      own_brand: 자사 직접 언급 (없으면 생략)
+      common:    패션 공통 — industry/trend/platform
+      major:     주요 이슈 — relevance ≥ 4, competitor/industry/platform
+
+    슬롯 간 URL 중복 없음 (앞 슬롯 우선).
+    """
+    since_2d   = (target_date - timedelta(days=2)).isoformat()
+    cutoff_iso = since_2d + "T00:00:00+00:00"
+
+    # mention_count 컬럼 존재 여부 — 마이그레이션 01308 적용 후 True
+    _WITH_MENTION = (
+        "headline, summary, source_name, source_url, category, "
+        "relevance, mention_count, published_at, related_brands, related_companies"
+    )
+    _NO_MENTION = (
+        "headline, summary, source_name, source_url, category, "
+        "relevance, published_at, related_brands, related_companies"
+    )
+
+    def _fetch(
+        category_filter=None,
+        min_relevance: int = 2,
+        order_mention: bool = False,
+        limit: int = 2,
+        exclude_urls: set | None = None,
+    ) -> list[dict]:
+        def _build(cols: str, with_mention: bool) -> list[dict]:
+            q = (
+                db.table("external_news")
+                .select(cols)
+                .gte("collected_date", since_2d)
+                .gte("relevance", min_relevance)
+            )
+            if category_filter:
+                if isinstance(category_filter, list):
+                    q = q.in_("category", category_filter)
+                else:
+                    q = q.eq("category", category_filter)
+            if order_mention and with_mention:
+                q = q.order("mention_count", desc=True).order("relevance", desc=True)
+            else:
+                q = q.order("relevance", desc=True).order("published_at", desc=True)
+            return q.limit(limit + 10).execute().data or []
+
+        # mention_count 포함 시도 → 실패 시 폴백
+        try:
+            rows = _build(_WITH_MENTION, with_mention=True)
+        except Exception as e:
+            if "mention_count" in str(e):
+                rows = _build(_NO_MENTION, with_mention=False)
+            else:
+                raise
+
+        result: list[dict] = []
+        for r in rows:
+            url = r.get("source_url") or ""
+            if exclude_urls and url in exclude_urls:
+                continue
+            pub = r.get("published_at")
+            if pub:
+                try:
+                    if pub < cutoff_iso:
+                        continue
+                except TypeError:
+                    pass
+            result.append(r)
+            if len(result) >= limit:
+                break
+        return result
+
+    try:
+        slot_hot = _fetch(order_mention=True, min_relevance=2, limit=2)
+        used = {r.get("source_url") for r in slot_hot}
+
+        slot_own = _fetch(
+            category_filter="own_brand", min_relevance=1,
+            exclude_urls=used, limit=2,
+        )
+        used |= {r.get("source_url") for r in slot_own}
+
+        slot_common = _fetch(
+            category_filter=["industry", "trend", "platform"],
+            min_relevance=2, exclude_urls=used, limit=2,
+        )
+        used |= {r.get("source_url") for r in slot_common}
+
+        slot_major = _fetch(
+            category_filter=["competitor", "industry", "platform"],
+            min_relevance=4, exclude_urls=used, limit=2,
+        )
+
+        return {
+            "hot":       slot_hot,
+            "own_brand": slot_own,
+            "common":    slot_common,
+            "major":     slot_major,
+        }
+    except Exception as e:
+        logger.warning("external_news_slots_failed", error=str(e))
+        return {"hot": [], "own_brand": [], "common": [], "major": []}
 
 
 # ── ERP 매출 ──────────────────────────────────────────────────────────────────
@@ -1185,17 +1405,22 @@ WEEKDAY_KO: dict[str, str] = {
 def collect_executive_inputs(db: Client, target_date: date) -> dict:
     """
     경영진(Executive) 시점 입력.
-    포함: DART공시·재무시그널·외부뉴스(≥4)·HIGH이상탐지·회사단위동향·자사매출요약
+    포함: DART공시·재무시그널·외부뉴스(4슬롯)·HIGH이상탐지·회사단위동향·자사매출요약
     제외: 상품 랭킹 디테일·카테고리 트렌드·리뷰·프로모션 세부
     """
-    own_slugs = get_own_brand_slugs(db)
+    own_slugs  = get_own_brand_slugs(db)
+    news_slots = fetch_external_news_slots(db, target_date)
     return {
         "date":    target_date,
         "weekday": WEEKDAY_KO.get(target_date.strftime("%A"), target_date.strftime("%A")),
         "own_sales":                 fetch_own_sales(db, target_date),
         "dart_disclosures":          fetch_dart_disclosures(db, target_date),
         "dart_financial_signals":    fetch_dart_financial_signals(db, target_date),
-        "external_news":             fetch_external_news(db, target_date, min_relevance=4),
+        # 외부 뉴스 4-slot (2일 이내, 슬롯별)
+        "news_hot":                  news_slots["hot"],
+        "news_own":                  news_slots["own_brand"],
+        "news_common":               news_slots["common"],
+        "news_major":                news_slots["major"],
         "anomalies_high_own":        fetch_anomalies_own_high(db, target_date, own_slugs),
         "competitor_company_movers": fetch_competitor_company_movers(db, target_date),
         "own_weekly_summary":        fetch_own_weekly_trend(db, target_date, own_slugs),
@@ -1209,10 +1434,13 @@ def collect_staff_inputs(db: Client, target_date: date) -> dict:
     제외: DART재무·외부뉴스·자사매출ERP·리뷰본문
     """
     own_slugs = get_own_brand_slugs(db)
+    # normal_volatility는 LLM에서 제외 — notable/anomaly만 전달 (노이즈 감소)
+    ranking_delta_all = fetch_own_ranking_delta(db, target_date, own_slugs)
+    ranking_delta_llm = [r for r in ranking_delta_all if r.get("volatility_class") != "normal"]
     return {
         "date":    target_date,
         "weekday": WEEKDAY_KO.get(target_date.strftime("%A"), target_date.strftime("%A")),
-        "own_ranking_delta":             fetch_own_ranking_delta(db, target_date, own_slugs),
+        "own_ranking_delta":             ranking_delta_llm,
         "own_weekly_trend":              fetch_own_weekly_trend(db, target_date, own_slugs),
         "category_trends":               fetch_category_trends(db, target_date),
         "competitor_brand_new_entrants": fetch_competitor_new_entrants(db, target_date),

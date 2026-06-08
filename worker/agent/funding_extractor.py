@@ -17,6 +17,7 @@ import re
 from loguru import logger
 
 from worker.agent.claude_client import extract_json, FUNDING_EXTRACT_MODEL
+from worker.funding.name_utils import name_equals
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 
@@ -52,52 +53,33 @@ def _parse_result(result: dict | list | None) -> list[dict]:
     return []
 
 
-def _normalize_company(s: str) -> str:
-    """
-    회사명 정규화: 법인 접두·접미어 제거, 소문자, 공백·특수문자 제거.
-    """
-    s = s.strip().lower()
-    for pat in ["주식회사", "㈜", "(주)", "유한회사", "유한책임회사",
-                " inc", " corp", " co.", " ltd", "."]:
-        s = s.replace(pat, "")
-    # 괄호 안 영문 제거: "(apr)" 등
-    s = re.sub(r"\([a-z0-9\s]+\)", "", s)
-    # 공백·특수문자 제거
-    s = re.sub(r"[\s\-_()+]+", "", s)
-    return s.strip()
-
-
 def _match_company(round_dict: dict, company_name: str) -> bool:
     """
-    추출된 라운드의 company 필드가 검색한 회사와 일치하는지 검증.
-    엉뚱한 회사 기사 필터링 (precision-first).
+    추출된 라운드의 company 필드가 검색한 회사와 **정확일치**하는지 검증.
 
     Rules
     -----
-    - company 필드 없으면 통과 (추출 실패 허용)
-    - 정규화 후 완전 일치 → True
-    - 양방향 부분 일치: 짧은 쪽이 긴 쪽에 포함되면 True
-      단, 짧은 쪽이 3자 미만이면 오탐 위험 → False
+    - company 필드 없거나 빈 문자열 → False (주체 확인 불가 = 리스크)
+    - 정규화 후 완전 일치(==) → True
+    - 부분 일치(substring) 허용 안 함 — "레이어제로" ≠ "레이어"
     """
     extracted_company = (round_dict.get("company") or "").strip()
     if not extracted_company:
-        return True  # company 필드 없으면 통과 (추출 실패일 수 있음)
-
-    a = _normalize_company(extracted_company)
-    t = _normalize_company(company_name)
-
-    if not a or not t:
+        logger.debug(
+            "subject_mismatch",
+            reason="company_field_empty",
+            company_name=company_name,
+        )
         return False
 
-    # 완전 일치
-    if a == t:
+    if name_equals(extracted_company, company_name):
         return True
 
-    # 양방향 부분 일치 — 짧은 쪽 ≥ 3자여야 오탐 방지
-    shorter, longer = (a, t) if len(a) <= len(t) else (t, a)
-    if len(shorter) >= 3 and shorter in longer:
-        return True
-
+    logger.debug(
+        "subject_mismatch",
+        extracted=extracted_company,
+        target=company_name,
+    )
     return False
 
 

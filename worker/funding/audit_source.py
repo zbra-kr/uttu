@@ -9,6 +9,8 @@ dart_source.py 패턴 미러.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import re
 from typing import Any
@@ -167,8 +169,21 @@ def _parse_sce_text(
     }
 
 
-def _parse_report_sce(report: Any, fiscal_year: int, corp_code: str) -> dict | None:
-    """단일 감사보고서 Report 객체 → SCE 유상증자 라운드 (없으면 None)."""
+def _parse_report_sce(
+    report: Any,
+    fiscal_year: int,
+    corp_code: str,
+) -> tuple[dict | None, bool]:
+    """
+    단일 감사보고서 Report 객체 → (SCE 유상증자 라운드, sce_page_found) 반환.
+
+    Returns
+    -------
+    (round_dict_or_None, sce_page_found)
+      · sce_page_found=False → 자본변동표 페이지 자체 없음 (parse_failed 아님)
+      · sce_page_found=True, round_dict=None → 페이지 있으나 유상증자 행 없음 (증자 없음)
+      · sce_page_found=True, round_dict=dict  → 유상증자 발견
+    """
     pages = report.pages or []
     rcept_no = getattr(report, "rcept_no", "") or ""
 
@@ -182,10 +197,10 @@ def _parse_report_sce(report: Any, fiscal_year: int, corp_code: str) -> dict | N
                 corp_code=corp_code, fiscal_year=fiscal_year,
                 found=result is not None,
             )
-            return result
+            return result, True
 
     logger.debug("sce_page_not_found", corp_code=corp_code, fiscal_year=fiscal_year)
-    return None
+    return None, False
 
 
 def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
@@ -193,6 +208,7 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
     감사보고서 자본변동표에서 유상증자/신주발행 라운드 수집 (동기).
 
     dart-fss 라이브러리로 DART 웹뷰어 HTML 접근. 대량 API 호출 없음.
+    dart-fss 의 stdout 출력(로딩 스피너 등)은 억제한다.
 
     Parameters
     ----------
@@ -208,7 +224,10 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
 
     dart.set_api_key(_api_key())
 
-    corp_list = dart.get_corp_list()
+    # dart-fss 가 corp_list 로드 시 stdout 에 진행 표시를 출력 — cron 로그 오염 방지
+    with contextlib.redirect_stdout(io.StringIO()):
+        corp_list = dart.get_corp_list()
+
     corp_obj = next((c for c in corp_list if c.corp_code == corp_code), None)
     if not corp_obj:
         logger.warning("audit_corp_not_found", corp_code=corp_code)
@@ -219,9 +238,10 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
     end_de = f"{current_year}1231"
 
     try:
-        filings = corp_obj.search_filings(
-            bgn_de=bgn_de, end_de=end_de, page_count=100
-        )
+        with contextlib.redirect_stdout(io.StringIO()):
+            filings = corp_obj.search_filings(
+                bgn_de=bgn_de, end_de=end_de, page_count=100
+            )
     except Exception as e:
         logger.debug("audit_search_no_result", corp_code=corp_code, error=str(e))
         return []
@@ -238,6 +258,7 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
     )
 
     all_rounds: list[dict] = []
+    parse_failed_count = 0
     for report in audit_reports:
         year_match = re.search(r"\((\d{4})\.\d{2}\)", report.report_nm or "")
         if not year_match:
@@ -248,14 +269,24 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
         fiscal_year = int(year_match.group(1))
 
         try:
-            result = _parse_report_sce(report, fiscal_year, corp_code)
+            result, sce_found = _parse_report_sce(report, fiscal_year, corp_code)
         except Exception as e:
+            parse_failed_count += 1
             logger.warning(
-                "audit_sce_parse_error",
-                corp_code=corp_code, fiscal_year=fiscal_year, error=str(e),
+                "audit_sce_parse_failed",
+                corp_code=corp_code,
+                fiscal_year=fiscal_year,
+                error=str(e),
+                note="parse_failed — 빈 결과를 '증자 없음'으로 오인 금지",
             )
             raise  # 예외 무음 통과 금지
 
+        if not sce_found:
+            logger.debug(
+                "audit_sce_page_missing",
+                corp_code=corp_code,
+                fiscal_year=fiscal_year,
+            )
         if result:
             all_rounds.append(result)
 
@@ -263,5 +294,6 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
         "audit_rounds_fetched",
         corp_code=corp_code,
         total=len(all_rounds),
+        parse_failed=parse_failed_count,
     )
     return all_rounds

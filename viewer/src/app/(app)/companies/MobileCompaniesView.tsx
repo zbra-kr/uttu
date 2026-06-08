@@ -1,16 +1,15 @@
 'use client';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { fetchCompanyList, type CompanyListRow } from '@/lib/queries';
-import { supabaseBrowser } from '@/lib/supabase/client';
+import { fetchCompanyPage, type CompanyListRow, type CompanySortKey } from '@/lib/queries';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
 
-type SortKey = 'revenue' | 'op_margin' | 'brand_count';
+const LIMIT = 50;
 
 const SORT_OPTS = [
-  { value: 'revenue',    label: '매출순' },
-  { value: 'op_margin',  label: '이익률순' },
+  { value: 'revenue',     label: '매출순' },
+  { value: 'op_margin',   label: '이익률순' },
   { value: 'brand_count', label: '브랜드수' },
 ];
 
@@ -25,65 +24,55 @@ function fmtB(v: number | null): string {
 
 export default function MobileCompaniesView() {
   const router = useRouter();
-  const [rows, setRows] = useState<CompanyListRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('revenue');
+  const [rows, setRows]           = useState<CompanyListRow[]>([]);
+  const [total, setTotal]         = useState<number | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [page, setPage]           = useState(0);
+  const [search, setSearch]       = useState('');
+  const [sortKey, setSortKey]     = useState<CompanySortKey>('revenue');
   const [listedOnly, setListedOnly] = useState(false);
-  // 브랜드명으로 검색 시 매칭되는 company_id 집합
-  const [brandMatchIds, setBrandMatchIds] = useState<Set<string>>(new Set());
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // search 입력 중 표시용 (debounce 전)
+  const [inputVal, setInputVal]   = useState('');
+
+  const totalPages = total != null ? Math.ceil(total / LIMIT) : null;
 
   useEffect(() => {
-    fetchCompanyList()
-      .then(data => { setRows(data); setLoading(false); })
+    setLoading(true);
+    fetchCompanyPage({ page, limit: LIMIT, search, sort: sortKey, listedOnly })
+      .then(res => { setRows(res.rows); setTotal(res.total); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }, [page, search, sortKey, listedOnly]);
 
-  // 검색어 변경 시 brands 테이블에서 회사 ID 조회 (top_brands 3개 한계 우회)
-  useEffect(() => {
+  const handleInput = (val: string) => {
+    setInputVal(val);
     if (timerRef.current) clearTimeout(timerRef.current);
-    const q = search.trim();
-    if (!q) { setBrandMatchIds(new Set()); return; }
     timerRef.current = setTimeout(() => {
-      supabaseBrowser()
-        .from('brands')
-        .select('company_id')
-        .ilike('name', `%${q}%`)
-        .not('company_id', 'is', null)
-        .then(({ data }) => {
-          setBrandMatchIds(new Set((data ?? []).map((r: any) => r.company_id as string)));
-        });
-    }, 250);
-  }, [search]);
+      setSearch(val);
+      setPage(0);
+    }, 350);
+  };
 
-  const filtered = useMemo(() => {
-    let list = rows;
-    if (listedOnly) list = list.filter(r => r.is_listed);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(r =>
-        r.corp_name.toLowerCase().includes(q) ||
-        r.top_brands.some(b => b.toLowerCase().includes(q)) ||
-        brandMatchIds.has(r.id)
-      );
-    }
-    return [...list].sort((a, b) => {
-      if (sortKey === 'revenue')     return (b.revenue ?? -Infinity) - (a.revenue ?? -Infinity);
-      if (sortKey === 'op_margin')   return (b.op_margin ?? -Infinity) - (a.op_margin ?? -Infinity);
-      return b.brand_count - a.brand_count;
-    });
-  }, [rows, search, sortKey, listedOnly, brandMatchIds]);
+  const handleSort = (v: string) => {
+    setSortKey(v as CompanySortKey);
+    setPage(0);
+  };
+
+  const handleListedOnly = () => {
+    setListedOnly(p => !p);
+    setPage(0);
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px', width: '100%', minWidth: 0 }}>
+
       {/* 검색 */}
       <div style={{ position: 'sticky', top: 0, background: 'var(--bg)', paddingTop: 4, paddingBottom: 4, zIndex: 10 }}>
         <input
           type="text"
           placeholder="회사명·브랜드명 검색"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+          value={inputVal}
+          onChange={e => handleInput(e.target.value)}
           style={{
             width: '100%', padding: '9px 12px', borderRadius: 8,
             border: '1px solid var(--bd)', background: 'var(--sur)',
@@ -93,11 +82,11 @@ export default function MobileCompaniesView() {
         />
       </div>
 
-      {/* 정렬 + 상장 토글 */}
+      {/* 정렬 + 상장 토글 + 총 건수 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <MobileFilterChips items={SORT_OPTS} activeValue={sortKey} onChange={v => setSortKey(v as SortKey)} />
+        <MobileFilterChips items={SORT_OPTS} activeValue={sortKey} onChange={handleSort} />
         <button
-          onClick={() => setListedOnly(p => !p)}
+          onClick={handleListedOnly}
           style={{
             flexShrink: 0, padding: '6px 10px', borderRadius: 16, fontSize: 11, fontFamily: 'var(--mono)',
             border: `1px solid ${listedOnly ? 'var(--hs)' : 'var(--bd)'}`,
@@ -108,14 +97,20 @@ export default function MobileCompaniesView() {
         >
           상장만
         </button>
+        {total != null && (
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)', flexShrink: 0 }}>
+            총 {total.toLocaleString()}개
+          </span>
+        )}
       </div>
 
+      {/* 리스트 */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>
-      ) : filtered.length === 0 ? (
+      ) : rows.length === 0 ? (
         <MobileEmptyState icon="🏢" title="검색 결과가 없습니다" />
       ) : (
-        filtered.map(r => (
+        rows.map(r => (
           <div
             key={r.id}
             onClick={() => router.push(`/company?id=${r.id}`)}
@@ -126,7 +121,7 @@ export default function MobileCompaniesView() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--f1)', flex: 1 }}>{r.corp_name}</span>
-              {r.is_listed && (
+              {r.corp_code && (
                 <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--slf)', background: 'var(--slb)', padding: '1px 5px', borderRadius: 3 }}>
                   DART ✓
                 </span>
@@ -148,6 +143,39 @@ export default function MobileCompaniesView() {
             </div>
           </div>
         ))
+      )}
+
+      {/* 페이지네이션 */}
+      {totalPages != null && totalPages > 1 && !loading && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, paddingTop: 8 }}>
+          <button
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page === 0}
+            style={{
+              padding: '6px 14px', borderRadius: 8, fontSize: 12, fontFamily: 'var(--mono)',
+              border: '1px solid var(--bd)', background: 'var(--sur)',
+              color: page === 0 ? 'var(--f4)' : 'var(--f1)',
+              cursor: page === 0 ? 'default' : 'pointer',
+            }}
+          >
+            ← 이전
+          </button>
+          <span style={{ fontSize: 12, color: 'var(--f3)', fontFamily: 'var(--mono)' }}>
+            {page + 1} / {totalPages}
+          </span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={page >= totalPages - 1}
+            style={{
+              padding: '6px 14px', borderRadius: 8, fontSize: 12, fontFamily: 'var(--mono)',
+              border: '1px solid var(--bd)', background: 'var(--sur)',
+              color: page >= totalPages - 1 ? 'var(--f4)' : 'var(--f1)',
+              cursor: page >= totalPages - 1 ? 'default' : 'pointer',
+            }}
+          >
+            다음 →
+          </button>
+        </div>
       )}
     </div>
   );

@@ -2,7 +2,6 @@
 import React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Suspense } from 'react';
-import Link from 'next/link';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileCompanyDetailView from './MobileCompanyDetailView';
 import {
@@ -20,9 +19,11 @@ import {
   fetchCompanyFinancials, fetchCompanyDisclosures,
   fetchCompanyRankStats, fetchCompanyTop100Trend,
   fetchCompanyProductDist, fetchCompanyBrandTrend,
+  fetchChildCompanies, fetchParentCompany,
   CATEGORY_MAP,
   type CompanyInfo, type CompanyBrand, type DartFinancial, type DartDisclosure,
   type CompanyRankStats, type CompanyProductDist, type BrandTrendRow,
+  type CompanyChild,
 } from '@/lib/queries';
 import { getFundingRounds, type FundingRound } from '@/lib/queries-funding';
 import { FundingCollectButton } from '@/components/uttu/funding-collect-button';
@@ -245,13 +246,16 @@ function CompanyPortal({ onSelect }: { onSelect: (id: string) => void }) {
 }
 
 // ── 탭: 개요 (기본정보 + 산하브랜드 통합) ────────────────────────────
-function TabOverview({ info, brands, financials, rankStats, top100Trend, latestRceptNo }: {
+function TabOverview({ info, brands, financials, rankStats, top100Trend, latestRceptNo, childCompanies, onSelectCompany, onSelectBrand }: {
   info: CompanyInfo;
   brands: CompanyBrand[];
   financials: DartFinancial[];
   rankStats: CompanyRankStats | null;
   top100Trend: { date: string; top100_count: number }[];
   latestRceptNo: string | null;
+  childCompanies: CompanyChild[];
+  onSelectCompany: (id: string) => void;
+  onSelectBrand: (id: string) => void;
 }) {
   const latest = financials[0] ?? null;
   const metrics = React.useMemo(() => computeMetrics(financials), [financials]);
@@ -402,31 +406,66 @@ function TabOverview({ info, brands, financials, rankStats, top100Trend, latestR
         )}
       </div>
 
-      {/* 우: 산하 브랜드 */}
-      <SecPanel title={`산하 브랜드 (${brands.length}개)`}>
-        {brands.length === 0
-          ? <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>등록된 브랜드가 없습니다.</div>
-          : (
+      {/* 우: 산하 브랜드 전체 (직접 + 자회사) + 자회사 링크 */}
+      <div className="col-flex gap-14">
+        {(() => {
+          const totalCount = brands.length + childCompanies.reduce((s, c) => s + c.brands.length, 0);
+          const hasAny = totalCount > 0;
+          const COL = '1fr 52px 72px';
+          const BrandRow = ({ b, idx }: { b: { id: string; name: string; slug: string; is_own: boolean; nation_name: string | null }; idx: number }) => (
+            <div className={`row hover ${idx % 2 ? 'alt' : ''}`} style={{ gridTemplateColumns: COL, cursor: 'pointer' }}
+              onClick={() => onSelectBrand(b.id)}>
+              <span style={{ fontWeight: b.is_own ? 500 : 400, color: b.is_own ? 'var(--hs)' : 'var(--f1)' }}>{b.name}</span>
+              <span>
+                {b.is_own
+                  ? <span className="chip" style={{ fontSize: 9, background: 'var(--hs-soft)', color: 'var(--hs)', borderColor: 'var(--hs)' }}>자사</span>
+                  : <span className="mono dim" style={{ fontSize: 10 }}>경쟁사</span>}
+              </span>
+              <span className="mono dim" style={{ fontSize: 10 }}>{b.nation_name ?? '—'}</span>
+            </div>
+          );
+          return (
+            <SecPanel title={`산하 브랜드 (${totalCount}개)`}>
+              {!hasAny
+                ? <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>등록된 브랜드가 없습니다.</div>
+                : (
+                  <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
+                    <div className="row head" style={{ gridTemplateColumns: COL }}>
+                      <span>브랜드</span><span>구분</span><span>국가</span>
+                    </div>
+                    {brands.map((b, i) => <BrandRow key={b.id} b={b} idx={i} />)}
+                    {childCompanies.filter(c => c.brands.length > 0).map(child => (
+                      <React.Fragment key={child.id}>
+                        <div style={{ padding: '4px 8px', background: 'var(--snk)', borderTop: '1px solid var(--bd)', borderBottom: '1px solid var(--bd)', fontSize: 10, color: 'var(--f4)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ color: 'var(--f3)', fontWeight: 500 }}>{child.corp_name}</span>
+                          <span style={{ padding: '1px 4px', background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 3 }}>자회사</span>
+                        </div>
+                        {child.brands.map((b, i) => <BrandRow key={b.id} b={b} idx={brands.length + i} />)}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )
+              }
+            </SecPanel>
+          );
+        })()}
+
+        {childCompanies.length > 0 && (
+          <SecPanel title={`자회사 (${childCompanies.length}개)`}>
             <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
-              <div className="row head" style={{ gridTemplateColumns: '1fr 52px 72px 36px' }}>
-                <span>브랜드</span><span>구분</span><span>국가</span><span />
-              </div>
-              {brands.map((b, i) => (
-                <div key={b.id} className={`row hover ${i % 2 ? 'alt' : ''}`} style={{ gridTemplateColumns: '1fr 52px 72px 36px' }}>
-                  <span style={{ fontWeight: b.is_own ? 500 : 400, color: b.is_own ? 'var(--hs)' : 'var(--f1)' }}>{b.name}</span>
-                  <span>
-                    {b.is_own
-                      ? <span className="chip" style={{ fontSize: 9, background: 'var(--hs-soft)', color: 'var(--hs)', borderColor: 'var(--hs)' }}>자사</span>
-                      : <span className="mono dim" style={{ fontSize: 10 }}>경쟁사</span>}
+              {childCompanies.map((child, i) => (
+                <div key={child.id} className={`row hover ${i % 2 ? 'alt' : ''}`} style={{ gridTemplateColumns: '1fr auto', cursor: 'pointer' }}
+                  onClick={() => onSelectCompany(child.id)}>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--f1)' }}>{child.corp_name}</span>
+                  <span style={{ fontSize: 11, color: 'var(--f4)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    브랜드 {child.brands.length}개 <IcArrowUR size={10} />
                   </span>
-                  <span className="mono dim" style={{ fontSize: 10 }}>{b.nation_name ?? '—'}</span>
-                  <span><Link href={`/brand?id=${b.id}`} className="btn sm icon"><IcArrowUR /></Link></span>
                 </div>
               ))}
             </div>
-          )
-        }
-      </SecPanel>
+          </SecPanel>
+        )}
+      </div>
       </div>
     </div>
   );
@@ -966,17 +1005,19 @@ function CompanyPageInner() {
   const router = useRouter();
   const idFromUrl = params.get('id') ?? '';
 
-  const [info,        setInfo]        = React.useState<CompanyInfo | null>(null);
-  const [brands,      setBrands]      = React.useState<CompanyBrand[]>([]);
-  const [financials,  setFinancials]  = React.useState<DartFinancial[]>([]);
-  const [disclosures, setDisclosures] = React.useState<DartDisclosure[]>([]);
-  const [rankStats,   setRankStats]   = React.useState<CompanyRankStats | null>(null);
-  const [top100Trend, setTop100Trend] = React.useState<{ date: string; top100_count: number }[]>([]);
-  const [productDist, setProductDist] = React.useState<CompanyProductDist | null>(null);
-  const [brandTrend,  setBrandTrend]  = React.useState<BrandTrendRow[]>([]);
-  const [fundingRounds,   setFundingRounds]   = React.useState<FundingRound[]>([]);
-  const [loading,         setLoading]         = React.useState(!!idFromUrl);
-  const [rankLoading,     setRankLoading]     = React.useState(false);
+  const [info,          setInfo]          = React.useState<CompanyInfo | null>(null);
+  const [brands,        setBrands]        = React.useState<CompanyBrand[]>([]);
+  const [financials,    setFinancials]    = React.useState<DartFinancial[]>([]);
+  const [disclosures,   setDisclosures]   = React.useState<DartDisclosure[]>([]);
+  const [rankStats,     setRankStats]     = React.useState<CompanyRankStats | null>(null);
+  const [top100Trend,   setTop100Trend]   = React.useState<{ date: string; top100_count: number }[]>([]);
+  const [productDist,   setProductDist]   = React.useState<CompanyProductDist | null>(null);
+  const [brandTrend,    setBrandTrend]    = React.useState<BrandTrendRow[]>([]);
+  const [fundingRounds, setFundingRounds] = React.useState<FundingRound[]>([]);
+  const [childCompanies, setChildCompanies] = React.useState<CompanyChild[]>([]);
+  const [parentCompany,  setParentCompany]  = React.useState<{ id: string; corp_name: string } | null>(null);
+  const [loading,        setLoading]        = React.useState(!!idFromUrl);
+  const [rankLoading,    setRankLoading]    = React.useState(false);
   const [tab, setTab] = React.useState<'overview' | 'ranking' | 'financial' | 'disclosure' | 'funding'>('overview');
   const [noteCount, setNoteCount] = React.useState(0);
   const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(
@@ -990,16 +1031,20 @@ function CompanyPageInner() {
     }
     setLoading(true);
     setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]);
-    setFundingRounds([]);
+    setFundingRounds([]); setChildCompanies([]); setParentCompany(null);
     Promise.all([
       fetchCompanyInfo(idFromUrl),
       fetchCompanyBrands(idFromUrl),
       fetchCompanyFinancials(idFromUrl),
       fetchCompanyDisclosures(idFromUrl),
       getFundingRounds(idFromUrl, 50),
-    ]).then(async ([ci, cb, cf, cd, fr]) => {
+      fetchChildCompanies(idFromUrl),
+    ]).then(async ([ci, cb, cf, cd, fr, children]) => {
       setInfo(ci); setBrands(cb); setFinancials(cf); setDisclosures(cd);
-      setFundingRounds(fr);
+      setFundingRounds(fr); setChildCompanies(children);
+      if (ci?.parent_company_id) {
+        fetchParentCompany(ci.parent_company_id).then(setParentCompany).catch(() => {});
+      }
       if (ci) {
         window.dispatchEvent(new CustomEvent('uttu:crumb', { detail: { brand: ci.corp_name, name: '' } }));
         window.dispatchEvent(new CustomEvent('uttu:ai-context', { detail: [
@@ -1041,7 +1086,15 @@ function CompanyPageInner() {
   if (!idFromUrl) return <CompanyPortal onSelect={id => router.push(`/company?id=${id}`)} />;
 
   const corpName = loading ? '…' : (info?.corp_name ?? '—');
-  const ownCount = brands.filter(b => b.is_own).length;
+  const childBrandCount = childCompanies.reduce((s, c) => s + c.brands.length, 0);
+  const totalBrandCount = brands.length + childBrandCount;
+  const ownCount =
+    brands.filter(b => b.is_own).length +
+    childCompanies.reduce((s, c) => s + c.brands.filter(b => b.is_own).length, 0);
+
+  const handleSelectCompany = React.useCallback((id: string) => {
+    router.push(`/company?id=${id}`);
+  }, [router]);
 
   return (
     <div className="col-flex gap-14">
@@ -1053,13 +1106,25 @@ function CompanyPageInner() {
         onClose={() => setNoteDrawerOpen(false)}
         onCountChange={setNoteCount}
       />
+      {parentCompany && (
+        <div style={{ marginBottom: -6 }}>
+          <button
+            onClick={() => handleSelectCompany(parentCompany.id)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11, color: 'var(--f4)', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+          >
+            ←
+            <span style={{ color: 'var(--f3)' }}>{parentCompany.corp_name}</span>
+            <span style={{ fontSize: 10, padding: '1px 5px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 4 }}>모회사</span>
+          </button>
+        </div>
+      )}
       <div className="page-title">
         <h1>{corpName}</h1>
         {info?.is_listed && info.stock_code && <span className="chip mono">{info.stock_code}</span>}
         {info?.is_listed !== undefined && (
           <span className="chip" style={{ color: info.is_listed ? 'var(--slf)' : 'var(--f3)' }}>{info.is_listed ? '상장' : '비상장'}</span>
         )}
-        {brands.length > 0 && <span className="sub">산하 브랜드 {brands.length}개{ownCount > 0 ? ` · 자사 ${ownCount}개` : ''}</span>}
+        {totalBrandCount > 0 && <span className="sub">산하 브랜드 {totalBrandCount}개{ownCount > 0 ? ` · 자사 ${ownCount}개` : ''}</span>}
         <div className="row-flex gap-6" style={{ marginLeft: 'auto' }}>
           <BookmarkToggle entity_type="company" entity_id={idFromUrl} label={corpName !== '…' && corpName !== '—' ? corpName : undefined} />
           <button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
@@ -1080,7 +1145,7 @@ function CompanyPageInner() {
           <KpiCard label="TOP 100" value={rankLoading ? '…' : rankStats?.top100_count.toLocaleString() ?? '—'} accent />
           <KpiCard label="평균 랭킹" value={rankLoading ? '…' : rankStats?.avg_rank ? `${rankStats.avg_rank}위` : '—'} />
           <KpiCard label="최고 순위 상품" value={rankLoading ? '…' : rankStats?.best_rank ? `#${rankStats.best_rank}` : '—'} sub={rankStats?.best_product_name} />
-          <KpiCard label="산하 브랜드" value={brands.length} sub={ownCount > 0 ? `자사 ${ownCount}개 포함` : undefined} />
+          <KpiCard label="산하 브랜드" value={totalBrandCount} sub={ownCount > 0 ? `자사 ${ownCount}개 포함` : undefined} />
         </div>
       )}
 
@@ -1106,7 +1171,7 @@ function CompanyPageInner() {
         <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>회사 정보를 찾을 수 없습니다.</div>
       ) : (
         <>
-          {tab === 'overview'    && <TabOverview info={info} brands={brands} financials={financials} rankStats={rankStats} top100Trend={top100Trend} latestRceptNo={disclosures[0]?.rcept_no ?? null} />}
+          {tab === 'overview'    && <TabOverview info={info} brands={brands} financials={financials} rankStats={rankStats} top100Trend={top100Trend} latestRceptNo={disclosures[0]?.rcept_no ?? null} childCompanies={childCompanies} onSelectCompany={handleSelectCompany} onSelectBrand={(id) => router.push(`/brand?id=${id}`)} />}
           {tab === 'ranking'     && <TabRanking rankStats={rankStats} top100Trend={top100Trend} brandTrend={brandTrend} productDist={productDist} rankLoading={rankLoading} brands={brands} />}
           {tab === 'financial'   && <TabFinancial financials={financials} top100Trend={top100Trend} rankStats={rankStats} />}
           {tab === 'disclosure'  && <TabDisclosure disclosures={disclosures} />}

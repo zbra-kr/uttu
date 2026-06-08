@@ -67,6 +67,19 @@
 
 ---
 
+## 백그라운드 프로세스 실행 규칙
+
+이 맥은 서비스 서버 역할을 겸하므로 **맥 슬립 중 프로세스 중단은 절대 허용 안 됨.**
+
+- 장시간 수집·배치 작업은 반드시 `caffeinate -i` 로 감싸서 실행:
+  ```bash
+  caffeinate -i bash scripts/run_xxx.sh
+  ```
+- `caffeinate` 없이 백그라운드 실행 금지 — 슬립 시 즉시 종료됨
+- Claude Code Bash 백그라운드(`run_in_background`)로 띄울 때도 명령어 앞에 `caffeinate -i` 필수
+
+---
+
 ## 코드 패턴
 
 - stub 상품: `{musinsa_no, name:"(stub)", is_own:false}` → `run_product.sh`가 상세 채움

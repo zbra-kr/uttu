@@ -92,6 +92,12 @@ body {
   flex-direction: column;
   gap: 1px;
   padding: 4px 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bd) transparent;
 }
 .sb-item {
   display: flex;

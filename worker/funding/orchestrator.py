@@ -67,10 +67,19 @@ def _set_job_status(
 
 # ── DB 쓰기 ──────────────────────────────────────────────────────────────────────
 
+def _delete_existing_rounds(db: Client, company_id: str) -> None:
+    """기존 수집 결과 전체 삭제 — 재수집 전 호출."""
+    try:
+        db.table("funding_rounds").delete().eq("company_id", company_id).execute()
+        logger.info("funding_rounds_deleted", company_id=company_id)
+    except Exception as e:
+        logger.warning("funding_rounds_delete_failed", company_id=company_id, error=str(e))
+
+
 def _upsert_rounds(db: Client, rounds: list[dict]) -> int:
     """
-    funding_rounds 테이블에 upsert.
-    unique(company_id, source_type, source_ref) 충돌 시 업데이트.
+    funding_rounds 테이블에 insert.
+    _delete_existing_rounds 호출 후 사용 (삭제 후 신규 적재 패턴).
     PostgREST 1000행 상한 대응: 청크 처리.
     """
     if not rounds:
@@ -215,6 +224,7 @@ async def run_job(
 
     # 8. DB 쓰기 (dry_run 아닐 때만)
     if not dry_run:
+        _delete_existing_rounds(db, company_id)
         upserted = _upsert_rounds(db, merged)
         _update_company_collected_at(db, company_id)
         # funding_brief_md, funding_brief_at 업데이트
