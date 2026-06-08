@@ -239,14 +239,14 @@ function DartSection({ company, onSaved }: { company: UnifiedCompany; onSaved: (
 
 // ─── 모회사 설정 섹션 ────────────────────────────────────────────────────────
 function ParentSection({ company, onSaved }: { company: UnifiedCompany; onSaved: (parentId: string | null) => void }) {
-  const [q, setQ]               = React.useState('');
-  const [results, setResults]   = React.useState<CompanyOption[]>([]);
+  const [q, setQ]                 = React.useState('');
+  const [results, setResults]     = React.useState<CompanyOption[]>([]);
   const [searching, setSearching] = React.useState(false);
-  const [selected, setSelected] = React.useState<CompanyOption | null>(null);
-  const [saving, setSaving]     = React.useState(false);
-  const [error, setError]       = React.useState('');
+  const [busyId, setBusyId]       = React.useState<string | null>(null);
+  const [saving, setSaving]       = React.useState(false);
+  const [error, setError]         = React.useState('');
 
-  React.useEffect(() => { setQ(''); setResults([]); setSelected(null); setError(''); }, [company.id]);
+  React.useEffect(() => { setQ(''); setResults([]); setError(''); }, [company.id]);
 
   React.useEffect(() => {
     if (!q.trim()) { setResults([]); return; }
@@ -261,7 +261,8 @@ function ParentSection({ company, onSaved }: { company: UnifiedCompany; onSaved:
   }, [q, company.id]);
 
   const doSave = async (parentId: string | null) => {
-    setSaving(true); setError('');
+    if (parentId) setBusyId(parentId); else setSaving(true);
+    setError('');
     try {
       const res = await fetch(`/api/companies/${company.id}/parent`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -269,56 +270,52 @@ function ParentSection({ company, onSaved }: { company: UnifiedCompany; onSaved:
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? '저장 실패');
-      setSelected(null); setQ(''); setResults([]);
+      setQ(''); setResults([]);
       onSaved(parentId);
     } catch (e: any) { setError(e.message); }
-    finally { setSaving(false); }
+    finally { setBusyId(null); setSaving(false); }
   };
 
   return (
     <div className="col-flex gap-8">
       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>모회사 설정</div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px',
-        background: 'var(--snk)', borderRadius: 6, border: '1px solid var(--bd)' }}>
-        {company.parent ? (
-          <>
-            <span style={{ fontSize: 12, color: 'var(--f1)' }}>{company.parent.corp_name}</span>
-            <button className="btn sm" style={{ fontSize: 10, padding: '2px 8px', color: 'var(--shf)' }}
-              onClick={() => doSave(null)} disabled={saving}>해제</button>
-          </>
-        ) : (
-          <span style={{ fontSize: 12, color: 'var(--f4)' }}>없음 (최상위)</span>
-        )}
-      </div>
-
-      {selected ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: 'var(--snk)', borderRadius: 6, border: '1px solid var(--bd)' }}>
-          <span style={{ flex: 1, fontSize: 12, color: 'var(--hs)', fontWeight: 500 }}>{selected.corp_name}</span>
-          <button className="btn sm" style={{ fontSize: 10, padding: '2px 6px', color: 'var(--shf)' }} onClick={() => { setSelected(null); setQ(''); }}>✕</button>
-          <button className="btn sm" style={{ fontSize: 10, padding: '2px 8px', background: 'var(--hs)', color: '#fff', borderColor: 'var(--hs)' }}
-            onClick={() => doSave(selected.id)} disabled={saving}>{saving ? '…' : '설정'}</button>
+      {/* 현재 모회사 */}
+      {company.parent ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderRadius: 5,
+          background: 'var(--snk)', border: '1px solid var(--bd)' }}>
+          <span style={{ flex: 1, fontSize: 12, color: 'var(--f1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {company.parent.corp_name}
+          </span>
+          <button className="btn sm" style={{ fontSize: 10, padding: '2px 6px', color: 'var(--shf)', flexShrink: 0 }}
+            onClick={() => doSave(null)} disabled={saving}>{saving ? '…' : '해제'}</button>
         </div>
       ) : (
-        <div className="col-flex gap-4">
-          <div className="input row-flex center gap-6">
-            <IcSearch size={12} style={{ color: 'var(--f4)', flexShrink: 0 }} />
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="모회사 검색"
-              style={{ background: 'none', border: 'none', outline: 'none', fontSize: 12, width: '100%', color: 'var(--f1)' }} />
-          </div>
-          {searching && <div style={{ fontSize: 11, color: 'var(--f4)' }}>검색 중…</div>}
-          {results.length > 0 && (
-            <div style={{ border: '1px solid var(--bd)', borderRadius: 6, overflow: 'hidden', maxHeight: 180, overflowY: 'auto' }}>
-              {results.map(c => (
-                <div key={c.id} className="row hover" style={{ gridTemplateColumns: '1fr', cursor: 'pointer' }}
-                  onClick={() => { setSelected(c); setQ(''); setResults([]); }}>
-                  <span style={{ fontSize: 12 }}>{c.corp_name}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <div style={{ fontSize: 11, color: 'var(--f4)' }}>없음 (최상위)</div>
       )}
+
+      {/* 모회사 검색 */}
+      <div className="col-flex gap-4">
+        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--f3)' }}>모회사 설정</div>
+        <div className="input row-flex center gap-6">
+          <IcSearch size={12} style={{ color: 'var(--f4)', flexShrink: 0 }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="회사명 검색"
+            style={{ background: 'none', border: 'none', outline: 'none', fontSize: 12, width: '100%', color: 'var(--f1)' }} />
+        </div>
+        {searching && <div style={{ fontSize: 11, color: 'var(--f4)' }}>검색 중…</div>}
+        {results.length > 0 && (
+          <div style={{ border: '1px solid var(--bd)', borderRadius: 6, overflow: 'hidden', maxHeight: 160, overflowY: 'auto' }}>
+            {results.map(c => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
+                borderBottom: '1px solid var(--bd)' }} className="hover">
+                <span style={{ flex: 1, fontSize: 12 }}>{c.corp_name}</span>
+                <button className="btn sm" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
+                  onClick={() => doSave(c.id)} disabled={busyId === c.id}>{busyId === c.id ? '…' : '설정'}</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       {error && <div style={{ fontSize: 11, color: 'var(--shf)' }}>{error}</div>}
     </div>
   );

@@ -1055,14 +1055,16 @@ function CompanyPageInner() {
       }
       setLoading(false);
 
-      if (cb.length > 0) {
+      const childBrands = children.flatMap((c: CompanyChild) => c.brands);
+      const allBrands = [...cb, ...childBrands];
+      if (allBrands.length > 0) {
         setRankLoading(true);
-        const brandNames = cb.map((b: CompanyBrand) => b.name);
+        const brandNames = allBrands.map((b: { name: string }) => b.name);
         const [rs, trend, pd, bt] = await Promise.all([
           fetchCompanyRankStats(brandNames),
           fetchCompanyTop100Trend(brandNames, 30),
           fetchCompanyProductDist(brandNames),
-          cb.length > 1 ? fetchCompanyBrandTrend(brandNames, 30) : Promise.resolve([]),
+          allBrands.length > 1 ? fetchCompanyBrandTrend(brandNames, 30) : Promise.resolve([]),
         ]);
         setRankStats(rs); setTop100Trend(trend); setProductDist(pd); setBrandTrend(bt);
         setRankLoading(false);

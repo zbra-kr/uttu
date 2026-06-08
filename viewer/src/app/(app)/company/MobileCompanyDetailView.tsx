@@ -4,9 +4,10 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import {
   fetchCompanyInfo, fetchCompanyBrands, fetchCompanyFinancials, fetchCompanyDisclosures,
   fetchCompanyRankStats, fetchCompanyTop100Trend, fetchCompanyProductDist, fetchCompanyBrandTrend,
+  fetchChildCompanies,
   CATEGORY_MAP,
   type CompanyInfo, type CompanyBrand, type DartFinancial, type DartDisclosure,
-  type CompanyRankStats, type CompanyProductDist, type BrandTrendRow,
+  type CompanyRankStats, type CompanyProductDist, type BrandTrendRow, type CompanyChild,
 } from '@/lib/queries';
 import { getFundingRounds, type FundingRound } from '@/lib/queries-funding';
 import { FundingCollectButton } from '@/components/uttu/funding-collect-button';
@@ -824,7 +825,8 @@ export default function MobileCompanyDetailView() {
   const [top100Trend,   setTop100Trend]   = useState<{ date: string; top100_count: number }[]>([]);
   const [productDist,   setProductDist]   = useState<CompanyProductDist | null>(null);
   const [brandTrend,    setBrandTrend]    = useState<BrandTrendRow[]>([]);
-  const [fundingRounds, setFundingRounds] = useState<FundingRound[]>([]);
+  const [fundingRounds,  setFundingRounds]  = useState<FundingRound[]>([]);
+  const [childCompanies, setChildCompanies] = useState<CompanyChild[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [rankLoading,   setRankLoading]   = useState(false);
   const [tab, setTab] = useState<TabKey>('overview');
@@ -833,26 +835,29 @@ export default function MobileCompanyDetailView() {
     if (!companyId) return;
     setLoading(true);
     setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]);
-    setFundingRounds([]);
+    setFundingRounds([]); setChildCompanies([]);
     Promise.all([
       fetchCompanyInfo(companyId),
       fetchCompanyBrands(companyId),
       fetchCompanyFinancials(companyId),
       fetchCompanyDisclosures(companyId),
       getFundingRounds(companyId, 50),
-    ]).then(async ([ci, cb, cf, cd, fr]) => {
+      fetchChildCompanies(companyId),
+    ]).then(async ([ci, cb, cf, cd, fr, children]) => {
       setInfo(ci); setBrands(cb); setFinancials(cf); setDisclosures(cd);
-      setFundingRounds(fr);
+      setFundingRounds(fr); setChildCompanies(children);
       setLoading(false);
 
-      if (cb.length > 0) {
+      const childBrands = children.flatMap((c: CompanyChild) => c.brands);
+      const allBrands = [...cb, ...childBrands];
+      if (allBrands.length > 0) {
         setRankLoading(true);
-        const brandNames = cb.map((b: CompanyBrand) => b.name);
+        const brandNames = allBrands.map((b: { name: string }) => b.name);
         const [rs, trend, pd, bt] = await Promise.all([
           fetchCompanyRankStats(brandNames),
           fetchCompanyTop100Trend(brandNames, 30),
           fetchCompanyProductDist(brandNames),
-          cb.length > 1 ? fetchCompanyBrandTrend(brandNames, 30) : Promise.resolve([]),
+          allBrands.length > 1 ? fetchCompanyBrandTrend(brandNames, 30) : Promise.resolve([]),
         ]);
         setRankStats(rs); setTop100Trend(trend); setProductDist(pd); setBrandTrend(bt);
         setRankLoading(false);
