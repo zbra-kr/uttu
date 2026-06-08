@@ -569,61 +569,69 @@ def fetch_external_news_slots(db: Client, target_date: date) -> dict:
     2일 이내 기사를 4개 슬롯으로 분류. 없으면 빈 리스트 (강제 채움 없음).
 
     슬롯:
-      hot:       화제성 — mention_count 높은 순 (동일 이슈 다매체 보도)
+      hot:       화제성 — importance≥3 기사를 복합점수(importance×2 + mention_count) DESC
       own_brand: 자사 직접 언급 (없으면 생략)
       common:    패션 공통 — industry/trend/platform
-      major:     주요 이슈 — relevance ≥ 4, competitor/industry/platform
+      major:     주요 이슈 — relevance≥4, competitor/industry/platform
 
     슬롯 간 URL 중복 없음 (앞 슬롯 우선).
+    컬럼 미존재(마이그레이션 미적용) 시 자동 폴백.
     """
     since_2d   = (target_date - timedelta(days=2)).isoformat()
     cutoff_iso = since_2d + "T00:00:00+00:00"
 
-    # mention_count 컬럼 존재 여부 — 마이그레이션 01308 적용 후 True
-    _WITH_MENTION = (
+    # 가용 컬럼 순서: 많은 쪽 → 적은 쪽 (마이그레이션 단계 대응)
+    _COL_SETS = [
         "headline, summary, source_name, source_url, category, "
-        "relevance, mention_count, published_at, related_brands, related_companies"
-    )
-    _NO_MENTION = (
+        "relevance, importance, mention_count, published_at, related_brands, related_companies",
         "headline, summary, source_name, source_url, category, "
-        "relevance, published_at, related_brands, related_companies"
-    )
+        "relevance, mention_count, published_at, related_brands, related_companies",
+        "headline, summary, source_name, source_url, category, "
+        "relevance, published_at, related_brands, related_companies",
+    ]
+
+    def _select(base_fn) -> list[dict]:
+        """컬럼셋 순서대로 시도, does-not-exist 에러면 다음 셋으로."""
+        for cols in _COL_SETS:
+            try:
+                return base_fn(cols) or []
+            except Exception as e:
+                if "does not exist" in str(e):
+                    continue
+                raise
+        return []
 
     def _fetch(
         category_filter=None,
         min_relevance: int = 2,
-        order_mention: bool = False,
+        min_importance: int = 1,
+        composite_sort: bool = False,
         limit: int = 2,
+        fetch_limit: int = 20,
         exclude_urls: set | None = None,
     ) -> list[dict]:
-        def _build(cols: str, with_mention: bool) -> list[dict]:
+        def _build(cols: str) -> list[dict]:
             q = (
                 db.table("external_news")
                 .select(cols)
                 .gte("collected_date", since_2d)
                 .gte("relevance", min_relevance)
             )
+            if "importance" in cols and min_importance > 1:
+                q = q.gte("importance", min_importance)
             if category_filter:
                 if isinstance(category_filter, list):
                     q = q.in_("category", category_filter)
                 else:
                     q = q.eq("category", category_filter)
-            if order_mention and with_mention:
-                q = q.order("mention_count", desc=True).order("relevance", desc=True)
-            else:
-                q = q.order("relevance", desc=True).order("published_at", desc=True)
-            return q.limit(limit + 10).execute().data or []
+            # DB 레벨 정렬은 relevance + 날짜 (복합점수는 Python에서)
+            q = q.order("relevance", desc=True).order("published_at", desc=True)
+            return q.limit(fetch_limit).execute().data or []
 
-        # mention_count 포함 시도 → 실패 시 폴백
-        try:
-            rows = _build(_WITH_MENTION, with_mention=True)
-        except Exception as e:
-            if "mention_count" in str(e):
-                rows = _build(_NO_MENTION, with_mention=False)
-            else:
-                raise
+        rows = _select(_build)
 
-        result: list[dict] = []
+        # Python 필터: published_at 2일 이내 + exclude + importance 폴백 필터
+        filtered: list[dict] = []
         for r in rows:
             url = r.get("source_url") or ""
             if exclude_urls and url in exclude_urls:
@@ -635,30 +643,47 @@ def fetch_external_news_slots(db: Client, target_date: date) -> dict:
                         continue
                 except TypeError:
                     pass
-            result.append(r)
-            if len(result) >= limit:
-                break
-        return result
+            if min_importance > 1 and r.get("importance", 2) < min_importance:
+                continue
+            filtered.append(r)
+
+        # 복합점수 정렬: importance×2 + mention_count (둘 다 없으면 relevance 유지)
+        if composite_sort:
+            filtered.sort(
+                key=lambda x: x.get("importance", 2) * 2 + x.get("mention_count", 1),
+                reverse=True,
+            )
+
+        return filtered[:limit]
 
     try:
-        slot_hot = _fetch(order_mention=True, min_relevance=2, limit=2)
+        # Slot A: 화제성 — importance≥3 필터 + 복합점수 정렬
+        slot_hot = _fetch(
+            min_relevance=2, min_importance=3,
+            composite_sort=True, limit=2, fetch_limit=20,
+        )
         used = {r.get("source_url") for r in slot_hot}
 
+        # Slot B: 자사 연관 (없으면 빈 리스트 — 강제 채움 없음)
         slot_own = _fetch(
-            category_filter="own_brand", min_relevance=1,
-            exclude_urls=used, limit=2,
+            category_filter="own_brand", min_relevance=1, min_importance=2,
+            limit=2, fetch_limit=10, exclude_urls=used,
         )
         used |= {r.get("source_url") for r in slot_own}
 
+        # Slot C: 패션 공통 (industry/trend/platform)
         slot_common = _fetch(
             category_filter=["industry", "trend", "platform"],
-            min_relevance=2, exclude_urls=used, limit=2,
+            min_relevance=2, min_importance=2,
+            limit=2, fetch_limit=15, exclude_urls=used,
         )
         used |= {r.get("source_url") for r in slot_common}
 
+        # Slot D: 주요 이슈 (relevance≥4, competitor/industry/platform)
         slot_major = _fetch(
             category_filter=["competitor", "industry", "platform"],
-            min_relevance=4, exclude_urls=used, limit=2,
+            min_relevance=4, min_importance=2,
+            limit=2, fetch_limit=15, exclude_urls=used,
         )
 
         return {

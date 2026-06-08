@@ -476,6 +476,7 @@ def _upsert_news(
             "source_url":        raw.get("source_url") or None,
             "source_name":       raw.get("source_name"),
             "relevance":         relevance,
+            "importance":        importance,
             "mention_count":     mention_count,
             "related_brands":    item.get("related_brands") or [],
             "related_companies": item.get("related_companies") or [],
