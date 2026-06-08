@@ -313,6 +313,120 @@ function ParentSection({ company, onSaved }: { company: UnifiedCompany; onSaved:
   );
 }
 
+// ─── 자회사 설정 섹션 ────────────────────────────────────────────────────────
+function SubsidiarySection({ company }: { company: UnifiedCompany }) {
+  const [subsidiaries, setSubsidiaries] = React.useState<CompanyOption[]>([]);
+  const [loading, setLoading]           = React.useState(true);
+  const [q, setQ]                       = React.useState('');
+  const [results, setResults]           = React.useState<CompanyOption[]>([]);
+  const [searching, setSearching]       = React.useState(false);
+  const [busyIds, setBusyIds]           = React.useState<Set<string>>(new Set());
+
+  const fetchSubs = React.useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabaseBrowser()
+      .from('companies').select('id, corp_name')
+      .eq('parent_company_id', company.id).order('corp_name');
+    setSubsidiaries((data ?? []) as CompanyOption[]);
+    setLoading(false);
+  }, [company.id]);
+
+  React.useEffect(() => { fetchSubs(); setQ(''); setResults([]); }, [fetchSubs]);
+
+  React.useEffect(() => {
+    if (!q.trim()) { setResults([]); return; }
+    const subIds = new Set(subsidiaries.map(s => s.id));
+    const t = setTimeout(async () => {
+      setSearching(true);
+      const { data } = await supabaseBrowser().from('companies').select('id, corp_name')
+        .ilike('corp_name', `%${q.trim()}%`)
+        .neq('id', company.id)
+        .order('corp_name').limit(10);
+      setResults(((data ?? []) as CompanyOption[]).filter(c => !subIds.has(c.id)));
+      setSearching(false);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, company.id, subsidiaries]);
+
+  const setBusy = (id: string, on: boolean) =>
+    setBusyIds(prev => { const n = new Set(prev); on ? n.add(id) : n.delete(id); return n; });
+
+  const addSub = async (child: CompanyOption) => {
+    setBusy(child.id, true);
+    const res = await fetch(`/api/companies/${child.id}/parent`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parent_company_id: company.id }),
+    });
+    if (res.ok) {
+      setSubsidiaries(prev => [...prev, child].sort((a, b) => a.corp_name.localeCompare(b.corp_name)));
+      setResults(prev => prev.filter(c => c.id !== child.id));
+      setQ('');
+    }
+    setBusy(child.id, false);
+  };
+
+  const removeSub = async (childId: string) => {
+    setBusy(childId, true);
+    const res = await fetch(`/api/companies/${childId}/parent`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parent_company_id: null }),
+    });
+    if (res.ok) setSubsidiaries(prev => prev.filter(c => c.id !== childId));
+    setBusy(childId, false);
+  };
+
+  return (
+    <div className="col-flex gap-8">
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+        자회사 목록
+        {!loading && subsidiaries.length > 0 && (
+          <span style={{ marginLeft: 6, fontWeight: 400, color: 'var(--f4)', fontSize: 10, textTransform: 'none' }}>{subsidiaries.length}개</span>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ fontSize: 11, color: 'var(--f4)' }}>로딩 중…</div>
+      ) : subsidiaries.length === 0 ? (
+        <div style={{ fontSize: 11, color: 'var(--f4)' }}>등록된 자회사 없음</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 140, overflowY: 'auto' }}>
+          {subsidiaries.map(c => (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderRadius: 5,
+              background: 'var(--snk)', border: '1px solid var(--bd)' }}>
+              <span style={{ flex: 1, fontSize: 12, color: 'var(--f1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.corp_name}</span>
+              <button className="btn sm" style={{ fontSize: 10, padding: '2px 6px', color: 'var(--shf)', flexShrink: 0 }}
+                onClick={() => removeSub(c.id)} disabled={busyIds.has(c.id)}>{busyIds.has(c.id) ? '…' : '해제'}</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="col-flex gap-4">
+        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--f3)' }}>자회사 추가</div>
+        <div className="input row-flex center gap-6">
+          <IcSearch size={12} style={{ color: 'var(--f4)', flexShrink: 0 }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="회사명 검색"
+            style={{ background: 'none', border: 'none', outline: 'none', fontSize: 12, width: '100%', color: 'var(--f1)' }} />
+        </div>
+        {searching && <div style={{ fontSize: 11, color: 'var(--f4)' }}>검색 중…</div>}
+        {results.length > 0 && (
+          <div style={{ border: '1px solid var(--bd)', borderRadius: 6, overflow: 'hidden', maxHeight: 160, overflowY: 'auto' }}>
+            {results.map(c => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
+                cursor: 'pointer', borderBottom: '1px solid var(--bd)' }}
+                className="hover">
+                <span style={{ flex: 1, fontSize: 12 }}>{c.corp_name}</span>
+                <button className="btn sm" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}
+                  onClick={() => addSub(c)} disabled={busyIds.has(c.id)}>{busyIds.has(c.id) ? '…' : '추가'}</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── 브랜드 관리 섹션 ────────────────────────────────────────────────────────
 function BrandSection({ company }: { company: UnifiedCompany }) {
   const [brands, setBrands]         = React.useState<LinkedBrand[]>([]);
@@ -871,13 +985,15 @@ function MappingDesktopView() {
                 <DartSection key={`dart-${selected.id}`} company={selected} onSaved={handleDartSaved} />
                 <div style={{ height: 1, background: 'var(--bd)', margin: '20px 0' }} />
                 <ParentSection key={`parent-${selected.id}`} company={selected} onSaved={handleParentSaved} />
+                <div style={{ height: 1, background: 'var(--bd)', margin: '20px 0' }} />
+                <SubsidiarySection key={`sub-${selected.id}`} company={selected} />
               </div>
             </>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 8, color: 'var(--f4)' }}>
               <span style={{ fontSize: 28, opacity: 0.15 }}>←</span>
               <div style={{ fontSize: 13 }}>회사를 선택하세요</div>
-              <div style={{ fontSize: 11 }}>DART 코드 매핑, 모회사 설정</div>
+              <div style={{ fontSize: 11 }}>DART 코드 매핑, 모회사·자회사 설정</div>
             </div>
           )}
         </div>
