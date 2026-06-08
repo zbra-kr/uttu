@@ -34,6 +34,17 @@ const parseCorp = (raw: string) => {
   return m ? m[1] : raw.replace(/\D/g, '').slice(0, 8);
 };
 
+// ─── 필터 체크박스 ──────────────────────────────────────────────────────────
+function FilterChk({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
+      color: checked ? 'var(--hs)' : 'var(--f3)', cursor: 'pointer', userSelect: 'none', fontWeight: checked ? 600 : 400 }}>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} style={{ cursor: 'pointer', accentColor: 'var(--hs)' }} />
+      {label}
+    </label>
+  );
+}
+
 // ─── 리마크 에디터 ───────────────────────────────────────────────────────────
 function RemarkEditor({ value, onSave }: { value: string | null; onSave: (v: string) => void }) {
   const [editing, setEditing] = React.useState(false);
@@ -428,8 +439,11 @@ function SubsidiarySection({ company }: { company: UnifiedCompany }) {
 }
 
 // ─── 브랜드 관리 섹션 ────────────────────────────────────────────────────────
+interface SubCompanyBrands { id: string; corp_name: string; brands: LinkedBrand[]; }
+
 function BrandSection({ company }: { company: UnifiedCompany }) {
   const [brands, setBrands]         = React.useState<LinkedBrand[]>([]);
+  const [subGroups, setSubGroups]   = React.useState<SubCompanyBrands[]>([]);
   const [loading, setLoading]       = React.useState(true);
   const [checkedIds, setCheckedIds] = React.useState<Set<string>>(new Set());
   const [addQ, setAddQ]             = React.useState('');
@@ -441,10 +455,32 @@ function BrandSection({ company }: { company: UnifiedCompany }) {
 
   const fetchBrands = React.useCallback(async () => {
     setLoading(true);
-    const { data } = await (supabaseBrowser().from('brands')
+    // 자사 브랜드
+    const { data: mainData } = await (supabaseBrowser().from('brands')
       .select('id, name, name_eng, company_skip, company_confirmed, remark')
       .eq('company_id', company.id).not('detail_fetched_at', 'is', null).order('name') as any);
-    setBrands((data ?? []) as LinkedBrand[]);
+    setBrands((mainData ?? []) as LinkedBrand[]);
+
+    // 자회사 목록 → 자회사별 브랜드
+    const { data: subsData } = await supabaseBrowser()
+      .from('companies').select('id, corp_name')
+      .eq('parent_company_id', company.id).order('corp_name');
+    const subs = (subsData ?? []) as CompanyOption[];
+    if (subs.length > 0) {
+      const subIds = subs.map(s => s.id);
+      const { data: subBrandData } = await (supabaseBrowser().from('brands')
+        .select('id, name, name_eng, company_skip, company_confirmed, remark, company_id')
+        .in('company_id', subIds).not('detail_fetched_at', 'is', null).order('name') as any);
+      const brandsBySubId = new Map<string, LinkedBrand[]>();
+      for (const b of (subBrandData ?? [])) {
+        const arr = brandsBySubId.get(b.company_id) ?? [];
+        arr.push(b);
+        brandsBySubId.set(b.company_id, arr);
+      }
+      setSubGroups(subs.map(s => ({ ...s, brands: brandsBySubId.get(s.id) ?? [] })));
+    } else {
+      setSubGroups([]);
+    }
     setLoading(false);
   }, [company.id]);
 
@@ -538,7 +574,12 @@ function BrandSection({ company }: { company: UnifiedCompany }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', letterSpacing: '0.05em', textTransform: 'uppercase', flex: 1 }}>
           브랜드 관리
-          {!loading && <span style={{ marginLeft: 6, fontWeight: 400, color: 'var(--f4)', fontSize: 10, textTransform: 'none' }}>{brands.length}개 연결됨</span>}
+          {!loading && (
+            <span style={{ marginLeft: 6, fontWeight: 400, color: 'var(--f4)', fontSize: 10, textTransform: 'none' }}>
+              {brands.length}개
+              {subGroups.length > 0 && ` + 자회사 ${subGroups.reduce((s, g) => s + g.brands.length, 0)}개`}
+            </span>
+          )}
         </div>
         <input type="checkbox" checked={allChecked} onChange={() => allChecked ? setCheckedIds(new Set()) : setCheckedIds(new Set(brands.map(b => b.id)))}
           disabled={brands.length === 0} style={{ cursor: 'pointer' }} />
@@ -548,7 +589,9 @@ function BrandSection({ company }: { company: UnifiedCompany }) {
       {/* 연결된 브랜드 목록 */}
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1, minHeight: 0 }}>
         {loading && <div style={{ fontSize: 12, color: 'var(--f4)', textAlign: 'center', padding: '30px 0' }}>로딩 중…</div>}
-        {!loading && brands.length === 0 && <div style={{ fontSize: 12, color: 'var(--f4)', textAlign: 'center', padding: '30px 0' }}>연결된 브랜드 없음</div>}
+        {!loading && brands.length === 0 && subGroups.length === 0 && (
+          <div style={{ fontSize: 12, color: 'var(--f4)', textAlign: 'center', padding: '30px 0' }}>연결된 브랜드 없음</div>
+        )}
         {brands.map(b => {
           const isChk = checkedIds.has(b.id); const isBusy = busyIds.has(b.id);
           return (
@@ -575,6 +618,33 @@ function BrandSection({ company }: { company: UnifiedCompany }) {
             </div>
           );
         })}
+
+        {/* 자회사 브랜드 (읽기 전용) */}
+        {!loading && subGroups.map(sg => (
+          <div key={sg.id}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--f4)', padding: '10px 8px 4px',
+              letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                ↳ {sg.corp_name}
+              </span>
+              <span style={{ flexShrink: 0 }}>{sg.brands.length}개</span>
+            </div>
+            {sg.brands.length === 0 ? (
+              <div style={{ fontSize: 11, color: 'var(--f4)', padding: '2px 8px 6px', fontStyle: 'italic' }}>브랜드 없음</div>
+            ) : sg.brands.map(b => (
+              <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px 4px 20px', borderRadius: 6 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    color: b.company_skip ? 'var(--f4)' : 'var(--f2)', textDecoration: b.company_skip ? 'line-through' : 'none' }}>
+                    {b.name}
+                    {b.name_eng && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--f4)' }}>{b.name_eng}</span>}
+                    {b.company_confirmed && !b.company_skip && <span style={{ marginLeft: 5, fontSize: 9, color: 'var(--slf)' }}>✓</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
 
       {/* 일괄 처리 */}
@@ -782,39 +852,87 @@ function MappingDesktopView() {
   const [page, setPage]                 = React.useState(0);
   const [search, setSearch]             = React.useState('');
   const [debouncedSearch, setDebounced] = React.useState('');
-  const [showDone, setShowDone]         = React.useState(false);
-  const [showSkipped, setShowSkipped]   = React.useState(false);
   const [loading, setLoading]           = React.useState(true);
   const [error, setError]               = React.useState('');
   const [selected, setSelected]         = React.useState<UnifiedCompany | null>(null);
   const [checkedIds, setCheckedIds]     = React.useState<Set<string>>(new Set());
   const [batchSkipping, setBatchSkipping] = React.useState(false);
   const [showCreate, setShowCreate]     = React.useState(false);
+  const [showFilters, setShowFilters]   = React.useState(false);
+
+  // ── 필터 상태 ──────────────────────────────────────────────────────────────
+  const [showDone,          setShowDone]          = React.useState(false);
+  const [showSkipped,       setShowSkipped]        = React.useState(false);
+  const [listedOnly,        setListedOnly]         = React.useState(false);
+  const [unlistedOnly,      setUnlistedOnly]       = React.useState(false);
+  const [hasParent,         setHasParent]          = React.useState(false);
+  const [noParent,          setNoParent]           = React.useState(false);
+  const [hasSubs,           setHasSubs]            = React.useState(false);
+  const [hasBrands,         setHasBrands]          = React.useState(false);
+  const [noBrands,          setNoBrands]           = React.useState(false);
+  const [hasUnconfirmed,    setHasUnconfirmed]     = React.useState(false);
+  const [hasOwnBrands,      setHasOwnBrands]       = React.useState(false);
+  const [hasSkippedBrands,  setHasSkippedBrands]   = React.useState(false);
+  const [noBizNo,           setNoBizNo]            = React.useState(false);
+  const [hasRemark,         setHasRemark]          = React.useState(false);
+
+  const activeFilterCount = [
+    showDone, showSkipped, listedOnly, unlistedOnly, hasParent, noParent, hasSubs,
+    hasBrands, noBrands, hasUnconfirmed, hasOwnBrands, hasSkippedBrands, noBizNo, hasRemark,
+  ].filter(Boolean).length;
+
+  const resetFilters = () => {
+    setShowDone(false); setShowSkipped(false); setListedOnly(false); setUnlistedOnly(false);
+    setHasParent(false); setNoParent(false); setHasSubs(false);
+    setHasBrands(false); setNoBrands(false); setHasUnconfirmed(false);
+    setHasOwnBrands(false); setHasSkippedBrands(false);
+    setNoBizNo(false); setHasRemark(false);
+    setPage(0);
+  };
 
   React.useEffect(() => {
     const t = setTimeout(() => { setDebounced(search); setPage(0); }, 300);
     return () => clearTimeout(t);
   }, [search]);
 
-  React.useEffect(() => { setCheckedIds(new Set()); }, [page, debouncedSearch, showDone, showSkipped]);
+  React.useEffect(() => { setCheckedIds(new Set()); }, [
+    page, debouncedSearch, showDone, showSkipped, listedOnly, unlistedOnly,
+    hasParent, noParent, hasSubs, hasBrands, noBrands, hasUnconfirmed,
+    hasOwnBrands, hasSkippedBrands, noBizNo, hasRemark,
+  ]);
 
   const fetchList = React.useCallback(async () => {
     setLoading(true); setError('');
     try {
-      let q = supabaseBrowser()
-        .from('companies')
-        .select('id, corp_name, business_number, corp_code, dart_skip, remark, parent_company_id, parent:companies!parent_company_id(id, corp_name)', { count: 'exact' })
-        .order('corp_name')
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1) as any;
-      if (!showDone)    q = q.is('corp_code', null);
-      if (!showSkipped) q = q.eq('dart_skip', false);
-      if (debouncedSearch.trim()) q = q.ilike('corp_name', `%${debouncedSearch.trim()}%`);
-      const { data, error: err, count } = await q;
+      const { data, error: err } = await supabaseBrowser().rpc('get_mapping_company_list', {
+        p_limit:              PAGE_SIZE,
+        p_offset:             page * PAGE_SIZE,
+        p_search:             debouncedSearch.trim() || null,
+        p_show_done:          showDone,
+        p_show_skipped:       showSkipped,
+        p_listed_only:        listedOnly,
+        p_unlisted_only:      unlistedOnly,
+        p_has_parent:         hasParent,
+        p_no_parent:          noParent,
+        p_has_subs:           hasSubs,
+        p_has_brands:         hasBrands,
+        p_no_brands:          noBrands,
+        p_has_unconfirmed:    hasUnconfirmed,
+        p_has_own_brands:     hasOwnBrands,
+        p_has_skipped_brands: hasSkippedBrands,
+        p_no_biz_no:          noBizNo,
+        p_has_remark:         hasRemark,
+      } as any);
       if (err) throw err;
-      setCompanies((data ?? []) as UnifiedCompany[]); setTotal(count ?? 0);
+      const result = data as { total: number; rows: UnifiedCompany[] };
+      setCompanies(result.rows ?? []); setTotal(result.total ?? 0);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
-  }, [page, debouncedSearch, showDone, showSkipped]);
+  }, [
+    page, debouncedSearch, showDone, showSkipped, listedOnly, unlistedOnly,
+    hasParent, noParent, hasSubs, hasBrands, noBrands, hasUnconfirmed,
+    hasOwnBrands, hasSkippedBrands, noBizNo, hasRemark,
+  ]);
 
   React.useEffect(() => { fetchList(); }, [fetchList]);
 
@@ -882,20 +1000,72 @@ function MappingDesktopView() {
       <div style={{ display: 'grid', gridTemplateColumns: '280px 380px 1fr', gap: 12, height: H, alignItems: 'flex-start' }}>
 
         {/* ── 패널 1: 회사 목록 ── */}
-        <div className="panel col-flex gap-10" style={{ height: '100%', overflow: 'hidden' }}>
+        <div className="panel col-flex gap-8" style={{ height: '100%', overflow: 'hidden' }}>
           <div className="input row-flex center gap-6">
             <IcSearch size={12} style={{ color: 'var(--f4)', flexShrink: 0 }} />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="회사명 검색"
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="회사명·브랜드명 검색"
               style={{ background: 'none', border: 'none', outline: 'none', fontSize: 12, width: '100%', color: 'var(--f1)' }} />
+            {search && (
+              <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--f4)', padding: 0, fontSize: 13, lineHeight: 1, flexShrink: 0 }}>✕</button>
+            )}
           </div>
-          <div className="col-flex gap-4">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--f3)', cursor: 'pointer', userSelect: 'none' }}>
-              <input type="checkbox" checked={showDone} onChange={e => { setShowDone(e.target.checked); setPage(0); }} style={{ cursor: 'pointer' }} />완료(DART 있음) 포함
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--f3)', cursor: 'pointer', userSelect: 'none' }}>
-              <input type="checkbox" checked={showSkipped} onChange={e => { setShowSkipped(e.target.checked); setPage(0); }} style={{ cursor: 'pointer' }} />건너뜀 포함
-            </label>
+
+          {/* 필터 토글 헤더 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => setShowFilters(v => !v)}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer',
+                color: activeFilterCount > 0 ? 'var(--hs)' : 'var(--f3)', fontSize: 11, padding: 0, textAlign: 'left' }}>
+              <span style={{ fontSize: 9, opacity: 0.7 }}>{showFilters ? '▲' : '▼'}</span>
+              필터
+              {activeFilterCount > 0 && (
+                <span style={{ background: 'var(--hs)', color: '#fff', borderRadius: 8, fontSize: 9, fontWeight: 700,
+                  padding: '1px 5px', lineHeight: 1.4 }}>{activeFilterCount}</span>
+              )}
+            </button>
+            {activeFilterCount > 0 && (
+              <button onClick={resetFilters} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: 'var(--f4)', padding: 0 }}>초기화</button>
+            )}
           </div>
+
+          {/* 필터 패널 */}
+          {showFilters && (
+            <div className="col-flex gap-10" style={{ padding: '8px 10px', background: 'var(--snk)', borderRadius: 8, border: '1px solid var(--bd)' }}>
+              {/* DART 상태 */}
+              <div className="col-flex gap-4">
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--f4)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>DART</div>
+                <FilterChk label="완료 포함" checked={showDone}        onChange={v => { setShowDone(v);    setPage(0); }} />
+                <FilterChk label="건너뜀 포함" checked={showSkipped}   onChange={v => { setShowSkipped(v); setPage(0); }} />
+              </div>
+              {/* 상장 */}
+              <div className="col-flex gap-4">
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--f4)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>상장</div>
+                <FilterChk label="상장사만"   checked={listedOnly}   onChange={v => { setListedOnly(v);   if (v) setUnlistedOnly(false); setPage(0); }} />
+                <FilterChk label="비상장사만" checked={unlistedOnly} onChange={v => { setUnlistedOnly(v); if (v) setListedOnly(false);   setPage(0); }} />
+              </div>
+              {/* 회사 구조 */}
+              <div className="col-flex gap-4">
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--f4)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>구조</div>
+                <FilterChk label="모회사 있음"  checked={hasParent} onChange={v => { setHasParent(v); if (v) setNoParent(false); setPage(0); }} />
+                <FilterChk label="최상위만"     checked={noParent}  onChange={v => { setNoParent(v);  if (v) setHasParent(false); setPage(0); }} />
+                <FilterChk label="자회사 있음"  checked={hasSubs}   onChange={v => { setHasSubs(v);   setPage(0); }} />
+              </div>
+              {/* 브랜드 */}
+              <div className="col-flex gap-4">
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--f4)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>브랜드</div>
+                <FilterChk label="브랜드 있음"     checked={hasBrands}        onChange={v => { setHasBrands(v);        if (v) setNoBrands(false);  setPage(0); }} />
+                <FilterChk label="브랜드 없음"     checked={noBrands}         onChange={v => { setNoBrands(v);         if (v) setHasBrands(false); setPage(0); }} />
+                <FilterChk label="미확인 있음"     checked={hasUnconfirmed}   onChange={v => { setHasUnconfirmed(v);   setPage(0); }} />
+                <FilterChk label="자사브랜드 있음" checked={hasOwnBrands}     onChange={v => { setHasOwnBrands(v);     setPage(0); }} />
+                <FilterChk label="건너뜀 있음"     checked={hasSkippedBrands} onChange={v => { setHasSkippedBrands(v); setPage(0); }} />
+              </div>
+              {/* 데이터 품질 */}
+              <div className="col-flex gap-4">
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--f4)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>데이터</div>
+                <FilterChk label="사업자번호 없음" checked={noBizNo}    onChange={v => { setNoBizNo(v);    setPage(0); }} />
+                <FilterChk label="메모 있음"       checked={hasRemark}  onChange={v => { setHasRemark(v);  setPage(0); }} />
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--bd)', paddingBottom: 8 }}>
             <input type="checkbox" checked={allPageChecked}
               onChange={() => allPageChecked ? setCheckedIds(prev => { const n = new Set(prev); companies.forEach(c => n.delete(c.id)); return n; })
