@@ -1029,31 +1029,41 @@ export interface CompanyRankStats {
 export async function fetchCompanyRankStats(brandNames: string[]): Promise<CompanyRankStats | null> {
   if (!brandNames.length) return null;
 
-  const { data: latestRow } = await supabase
+  // 브랜드별 최신 snapshot_date (브랜드마다 수집일이 다를 수 있음)
+  const { data: dateData } = await supabase
     .from('ranking_snapshots')
-    .select('snapshot_date')
+    .select('brand_name, snapshot_date')
     .in('brand_name', brandNames.slice(0, 200))
     .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
     .order('snapshot_date', { ascending: false })
-    .limit(1);
+    .limit(brandNames.length * 10);
 
-  const latestDate = (latestRow as any[])?.[0]?.snapshot_date;
-  if (!latestDate) return null;
+  const brandLatest = new Map<string, string>();
+  for (const r of (dateData ?? []) as any[]) {
+    if (!brandLatest.has(r.brand_name)) brandLatest.set(r.brand_name, r.snapshot_date);
+  }
+  if (!brandLatest.size) return null;
+
+  const activeBrands = [...brandLatest.keys()];
+  const fromDate = [...brandLatest.values()].reduce((a, b) => (a < b ? a : b));
 
   const { data } = await supabase
     .from('ranking_snapshots')
-    .select('brand_name, product_name, rank_position, musinsa_no, category_code')
-    .in('brand_name', brandNames.slice(0, 200))
+    .select('brand_name, product_name, rank_position, musinsa_no, category_code, snapshot_date')
+    .in('brand_name', activeBrands.slice(0, 200))
     .eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
-    .eq('snapshot_date', latestDate)
+    .gte('snapshot_date', fromDate)
     .order('rank_position', { ascending: true })
-    .limit(10000);
+    .limit(50000);
 
-  const rows = (data ?? []) as any[];
+  // 각 브랜드의 최신 날짜 행만 선택
+  const rows = ((data ?? []) as any[]).filter(r => brandLatest.get(r.brand_name) === r.snapshot_date);
   const allRows = rows.filter(r => r.category_code === '000');
   const sku_count = allRows.length;
+  if (!sku_count) return null;
+
   const top100_count = allRows.filter(r => r.rank_position <= 100).length;
-  const avg_rank = sku_count > 0 ? Math.round(allRows.reduce((s, r) => s + r.rank_position, 0) / sku_count) : 0;
+  const avg_rank = Math.round(allRows.reduce((s, r) => s + r.rank_position, 0) / sku_count);
   const best = allRows[0];
 
   const brandMap = new Map<string, { sku_count: number; top100_count: number }>();
@@ -1071,13 +1081,15 @@ export async function fetchCompanyRankStats(brandNames: string[]): Promise<Compa
     catMap.set(r.category_code, s);
   }
 
+  const snapshotDate = [...brandLatest.values()].reduce((a, b) => (a > b ? a : b));
+
   return {
     sku_count,
     top100_count,
     avg_rank,
     best_rank: best?.rank_position ?? 0,
     best_product_name: best?.product_name ?? '—',
-    snapshot_date: latestDate,
+    snapshot_date: snapshotDate,
     by_brand: [...brandMap.entries()]
       .map(([brand_name, v]) => ({ brand_name, ...v }))
       .sort((a, b) => b.sku_count - a.sku_count),
@@ -1124,21 +1136,29 @@ export async function fetchCompanyProductDist(brandNames: string[]): Promise<Com
   const empty: CompanyProductDist = { genderAge: [], priceBuckets: [], discountBuckets: [], reviewBuckets: [] };
   if (!brandNames.length) return empty;
 
-  const { data: latestRow } = await supabase
-    .from('ranking_snapshots').select('snapshot_date')
+  // 브랜드별 최신 snapshot_date
+  const { data: dateData } = await supabase
+    .from('ranking_snapshots').select('brand_name, snapshot_date')
     .in('brand_name', brandNames.slice(0, 200))
     .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
-    .order('snapshot_date', { ascending: false }).limit(1);
-  const snapshotDate = (latestRow as any[])?.[0]?.snapshot_date;
-  if (!snapshotDate) return empty;
+    .order('snapshot_date', { ascending: false }).limit(brandNames.length * 10);
+
+  const brandLatest2 = new Map<string, string>();
+  for (const r of (dateData ?? []) as any[]) {
+    if (!brandLatest2.has(r.brand_name)) brandLatest2.set(r.brand_name, r.snapshot_date);
+  }
+  if (!brandLatest2.size) return empty;
+
+  const fromDate2 = [...brandLatest2.values()].reduce((a, b) => (a < b ? a : b));
 
   const { data } = await supabase
     .from('ranking_snapshots')
-    .select('gender_filter, age_filter, category_code, musinsa_no, final_price, discount_rate, review_score')
-    .in('brand_name', brandNames.slice(0, 200))
-    .eq('snapshot_date', snapshotDate)
+    .select('brand_name, gender_filter, age_filter, category_code, musinsa_no, final_price, discount_rate, review_score, snapshot_date')
+    .in('brand_name', [...brandLatest2.keys()].slice(0, 200))
+    .gte('snapshot_date', fromDate2)
     .limit(50000);
-  const rows = (data ?? []) as any[];
+
+  const rows = ((data ?? []) as any[]).filter((r: any) => brandLatest2.get(r.brand_name) === r.snapshot_date);
 
   const gaMap = new Map<string, Set<number>>();
   for (const r of rows) {
