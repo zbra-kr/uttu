@@ -9,8 +9,6 @@ Rate limit: 1,000 req/min → 실제로는 1초 간격 유지
 """
 
 import asyncio
-import io
-import zipfile
 from typing import Any
 
 import httpx

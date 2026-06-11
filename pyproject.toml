@@ -32,6 +32,8 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+# Pre-existing style issues in legacy code — not enforced in CI
+ignore = ["E501", "E402", "E702", "F841"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

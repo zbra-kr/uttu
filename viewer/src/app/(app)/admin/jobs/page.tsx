@@ -109,7 +109,6 @@ function AdminJobsDesktopView() {
     const client = supabaseBrowser();
     const channel = client
       .channel('admin_jobs_realtime')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .on('postgres_changes' as any,
         { event: '*', schema: 'public', table: 'collection_jobs' },
         (payload: any) => {

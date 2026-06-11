@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdmin } from '@/lib/auth/require-admin';
 
 // service_role은 이 서버 API Route 에서만 사용 — 클라이언트 코드 절대 금지
 function adminClient() {
@@ -13,6 +14,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const { error: authErr } = await requireAdmin();
+  if (authErr) return authErr;
   const { id } = params;
   if (!id) return NextResponse.json({ error: 'id 필수' }, { status: 400 });
 

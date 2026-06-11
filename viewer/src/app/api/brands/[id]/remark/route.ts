@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdmin } from '@/lib/auth/require-admin';
 
 function adminClient() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY;
@@ -11,6 +12,8 @@ export async function PATCH(
   req: Request,
   { params }: { params: { id: string } },
 ) {
+  const { error } = await requireAdmin();
+  if (error) return error;
   try {
     const { remark } = await req.json() as { remark: string | null };
     const { data, error } = await adminClient()

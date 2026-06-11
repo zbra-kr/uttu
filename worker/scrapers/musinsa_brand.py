@@ -18,8 +18,8 @@ import httpx
 import pytz
 from dotenv import load_dotenv
 from loguru import logger
-from supabase import Client, create_client
 
+from supabase import Client, create_client
 from worker.scrapers.base import BaseScraper, BotBlockedError  # noqa: F401
 
 load_dotenv()
@@ -157,8 +157,8 @@ async def main(limit: int = 100, own_only: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    import asyncio
     import argparse
+    import asyncio
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=100)

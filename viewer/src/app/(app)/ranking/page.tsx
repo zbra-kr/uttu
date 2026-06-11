@@ -357,7 +357,6 @@ function RankingDesktopView() {
     setSort('rank'); setSortDir('asc'); setPage(1);
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleLoadFilter = (filter: unknown) => {
     const f = filter as any;
     if (f.period !== undefined)           setPeriod(f.period);

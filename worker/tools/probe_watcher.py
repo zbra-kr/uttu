@@ -25,7 +25,9 @@ WRITTEN_MARKER = "이번 수집 신규 삽입"
 
 
 def _send_telegram(text: str) -> None:
-    import os, httpx
+    import os
+
+    import httpx
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:

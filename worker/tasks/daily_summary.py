@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import argparse
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 
 import pytz
 from dotenv import load_dotenv
 from loguru import logger
+
 from supabase import Client, create_client
 
 load_dotenv()

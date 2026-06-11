@@ -11,12 +11,11 @@ UTTU 투자유치 정보 NLP 추출 (Claude Haiku)
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 
 from loguru import logger
 
-from worker.agent.claude_client import extract_json, FUNDING_EXTRACT_MODEL
+from worker.agent.claude_client import FUNDING_EXTRACT_MODEL, extract_json
 from worker.funding.name_utils import name_equals
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────

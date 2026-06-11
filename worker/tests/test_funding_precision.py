@@ -9,20 +9,18 @@
 
 LLM 호출 없이 게이트·매칭 함수만 단위 테스트.
 """
-import pytest
+from worker.agent.funding_extractor import _match_company
 from worker.funding.name_utils import (
-    normalize_company,
+    is_high_risk,
     name_equals,
     name_in_text,
-    is_high_risk,
+    normalize_company,
 )
 from worker.funding.news_source import (
-    _passes_funding_gate,
     _core_name,
     _passes_disambiguator,
+    _passes_funding_gate,
 )
-from worker.agent.funding_extractor import _match_company
-
 
 # ── 픽스처 ───────────────────────────────────────────────────────────────────────
 

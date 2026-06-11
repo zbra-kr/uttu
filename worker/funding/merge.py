@@ -16,7 +16,6 @@ from datetime import date as _date
 
 from loguru import logger
 
-
 # ── 교차검증 헬퍼 ────────────────────────────────────────────────────────────────
 
 def _same_fiscal_year(d1: str | None, d2: str | None) -> bool:

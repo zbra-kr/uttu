@@ -16,8 +16,10 @@ labels 배열을 [] 또는 ['skip-detail'] 로 직접 덮어씀 → 개별 array
 
 import os
 from datetime import date, timedelta
-from loguru import logger
+
 from dotenv import load_dotenv
+from loguru import logger
+
 from supabase import Client, create_client
 
 load_dotenv()

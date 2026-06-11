@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  worker-ci:
+    name: Worker (Python)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+        working-directory: worker
+
+      - name: Lint (ruff)
+        run: ruff check worker
+
+      - name: Test (pytest)
+        # 실DB 접근 필요한 테스트는 secrets 없을 때 자동 skip됨
+        # (SUPABASE_URL / SUPABASE_SERVICE_KEY 미설정 시 ImportError → skip)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || '' }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY || '' }}
+        run: pytest worker/tests -v --tb=short
+
+  viewer-ci:
+    name: Viewer (Next.js)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: viewer
+
+      - name: Lint
+        run: npm run lint
+        working-directory: viewer
+
+      - name: Build
+        # 빌드에 필요한 공개 환경변수만 주입 (service_role 키 불필요)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+          SUPABASE_SERVICE_KEY: placeholder-service-key
+          SUPABASE_SERVICE_ROLE_KEY: placeholder-service-key
+        run: npm run build
+        working-directory: viewer

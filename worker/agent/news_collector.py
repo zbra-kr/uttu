@@ -17,10 +17,10 @@ import asyncio
 import html as html_lib
 import json
 import os
+import random
 import re
 import sys
 import time
-import random
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
@@ -29,8 +29,8 @@ import httpx
 import pytz
 from dotenv import load_dotenv
 from loguru import logger
-from supabase import create_client
 
+from supabase import create_client
 from worker.utils.job_tracker import JobTracker
 
 load_dotenv()

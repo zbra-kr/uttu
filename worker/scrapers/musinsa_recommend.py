@@ -16,8 +16,8 @@ import pytz
 from dotenv import load_dotenv
 from loguru import logger
 from playwright.async_api import Response, async_playwright
-from supabase import Client, create_client
 
+from supabase import Client, create_client
 from worker.scrapers.base import BaseScraper
 
 load_dotenv()

@@ -26,8 +26,8 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 from loguru import logger
-from supabase import Client, create_client
 
+from supabase import Client, create_client
 from worker.scrapers.base import BaseScraper, BotBlockedError  # noqa: F401
 
 load_dotenv()
@@ -139,8 +139,11 @@ class ColorGroupScraper(BaseScraper):
 
     async def run(self, limit: int | None = None) -> None:
         from datetime import datetime, timedelta
+
         import pytz
-        from worker.tasks.schedule_notify import send_progress as _notify, send_done as _notify_done
+
+        from worker.tasks.schedule_notify import send_done as _notify_done
+        from worker.tasks.schedule_notify import send_progress as _notify
 
         KST = pytz.timezone("Asia/Seoul")
         NOTIFY_INTERVAL_SEC = 30 * 60

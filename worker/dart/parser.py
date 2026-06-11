@@ -9,11 +9,9 @@ fnlttSinglAcnt  → 재무 수치 (상장사/외감법인)
 import io
 import re
 import zipfile
-from typing import Any
 from xml.etree import ElementTree as ET
 
 from loguru import logger
-
 
 # ── 기업코드 목록 파싱 ────────────────────────────────────────────────────────
 

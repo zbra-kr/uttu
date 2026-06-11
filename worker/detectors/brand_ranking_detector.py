@@ -16,8 +16,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from loguru import logger
-from supabase import Client
 
+from supabase import Client
 from worker.detectors.base import Anomaly
 
 MODULE = "brand_planning"

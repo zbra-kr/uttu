@@ -21,15 +21,15 @@ from datetime import datetime, timedelta
 import pytz
 from dotenv import load_dotenv
 from loguru import logger
-from supabase import Client, create_client
 
+from supabase import Client, create_client
 from worker.dart.fetcher import (
     fetch_company,
     fetch_corp_code_zip,
     fetch_disclosures,
 )
-from worker.dart.parser import parse_corp_codes
 from worker.dart.fss_client import fetch_audit_financials
+from worker.dart.parser import parse_corp_codes
 
 load_dotenv()
 

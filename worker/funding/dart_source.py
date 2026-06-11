@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from datetime import date
 from typing import Any
 
 import httpx
@@ -210,10 +209,10 @@ def _piic_round_type(ic_mthn: str) -> str:
         return "유상증자"
 
     if "제3자배정" in s:
-        return f"제3자배정 유상증자"
+        return "제3자배정 유상증자"
 
     if "주주우선공모" in s:
-        return f"주주우선공모 유상증자"
+        return "주주우선공모 유상증자"
 
     if "주주배정" in s:
         return f"주주배정 유상증자 ({s})"

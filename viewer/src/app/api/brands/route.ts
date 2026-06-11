@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdmin } from '@/lib/auth/require-admin';
 
 function adminClient() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY;
@@ -8,6 +9,8 @@ function adminClient() {
 }
 
 export async function POST(req: Request) {
+  const { error } = await requireAdmin();
+  if (error) return error;
   try {
     const { slug, name, name_eng, company_id } = await req.json() as {
       slug: string; name: string; name_eng?: string; company_id?: string;

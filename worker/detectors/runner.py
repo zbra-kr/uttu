@@ -11,6 +11,7 @@ import argparse
 from datetime import date
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from loguru import logger
@@ -20,7 +21,11 @@ from worker.detectors.bookmark_detector import detect_bookmark_changes
 from worker.detectors.brand_ranking_detector import detect_brand_ranking
 from worker.detectors.magazine_boost_detector import detect_magazine_boost
 from worker.detectors.promo_effectiveness_detector import detect_promo_effectiveness
-from worker.detectors.ranking_detector import detect_promo_anomalies, detect_promo_discount, detect_ranking
+from worker.detectors.ranking_detector import (
+    detect_promo_anomalies,
+    detect_promo_discount,
+    detect_ranking,
+)
 from worker.detectors.review_detector import detect_review
 from worker.detectors.snap_boost_detector import detect_snap_boost
 from worker.notifications.enqueue import enqueue_for_subscribers
@@ -147,7 +152,6 @@ def main() -> None:
     if args.date:
         target = date.fromisoformat(args.date)
     else:
-        from datetime import timezone, timedelta
         target = date.today()
 
     run(target)

@@ -11,7 +11,7 @@ from datetime import date
 
 from loguru import logger
 
-from worker.agent.claude_client import generate_text, FUNDING_BRIEF_MODEL
+from worker.agent.claude_client import FUNDING_BRIEF_MODEL, generate_text
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────────
 

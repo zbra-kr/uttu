@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import html
 import os
+import random
 import re
 import time
-import random
 
 import httpx
 from loguru import logger
 
 from worker.agent.funding_extractor import extract_funding_rounds
-from worker.funding.name_utils import name_in_text, is_high_risk
+from worker.funding.name_utils import is_high_risk, name_in_text
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────────
 

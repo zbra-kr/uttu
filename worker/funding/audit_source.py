@@ -220,6 +220,7 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
     list[dict] — funding_rounds 형식 (source_type='dart_audit', confidence=1.0)
     """
     import datetime
+
     import dart_fss as dart
 
     dart.set_api_key(_api_key())

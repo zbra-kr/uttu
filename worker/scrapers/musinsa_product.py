@@ -17,8 +17,8 @@ import httpx
 import pytz
 from dotenv import load_dotenv
 from loguru import logger
-from supabase import Client, create_client
 
+from supabase import Client, create_client
 from worker.scrapers.base import BaseScraper, BotBlockedError  # noqa: F401
 
 load_dotenv()
@@ -292,8 +292,11 @@ class ProductScraper(BaseScraper):
         """
         if refresh_own:
             from datetime import timedelta
+
             import pytz as _pytz
-            from worker.tasks.schedule_notify import send_progress as _notify, send_done as _notify_done
+
+            from worker.tasks.schedule_notify import send_done as _notify_done
+            from worker.tasks.schedule_notify import send_progress as _notify
 
             _KST = _pytz.timezone("Asia/Seoul")
             _NOTIFY_SEC = 30 * 60
@@ -485,8 +488,8 @@ async def main(limit: int = 50, own_only: bool = False, today_ranking: bool = Fa
 
 
 if __name__ == "__main__":
-    import asyncio
     import argparse
+    import asyncio
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=50)

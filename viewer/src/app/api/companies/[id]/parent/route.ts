@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdmin } from '@/lib/auth/require-admin';
 
 function adminClient() {
   const serviceKey =
@@ -12,6 +13,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const { error: authErr } = await requireAdmin();
+  if (authErr) return authErr;
   const { id } = params;
   let body: { parent_company_id: string | null };
   try { body = await req.json(); } catch {

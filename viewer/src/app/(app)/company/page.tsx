@@ -1085,6 +1085,10 @@ function CompanyPageInner() {
     getFundingRounds(idFromUrl, 50).then(setFundingRounds).catch(() => {});
   }, [idFromUrl]);
 
+  const handleSelectCompany = React.useCallback((id: string) => {
+    router.push(`/company?id=${id}`);
+  }, [router]);
+
   if (!idFromUrl) return <CompanyPortal onSelect={id => router.push(`/company?id=${id}`)} />;
 
   const corpName = loading ? '…' : (info?.corp_name ?? '—');
@@ -1093,10 +1097,6 @@ function CompanyPageInner() {
   const ownCount =
     brands.filter(b => b.is_own).length +
     childCompanies.reduce((s, c) => s + c.brands.filter(b => b.is_own).length, 0);
-
-  const handleSelectCompany = React.useCallback((id: string) => {
-    router.push(`/company?id=${id}`);
-  }, [router]);
 
   return (
     <div className="col-flex gap-14">

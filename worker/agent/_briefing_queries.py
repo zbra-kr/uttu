@@ -8,8 +8,8 @@ from collections import Counter
 from datetime import date, timedelta
 
 from loguru import logger
-from supabase import Client
 
+from supabase import Client
 
 # ── 날짜 헬퍼 ─────────────────────────────────────────────────────────────────
 

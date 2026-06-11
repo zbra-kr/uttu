@@ -372,7 +372,6 @@ function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null;
   const toggleType = (t: string) => setTypeFilters(prev => { const n = new Set(prev); n.has(t) ? n.delete(t) : n.add(t); return n; });
   const reset = () => { setTypeFilters(new Set()); setStatusFilter('all'); setBrandFilter(new Set()); setPeriod('7d'); setSel(new Set()); };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleLoadFilter = (filter: unknown) => {
     const f = filter as any;
     if (f.period !== undefined)          setPeriod(f.period);

@@ -26,15 +26,15 @@ import anthropic
 import pytz
 from dotenv import load_dotenv
 from loguru import logger
-from supabase import create_client
 
-from worker.utils.job_tracker import JobTracker
-from worker.notifications.enqueue import enqueue_for_subscribers
+from supabase import create_client
 from worker.agent._briefing_queries import (
+    collect_cs_inputs,
     collect_executive_inputs,
     collect_staff_inputs,
-    collect_cs_inputs,
 )
+from worker.notifications.enqueue import enqueue_for_subscribers
+from worker.utils.job_tracker import JobTracker
 
 load_dotenv()
 

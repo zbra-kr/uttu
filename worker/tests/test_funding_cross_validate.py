@@ -9,7 +9,6 @@
 
 공시 라운드(confidence=1.0)는 어떤 경우에도 삭제·강등되지 않음.
 """
-import pytest
 from worker.funding.merge import merge_rounds
 
 COMPANY_ID = "test-company-uuid"

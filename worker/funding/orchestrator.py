@@ -18,14 +18,14 @@ from datetime import datetime, timezone
 import pytz
 from dotenv import load_dotenv
 from loguru import logger
-from supabase import create_client, Client
 
-from worker.funding.dart_source import fetch_dart_rounds
+from supabase import Client, create_client
 from worker.funding.audit_source import fetch_audit_rounds
-from worker.funding.news_source import fetch_news_rounds
+from worker.funding.brief_writer import generate_brief
+from worker.funding.dart_source import fetch_dart_rounds
 from worker.funding.datago_source import fetch_datago_rounds
 from worker.funding.merge import merge_rounds
-from worker.funding.brief_writer import generate_brief
+from worker.funding.news_source import fetch_news_rounds
 from worker.notifications.enqueue import enqueue_notification
 
 load_dotenv()

@@ -25,8 +25,8 @@ import httpx
 import pytz
 from dotenv import load_dotenv
 from loguru import logger
-from supabase import Client, create_client
 
+from supabase import Client, create_client
 from worker.scrapers.base import BaseScraper, BotBlockedError
 
 load_dotenv()

@@ -47,8 +47,8 @@ import httpx
 import pytz
 from dotenv import load_dotenv
 from loguru import logger
-from supabase import Client, create_client
 
+from supabase import Client, create_client
 from worker.scrapers.base import BaseScraper, BotBlockedError  # noqa: F401
 
 load_dotenv()
@@ -501,7 +501,8 @@ class ReviewScraper(BaseScraper):
         - 1시간마다 Telegram 진행 상황 알림
         - 완료 시 마커파일 삭제
         """
-        from worker.tasks.schedule_notify import send_progress as _notify, send_done as _notify_done
+        from worker.tasks.schedule_notify import send_done as _notify_done
+        from worker.tasks.schedule_notify import send_progress as _notify
 
         products = self._get_products_backfill()
         if limit:
@@ -567,9 +568,10 @@ class ReviewScraper(BaseScraper):
         force_full=True:  review_checked_at 무시 + 모든 그룹 전수 스캔 (전수조사 모드).
         force_smart=True: review_checked_at 무시 + 증분 스캔 유지 (전체 그룹 대상, 일별 방식).
         """
-        from worker.tasks.schedule_notify import send_progress as _notify, send_done as _notify_done
+        from worker.tasks.schedule_notify import send_done as _notify_done
+        from worker.tasks.schedule_notify import send_progress as _notify
 
-        daily_cutoff = None if (force_full or force_smart) else (datetime.now(KST) - timedelta(hours=23)).isoformat()
+        daily_cutoff = None if (force_full or force_smart) else (datetime.now(KST) - timedelta(hours=18)).isoformat()
         groups, standalones = self._get_groups_for_smart(daily_cutoff)
 
         if limit:
@@ -871,8 +873,8 @@ async def main(backfill: bool = False, smart: bool = False, force_full: bool = F
 
 
 if __name__ == "__main__":
-    import asyncio
     import argparse
+    import asyncio
 
     parser = argparse.ArgumentParser(description="무신사 자사 상품 리뷰 수집")
     parser.add_argument(

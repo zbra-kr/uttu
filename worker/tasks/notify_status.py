@@ -4,8 +4,10 @@
 
 import os
 from datetime import datetime
+
 import pytz
 from dotenv import load_dotenv
+
 from supabase import Client, create_client
 from worker.tasks.notify import send
 
@@ -57,13 +59,13 @@ def run() -> None:
     lines = [
         f"[UTTU] 수집 현황 ({now} KST)",
         "",
-        f"📦 상품 상세",
+        "📦 상품 상세",
         f"  완료 {done:,} / 대기 {pending:,} / 제외 {excluded:,}  ({product_pct}%)",
         f"  └ 법인(companies) {company_count:,}개 등록",
-        f"",
-        f"🏷 브랜드 상세",
+        "",
+        "🏷 브랜드 상세",
         f"  완료 {brand_done:,} / 전체 {brand_total:,}  ({brand_pct}%)",
-        f"",
+        "",
         f"📊 랭킹 스냅샷 최근일: {latest_snap}",
         f"⭐ 리뷰: {review_count:,}개",
     ]

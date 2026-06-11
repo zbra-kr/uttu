@@ -464,7 +464,6 @@ export async function POST(req: NextRequest) {
           const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
           const gemModel = genAI.getGenerativeModel({
             model: aiModelId,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             tools: [{ functionDeclarations: TOOLS.map(t => ({ name: t.name, description: t.description, parameters: t.input_schema as any })) }],
             systemInstruction: system,
           });
