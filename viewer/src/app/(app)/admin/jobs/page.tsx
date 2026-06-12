@@ -10,21 +10,9 @@ import {
 import JobDetailModal from '@/components/admin/JobDetailModal';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileAdminJobsView from './MobileAdminJobsView';
+import { fmtTime, fmtDuration } from '@/lib/format';
 
 // ── 포맷 헬퍼 ──────────────────────────────────────────────────────────────────
-function fmtTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const kst = new Date(new Date(iso).getTime() + 9 * 3_600_000);
-  return kst.toISOString().slice(11, 19);
-}
-
-function fmtDuration(startIso: string, endIso: string | null): string {
-  const end = endIso ? new Date(endIso) : new Date();
-  const sec = Math.round((end.getTime() - new Date(startIso).getTime()) / 1000);
-  if (sec < 60)   return `${sec}초`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
-  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
-}
 
 function fmtAvgDuration(sec: number | null): string {
   if (sec === null) return '—';

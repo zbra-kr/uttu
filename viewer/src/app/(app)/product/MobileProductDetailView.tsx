@@ -300,7 +300,7 @@ export default function MobileProductDetailView() {
               .sort((a, b) => a.rank - b.rank)
               .slice(0, 10)
               .map((rec, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '0.5px solid var(--snk)' }}>
+                <div key={`${rec.year}-${rec.month}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '0.5px solid var(--snk)' }}>
                   <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--mono)', color: rec.rank <= 10 ? 'var(--hs)' : rec.rank <= 50 ? 'var(--slf)' : 'var(--f2)', width: 40 }}>
                     #{rec.rank}
                   </span>
@@ -322,7 +322,7 @@ export default function MobileProductDetailView() {
             {categoryDate && <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>{categoryDate} 기준</span>}
           </div>
           {categoryRanks.map((r, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '7px 0', borderBottom: '0.5px solid var(--snk)' }}>
+            <div key={r.category_code} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '7px 0', borderBottom: '0.5px solid var(--snk)' }}>
               <span style={{ fontSize: 12, color: 'var(--f2)', width: 60, flexShrink: 0 }}>
                 {CATEGORY_MAP[r.category_code] ?? r.category_code}
               </span>
@@ -332,7 +332,7 @@ export default function MobileProductDetailView() {
                   const sa = s.age && s.age !== 'AGE_BAND_ALL' ? (AGE_MAP[s.age] ?? s.age) : '전체';
                   const isBest = s.gender === r.best_gender && s.age === r.best_age;
                   return (
-                    <span key={j} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: isBest ? 'var(--hs)' : 'var(--snk)', color: isBest ? '#fff' : 'var(--f3)' }}>
+                    <span key={j} style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: isBest ? 'var(--hs)' : 'var(--snk)', color: isBest ? 'var(--white)' : 'var(--f3)' }}>
                       {sg}·{sa} #{s.rank}
                     </span>
                   );
@@ -462,7 +462,7 @@ export default function MobileProductDetailView() {
                     {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
                   </span>
                   {r.has_image && (
-                    <span style={{ fontSize: 9, background: 'var(--hs)', color: '#fff', padding: '1px 4px', borderRadius: 2 }}>📷 {r.image_urls.length}</span>
+                    <span style={{ fontSize: 9, background: 'var(--hs)', color: 'var(--white)', padding: '1px 4px', borderRadius: 2 }}>📷 {r.image_urls.length}</span>
                   )}
                 </div>
                 <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>{r.review_date.slice(0, 10)}</span>
@@ -475,7 +475,7 @@ export default function MobileProductDetailView() {
               {(r.purchase_option || r.member_height || r.member_weight || r.satisfactions?.length) && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
                   {r.purchase_option && (
-                    <span style={{ fontSize: 10, background: 'var(--hs)', color: '#fff', padding: '1px 5px', borderRadius: 3, fontWeight: 500 }}>{r.purchase_option}</span>
+                    <span style={{ fontSize: 10, background: 'var(--hs)', color: 'var(--white)', padding: '1px 5px', borderRadius: 3, fontWeight: 500 }}>{r.purchase_option}</span>
                   )}
                   {(r.member_height || r.member_weight) && (
                     <span style={{ fontSize: 10, background: 'var(--snk)', padding: '1px 5px', borderRadius: 3, color: 'var(--f3)' }}>

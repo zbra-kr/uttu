@@ -1,5 +1,7 @@
 'use client';
 import { supabaseBrowser } from './supabase/client';
+import { kstToday } from './format';
+export { kstToday };
 
 export interface BriefingInsight {
   title: string;
@@ -58,10 +60,6 @@ export interface AllBriefings {
   staff: Briefing | null;
   cs: Briefing | null;
   briefing_date: string;
-}
-
-export function kstToday(): string {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 }
 
 export async function fetchAvailableBriefingDates(): Promise<string[]> {

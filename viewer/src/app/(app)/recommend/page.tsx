@@ -74,7 +74,7 @@ const TOOLTIP_STYLE = {
 const HUB_MOD_GRID  = '20px 24px 1fr 46px 36px 38px';
 const HUB_ITEM_GRID = '20px 24px 110px 1fr 64px 64px 44px 40px 40px 44px';
 const KPI_COLORS = [
-  'color-mix(in srgb, #F57C00 80%, var(--f3))',
+  'color-mix(in srgb, var(--chart-orange) 80%, var(--f3))',
   'var(--hs)',
   'var(--f3)',
 ];
@@ -169,6 +169,7 @@ function RecommendHub() {
         }
         isFirstModuleLoad.current = false;
       });
+  // 필터 3종 변경 시에만 재요청. sb·setters·ref 안정 참조
   }, [fromDate, toDate, gender]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 아이템 로드 (멀티 모듈)
@@ -186,6 +187,7 @@ function RecommendHub() {
         setItems(data ?? []);
         setSelItems(new Set());
       });
+  // selModules 변경 시에만 재요청. sb·setters 안정 참조
   }, [selModules]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 랭킹 데이터 (아이템 로드 후)
@@ -219,6 +221,7 @@ function RecommendHub() {
         }
         setRankMap(m);
       });
+  // items·toDate 변경 시에만 재요청. sb·setter 안정 참조
   }, [items, toDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 모듈 타입 필터
@@ -1317,7 +1320,7 @@ function DeltaBadge({ v }: { v: number | null }) {
   return (
     <span style={{
       fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600,
-      color: up ? 'var(--up, #22c55e)' : 'var(--dn)',
+      color: up ? 'var(--up)' : 'var(--dn)',
     }}>
       {up ? `▲${v}` : `▼${Math.abs(v)}`}
     </span>

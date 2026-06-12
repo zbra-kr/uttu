@@ -9,6 +9,7 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
 import NoteDrawer from '@/components/me/NoteDrawer';
 import { fetchNoteCountForEntity } from '@/lib/queries-me';
+import { kstToday } from '@/lib/format';
 
 interface ARow {
   id: string;
@@ -37,10 +38,6 @@ function areaKey(t: string): string {
   if (['rank_spike', 'new_entrant_top10', 'rank_drop_own', 'sold_out', 'price_drop'].includes(t)) return '상품';
   if (t === 'promo_heavy_discount') return '프로모션';
   return '리뷰';
-}
-
-function kstToday(): string {
-  return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
 }
 
 function kstDaysAgo(n: number): string {
@@ -179,11 +176,12 @@ function AnomalyDrawer({ item, onClose, onPrev, onNext }: {
           if (data?.musinsa_no) setEntityLink(`/product?no=${data.musinsa_no}`);
         });
     }
+  // item.id 변경 시에만 재조회 — entity_id·table은 항상 item.id와 함께 변경됨
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
-      <div style={{ position: 'fixed', inset: 0, zIndex: 100 }} onClick={onClose} />
+      <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 100 }} onClick={onClose} />
       <aside className="drawer" style={{ zIndex: 110 }}>
         <div className="drawer-head">
           <div className="row-flex center gap-8">
@@ -285,6 +283,7 @@ function AnomalyPage() {
   React.useEffect(() => {
     const p = params.get('sev');
     if (p && ['hi', 'md', 'lo'].includes(p)) setSev(new Set([p]));
+  // 마운트 1회만 실행 — URL params 초기값 읽기
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [area,   setArea]   = React.useState(new Set(ALL_AREAS));
   const [detail, setDetail] = React.useState<ARow | null>(null);

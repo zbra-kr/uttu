@@ -31,6 +31,30 @@
   --hs:        oklch(38%   0.14 25);
   --hs-soft:   oklch(95%   0.04 30);
 
+  /* semantic aliases */
+  --dn:    var(--shf);   /* danger/down — was undefined (bug fix) */
+  --up:    var(--tu);    /* success/up  — was undefined (bug fix) */
+  --warn:  #F59E0B;      /* amber warning */
+
+  /* utilities */
+  --white:       #ffffff;
+  --img-overlay: rgba(0, 0, 0, 0.55);
+
+  /* chart series palette */
+  --chart-green:      #22C55E;
+  --chart-blue:       #3B82F6;
+  --chart-blue-muted: #5a9fd4;
+  --chart-violet:     #8B5CF6;
+  --chart-pink:       #EC4899;
+  --chart-teal:       #14B8A6;
+  --chart-orange:     #F57C00;
+  --chart-tan:        #c4944a;
+
+  /* matching feature grades */
+  --grade-a:  #2E7D32;
+  --grade-b:  #1565C0;
+  --grade-dn: #D32F2F;
+
   /* type */
   --mono:      "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans:      "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
@@ -76,6 +100,11 @@
   --td:        oklch(70%   0.13 32);
   --hs:        oklch(60%   0.11 25);
   --hs-soft:   oklch(24%   0.06 30);
+
+  --warn:     #FBBF24;
+  --grade-a:  #66BB6A;
+  --grade-b:  #42A5F5;
+  --grade-dn: #EF5350;
 
   color-scheme: dark;
 }

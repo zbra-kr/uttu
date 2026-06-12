@@ -73,9 +73,9 @@ export default function SubscriptionMatrix({ isAdmin }: Props) {
             const on = subs.get(`${ev}:${ch}`) ?? false;
             return (
               <div key={ch} style={{ width: 54, display: 'flex', justifyContent: 'center' }}>
-                <div className={`toggle ${on ? 'on' : ''}`} onClick={() => handleToggle(ev, ch)}>
+                <button type="button" className={`toggle ${on ? 'on' : ''}`} onClick={() => handleToggle(ev, ch)}>
                   <div className="thumb" />
-                </div>
+                </button>
               </div>
             );
           })}

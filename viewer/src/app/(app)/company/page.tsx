@@ -39,7 +39,7 @@ const TT: any = {
 };
 const AX = { fontSize: 9, fill: 'var(--f4)', fontFamily: 'var(--mono)' };
 const CM = { top: 4, right: 12, left: 4, bottom: 0 };
-const BRAND_COLORS = ['var(--hs)', '#22C55E', '#F59E0B', '#3B82F6', '#8B5CF6', '#EC4899', '#14B8A6'];
+const BRAND_COLORS = ['var(--hs)', 'var(--chart-green)', 'var(--warn)', 'var(--chart-blue)', 'var(--chart-violet)', 'var(--chart-pink)', 'var(--chart-teal)'];
 
 const GENDERS  = [['A', '전체'], ['M', '남성'], ['F', '여성']] as const;
 const AGE_KEYS = [
@@ -84,7 +84,7 @@ function computeMetrics(financials: DartFinancial[]): FinMetrics[] {
 }
 
 type Grade = 'good' | 'warn' | 'bad' | 'na';
-const GC: Record<Grade, string> = { good: 'var(--slf)', warn: '#F59E0B', bad: 'var(--shf)', na: 'var(--f4)' };
+const GC: Record<Grade, string> = { good: 'var(--slf)', warn: 'var(--warn)', bad: 'var(--shf)', na: 'var(--f4)' };
 const GL: Record<Grade, string> = { good: '양호', warn: '주의', bad: '위험', na: 'N/A' };
 function grade(v: number | null, g: number, w: number, hi = true): Grade {
   if (v == null) return 'na';
@@ -570,7 +570,7 @@ function TabRanking({ rankStats, top100Trend, brandTrend, productDist, rankLoadi
                 <XAxis dataKey="label" tick={AX} axisLine={false} tickLine={false} />
                 <YAxis tick={AX} axisLine={false} tickLine={false} />
                 <Tooltip {...TT} />
-                <Bar dataKey="count" name="상품수" fill="#22C55E" opacity={0.85} radius={[2, 2, 0, 0]} />
+                <Bar dataKey="count" name="상품수" fill="var(--chart-green)" opacity={0.85} radius={[2, 2, 0, 0]} />
               </BarChart>
             </ChartWrap>
           ) : <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 11, color: 'var(--f4)' }}>—</div>}
@@ -739,7 +739,7 @@ function TabFinancial({ financials, top100Trend, rankStats }: {
               <Legend wrapperStyle={{ fontSize: 10 }} />
               <Bar dataKey="매출" fill="var(--f3)" opacity={0.6} radius={[2, 2, 0, 0]} />
               <Bar dataKey="영업이익" fill="var(--hs)" opacity={0.85} radius={[2, 2, 0, 0]} />
-              <Bar dataKey="순이익" fill="#22C55E" opacity={0.85} radius={[2, 2, 0, 0]} />
+              <Bar dataKey="순이익" fill="var(--chart-green)" opacity={0.85} radius={[2, 2, 0, 0]} />
             </BarChart>
           </ChartWrap>
         </SecPanel>
@@ -753,7 +753,7 @@ function TabFinancial({ financials, top100Trend, rankStats }: {
               <Legend wrapperStyle={{ fontSize: 10 }} />
               <ReferenceLine y={0} stroke="var(--bs)" strokeDasharray="3 3" />
               <Line type="monotone" dataKey="영업이익률" stroke="var(--hs)" strokeWidth={1.5} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="순이익률"   stroke="#22C55E" strokeWidth={1.5} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="순이익률"   stroke="var(--chart-green)" strokeWidth={1.5} dot={{ r: 3 }} />
             </LineChart>
           </ChartWrap>
         </SecPanel>
@@ -769,7 +769,7 @@ function TabFinancial({ financials, top100Trend, rankStats }: {
               <YAxis tick={AX} axisLine={false} tickLine={false} />
               <Tooltip {...TT} formatter={(v: any) => [`${v}%`, '']} />
               <ReferenceLine y={200} stroke="var(--shf)" strokeDasharray="4 3" label={{ value: '위험선 200%', fill: 'var(--shf)', fontSize: 9, position: 'insideTopRight' }} />
-              <ReferenceLine y={100} stroke="#F59E0B" strokeDasharray="4 3" label={{ value: '주의 100%', fill: '#F59E0B', fontSize: 9, position: 'insideTopRight' }} />
+              <ReferenceLine y={100} stroke="var(--warn)" strokeDasharray="4 3" label={{ value: '주의 100%', fill: 'var(--warn)', fontSize: 9, position: 'insideTopRight' }} />
               <Line type="monotone" dataKey="부채비율" stroke="var(--shf)" strokeWidth={1.5} dot={{ r: 3 }} />
             </LineChart>
           </ChartWrap>
@@ -784,7 +784,7 @@ function TabFinancial({ financials, top100Trend, rankStats }: {
               <Legend wrapperStyle={{ fontSize: 10 }} />
               <ReferenceLine y={0} stroke="var(--bs)" strokeDasharray="3 3" />
               <Line type="monotone" dataKey="ROA" stroke="var(--hs)" strokeWidth={1.5} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="ROE" stroke="#3B82F6" strokeWidth={1.5} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="ROE" stroke="var(--chart-blue)" strokeWidth={1.5} dot={{ r: 3 }} />
             </LineChart>
           </ChartWrap>
         </SecPanel>
@@ -800,7 +800,7 @@ function TabFinancial({ financials, top100Trend, rankStats }: {
               <YAxis tick={AX} axisLine={false} tickLine={false} />
               <Tooltip {...TT} formatter={(v: any) => [`${v}억`, '']} />
               <Legend wrapperStyle={{ fontSize: 10 }} />
-              <Bar dataKey="자기자본" stackId="a" fill="#22C55E" opacity={0.8} />
+              <Bar dataKey="자기자본" stackId="a" fill="var(--chart-green)" opacity={0.8} />
               <Bar dataKey="부채"   stackId="a" fill="var(--shf)" opacity={0.6} radius={[2, 2, 0, 0]} />
             </BarChart>
           </ChartWrap>
@@ -837,7 +837,7 @@ function TabFinancial({ financials, top100Trend, rankStats }: {
             <Legend wrapperStyle={{ fontSize: 10 }} />
             <ReferenceLine y={1} stroke="var(--f4)" strokeDasharray="3 3" label={{ value: '기준 1배', fill: 'var(--f4)', fontSize: 9, position: 'insideTopRight' }} />
             <Line type="monotone" dataKey="자산회전율" stroke="var(--hs)"  strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-            <Line type="monotone" dataKey="자본회전율" stroke="#3B82F6" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
+            <Line type="monotone" dataKey="자본회전율" stroke="var(--chart-blue)" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
           </LineChart>
         </ChartWrap>
       </SecPanel>
@@ -1132,7 +1132,7 @@ function CompanyPageInner() {
           <button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
             <IcEdit /> 메모
             {noteCount > 0 && (
-              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: '#fff', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: 'var(--white)', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
                 {noteCount}
               </span>
             )}
@@ -1160,10 +1160,10 @@ function CompanyPageInner() {
           ['disclosure',  '공시',     disclosures.length || null],
           ['funding',     '투자정보',  fundingRounds.length || null],
         ] as [string, string, string | number | null][]).map(([key, label, badge]) => (
-          <div key={key} className={`tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key as any)}>
+          <button type="button" key={key} className={`tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key as any)}>
             {label}
             {badge != null && <span className="mono dim" style={{ fontSize: 10, marginLeft: 4 }}>({badge})</span>}
-          </div>
+          </button>
         ))}
       </div>
 

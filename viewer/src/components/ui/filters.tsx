@@ -57,12 +57,12 @@ export const PeriodFilter = ({ value, onChange, from, to, onFromChange, onToChan
 
 interface CheckRowProps { on: boolean; onToggle: () => void; label: React.ReactNode; count?: number; prefix?: React.ReactNode; }
 export const CheckRow = ({ on, onToggle, label, count, prefix }: CheckRowProps) => (
-  <div className={`check-row ${on ? 'on' : ''}`} onClick={onToggle}>
+  <button type="button" className={`check-row ${on ? 'on' : ''}`} onClick={onToggle}>
     <div className={`checkbox ${on ? 'on' : ''}`}>{on && '✓'}</div>
     {prefix}
     <span className="lbl">{label}</span>
     {count != null && <span className="count">{count}</span>}
-  </div>
+  </button>
 );
 
 interface FilterBlockProps { label: string; hint?: string; children: React.ReactNode; }

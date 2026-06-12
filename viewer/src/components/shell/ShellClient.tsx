@@ -8,6 +8,7 @@ import CmdK from './CmdK';
 import MobileShell from './MobileShell';
 import { fetchShellStats, ShellStats } from '@/lib/queries';
 import { useIsMobile } from '@/hooks/useViewport';
+import { kstToday } from '@/lib/format';
 
 const BREADCRUMBS: Record<string, string[]> = {
   '/':                ['홈', '대시보드'],
@@ -157,7 +158,7 @@ export default function ShellClient({ children }: { children: React.ReactNode })
             : [`브랜드 · ${brandCrumb.name}`]
           : (BREADCRUMBS[pathname] || ['UTTU']);
 
-  const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+  const todayStr = kstToday().replace(/-/g, '.');
   const a       = shellStats?.anomalyCount ?? 0;
   const rv      = shellStats?.reviewTotal ?? 0;
   const rvAvg   = shellStats ? shellStats.reviewAvgRating.toFixed(2) : null;

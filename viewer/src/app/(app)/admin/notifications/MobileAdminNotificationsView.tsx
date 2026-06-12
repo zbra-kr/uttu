@@ -2,11 +2,7 @@
 import { useState, useEffect } from 'react';
 import { fetchRecentNotifications, fetchNotificationsKpi, type NotificationRow, type NotificationsKpi } from '@/lib/queries-admin';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
-
-function fmtDate(dt: string): string {
-  const kst = new Date(new Date(dt).getTime() + 9 * 3_600_000);
-  return kst.toISOString().slice(0, 16).replace('T', ' ');
-}
+import { fmtDateTime } from '@/lib/format';
 
 export default function MobileAdminNotificationsView() {
   const [kpi, setKpi] = useState<NotificationsKpi | null>(null);
@@ -52,7 +48,7 @@ export default function MobileAdminNotificationsView() {
             </div>
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--f1)', marginTop: 4 }}>{r.title}</div>
             <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginTop: 3, display: 'flex', gap: 6 }}>
-              <span>{fmtDate(r.created_at)}</span>
+              <span>{fmtDateTime(r.created_at)}</span>
               {r.sent_to_teams_at && <span style={{ color: 'var(--slf)' }}>Teams ✓</span>}
               {r.sent_to_telegram_at && <span style={{ color: 'var(--slf)' }}>TG ✓</span>}
             </div>

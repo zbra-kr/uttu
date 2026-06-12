@@ -41,7 +41,7 @@ function fmt(n: number) {
   return String(n);
 }
 function rc(rank: number) {
-  return rank === 1 ? '#F59E0B' : rank === 2 ? 'var(--f2)' : rank === 3 ? 'var(--shf)' : 'var(--f3)';
+  return rank === 1 ? 'var(--warn)' : rank === 2 ? 'var(--f2)' : rank === 3 ? 'var(--shf)' : 'var(--f3)';
 }
 function normImgUrl(url: string | null): string | null {
   if (!url) return null;
@@ -202,7 +202,7 @@ function LightboxOverlay({ url, onClose }: { url: string; onClose: () => void })
   }, [onClose]);
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 70, cursor: 'zoom-out' }} />
+      <div aria-hidden="true" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 70, cursor: 'zoom-out' }} />
       <div style={{ position: 'fixed', inset: 0, zIndex: 71, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
         <img src={url} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 6, boxShadow: '0 8px 48px rgba(0,0,0,0.5)', pointerEvents: 'auto' }} onClick={e => e.stopPropagation()} />
       </div>
@@ -246,7 +246,7 @@ function SnapModal({ snap, rankRow, onClose, onHashtagClick, onLightbox }: {
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(2px)', zIndex: 50 }} />
+      <div aria-hidden="true" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(2px)', zIndex: 50 }} />
       <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 720, maxWidth: '94vw', maxHeight: '92vh', background: 'var(--sur)', borderRadius: 'var(--r-4)', border: '0.5px solid var(--bs)', boxShadow: '0 8px 32px rgba(0,0,0,0.14)', zIndex: 51, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: '0.5px solid var(--bs)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -257,7 +257,7 @@ function SnapModal({ snap, rankRow, onClose, onHashtagClick, onLightbox }: {
               : diff !== null && diff !== 0
                 ? <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: diff > 0 ? 'var(--tu)' : 'var(--td)' }}>{diff > 0 ? `▲${diff}` : `▼${Math.abs(diff)}`}</span>
                 : null)}
-            {rankRow?.highlight && <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#F59E0B', background: 'rgba(245,158,11,0.1)', borderRadius: 3, padding: '1px 5px', border: '0.5px solid rgba(245,158,11,0.3)' }}>{rankRow.highlight}</span>}
+            {rankRow?.highlight && <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--warn)', background: 'color-mix(in srgb, var(--warn) 10%, transparent)', borderRadius: 3, padding: '1px 5px', border: '0.5px solid color-mix(in srgb, var(--warn) 30%, transparent)' }}>{rankRow.highlight}</span>}
           </div>
           <button onClick={onClose} style={{ width: 26, height: 26, border: '0.5px solid var(--bd)', borderRadius: 'var(--r-2)', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--f3)' }}><IcX size={14} /></button>
         </div>
@@ -275,13 +275,13 @@ function SnapModal({ snap, rankRow, onClose, onHashtagClick, onLightbox }: {
             {/* 비율 토글 버튼 */}
             <button onClick={() => setImgFit(f => f === 'cover' ? 'contain' : 'cover')}
               title={imgFit === 'cover' ? '원본 비율 보기' : '크롭 보기'}
-              style={{ position: 'absolute', bottom: 8, left: 8, background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 10, padding: '2px 7px', borderRadius: 3, border: 'none', cursor: 'pointer', fontFamily: 'var(--mono)' }}>
+              style={{ position: 'absolute', bottom: 8, left: 8, background: 'var(--img-overlay)', color: 'var(--white)', fontSize: 10, padding: '2px 7px', borderRadius: 3, border: 'none', cursor: 'pointer', fontFamily: 'var(--mono)' }}>
               {imgFit === 'cover' ? '원본비율' : '크롭'}
             </button>
             {/* 무신사 링크 */}
             {snap.thumbnail_url && (
               <a href={`https://www.musinsa.com/snap/${snap.snap_id}`} target="_blank" rel="noopener noreferrer"
-                style={{ position: 'absolute', bottom: 8, right: 8, background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 10, padding: '2px 8px', borderRadius: 3, textDecoration: 'none', fontFamily: 'var(--mono)' }}>
+                style={{ position: 'absolute', bottom: 8, right: 8, background: 'var(--img-overlay)', color: 'var(--white)', fontSize: 10, padding: '2px 8px', borderRadius: 3, textDecoration: 'none', fontFamily: 'var(--mono)' }}>
                 무신사↗
               </a>
             )}
@@ -350,8 +350,8 @@ function SnapModal({ snap, rankRow, onClose, onHashtagClick, onLightbox }: {
                 : products.length === 0
                   ? <p style={{ margin: 0, fontSize: 12, color: 'var(--f4)' }}>연결된 상품 없음</p>
                   : products.map((p, i) => (
-                      <div key={i} onClick={() => { if (p.musinsa_no) { onClose(); router.push(`/product?no=${p.musinsa_no}`); } }}
-                        style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '7px 0', borderBottom: i < products.length - 1 ? '0.5px solid var(--bs)' : 'none', cursor: p.musinsa_no ? 'pointer' : 'default' }}>
+                      <button type="button" key={p.musinsa_no ?? i} onClick={() => { if (p.musinsa_no) { onClose(); router.push(`/product?no=${p.musinsa_no}`); } }}
+                        style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '7px 0', borderBottom: i < products.length - 1 ? '0.5px solid var(--bs)' : 'none', cursor: p.musinsa_no ? 'pointer' : 'default', width: '100%', textAlign: 'left' }}>
                         {normImgUrl(p.thumbnail_url) ? <img src={normImgUrl(p.thumbnail_url)!} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} /> : <div style={{ width: 38, height: 38, background: 'var(--snk)', borderRadius: 4, flexShrink: 0 }} />}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 12, color: p.musinsa_no ? 'var(--f1)' : 'var(--f3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.product_name}</div>
@@ -368,7 +368,7 @@ function SnapModal({ snap, rankRow, onClose, onHashtagClick, onLightbox }: {
                             <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--shf)', fontWeight: 500 }}>-{Math.round(Number(p.discount_rate))}%</span>
                           )}
                         </div>
-                      </div>
+                      </button>
                     ))}
             </div>
           </div>
@@ -426,7 +426,7 @@ function ProfilePanel({ profile, date, onSnapClick, onClose }: { profile: SnapPr
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(2px)', zIndex: 50 }} />
+      <div aria-hidden="true" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(2px)', zIndex: 50 }} />
       <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 680, maxWidth: '94vw', maxHeight: '92vh', background: 'var(--sur)', borderRadius: 'var(--r-4)', border: '0.5px solid var(--bs)', boxShadow: '0 8px 32px rgba(0,0,0,0.14)', zIndex: 51, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* 헤더 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: '0.5px solid var(--bs)', flexShrink: 0 }}>
@@ -545,7 +545,7 @@ function ProfilePanel({ profile, date, onSnapClick, onClose }: { profile: SnapPr
                     {snap.thumbnail_url
                       ? <img src={snap.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                       : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--f4)' }}><IcSnap size={18} /></div>}
-                    <div style={{ position: 'absolute', bottom: 5, right: 5, background: 'rgba(0,0,0,0.55)', borderRadius: 3, padding: '1px 5px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--rai)' }}>
+                    <div style={{ position: 'absolute', bottom: 5, right: 5, background: 'var(--img-overlay)', borderRadius: 3, padding: '1px 5px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--rai)' }}>
                       ❤ {fmt(snap.like_count)}
                     </div>
                   </div>
@@ -704,6 +704,7 @@ function SnapDesktopView() {
   // 데이터 로드마다 슬라이더를 전체 범위로 초기화
   React.useEffect(() => {
     setMemberFollower(memberFollowerBounds);
+  // bounds 값 변경 시에만 슬라이더 초기화 — 배열 참조 변경 방지
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memberFollowerBounds[0], memberFollowerBounds[1]]);
 
@@ -1504,7 +1505,7 @@ function SnapDesktopView() {
                         </span>
                         <span style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
                           <span className="mono" style={{ fontWeight: 600, color: rc(row.rank_position), fontSize: 13 }}>{String(row.rank_position).padStart(2, '0')}</span>
-                          {row.highlight && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: '#F59E0B', background: 'rgba(245,158,11,0.1)', borderRadius: 3, padding: '1px 5px', border: '0.5px solid rgba(245,158,11,0.3)', whiteSpace: 'nowrap' }}>{row.highlight}</span>}
+                          {row.highlight && <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--warn)', background: 'color-mix(in srgb, var(--warn) 10%, transparent)', borderRadius: 3, padding: '1px 5px', border: '0.5px solid color-mix(in srgb, var(--warn) 30%, transparent)', whiteSpace: 'nowrap' }}>{row.highlight}</span>}
                         </span>
                         <span><RankChange curr={row.rank_position} prev={row.prev_rank_position} /></span>
                         {multiDay && <span className="mono dim" style={{ fontSize: 11 }}>{row.snapshot_date}</span>}

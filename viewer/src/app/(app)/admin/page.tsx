@@ -11,19 +11,14 @@ import {
 } from '@/lib/queries-admin';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileAdminDashboardView from './MobileAdminDashboardView';
+import { fmtTokens, fmtDateTime } from '@/lib/format';
 
 // ── 포맷 헬퍼 ──────────────────────────────────────────────────────────────────
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`;
-  return String(n);
-}
-
 function fmtDuration(sec: number | null): string {
   if (sec === null) return '—';
   if (sec < 60)    return `${sec}초`;
   if (sec < 3600)  return `${Math.floor(sec / 60)}분 ${sec % 60}초`;
-  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+  return `${Math.floor(sec / 3600)}시간 ${Math.floor((sec % 3600) / 60)}분`;
 }
 
 function timeSince(iso: string | null): string {
@@ -33,11 +28,6 @@ function timeSince(iso: string | null): string {
   if (sec < 3600)  return `${Math.floor(sec / 60)}분 전`;
   if (sec < 86400) return `${Math.floor(sec / 3600)}시간 전`;
   return `${Math.floor(sec / 86400)}일 전`;
-}
-
-function fmtDatetime(iso: string): string {
-  const kst = new Date(new Date(iso).getTime() + 9 * 3_600_000);
-  return kst.toISOString().slice(0, 16).replace('T', ' ');
 }
 
 // ── KPI 카드 ──────────────────────────────────────────────────────────────────
@@ -269,7 +259,7 @@ function AdminDashboardDesktopView() {
                             {meta.label}
                           </span>
                           <span style={{ fontSize: 10, color: 'var(--f4)' }}>
-                            {fmtDatetime(a.occurred_at)}
+                            {fmtDateTime(a.occurred_at)}
                           </span>
                         </div>
                         <div style={{

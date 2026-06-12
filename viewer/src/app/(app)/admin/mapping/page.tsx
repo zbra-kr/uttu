@@ -59,11 +59,11 @@ function RemarkEditor({ value, onSave }: { value: string | null; onSave: (v: str
         fontFamily: 'inherit', lineHeight: 1.5, marginTop: 4 }} />
   );
   return (
-    <div onClick={() => setEditing(true)}
-      style={{ fontSize: 11, color: value ? 'var(--f3)' : 'var(--f4)', cursor: 'text',
+    <button type="button" onClick={() => setEditing(true)}
+      style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 11, color: value ? 'var(--f3)' : 'var(--f4)', cursor: 'text',
         marginTop: 4, minHeight: 16, fontStyle: value ? 'normal' : 'italic', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
       {value || '메모 추가...'}
-    </div>
+    </button>
   );
 }
 
@@ -218,13 +218,13 @@ function DartSection({ company, onSaved }: { company: UnifiedCompany; onSaved: (
               </div>
               <div className="row-flex between"><span style={{ fontSize: 11, color: 'var(--f4)', width: 80 }}>상장 구분</span><span style={{ fontSize: 12 }}>{clsLabel(verify.corp_cls)}</span></div>
               {bizMatch === 'mismatch' && (
-                <div style={{ fontSize: 11, color: '#F59E0B', padding: '5px 8px', background: 'rgba(245,158,11,0.08)', borderRadius: 4, border: '1px solid rgba(245,158,11,0.2)' }}>
+                <div style={{ fontSize: 11, color: 'var(--warn)', padding: '5px 8px', background: 'color-mix(in srgb, var(--warn) 8%, transparent)', borderRadius: 4, border: '1px solid color-mix(in srgb, var(--warn) 20%, transparent)' }}>
                   ⚠️ 사업자번호 불일치
                 </div>
               )}
               {saveError && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '5px 8px', background: 'var(--shb)', borderRadius: 4 }}>{saveError}</div>}
               <div className="row-flex gap-6">
-                <button className="btn sm" style={{ background: 'var(--hs)', color: '#fff', borderColor: 'var(--hs)', flex: 1 }} onClick={doSave} disabled={saving}>
+                <button className="btn sm" style={{ background: 'var(--hs)', color: 'var(--white)', borderColor: 'var(--hs)', flex: 1 }} onClick={doSave} disabled={saving}>
                   {saving ? '저장 중…' : bizMatch === 'mismatch' ? '⚠️ 강제 저장' : '저장'}
                 </button>
                 <button className="btn sm" onClick={() => { setVerify(null); setCorpInput(''); }} disabled={saving}>취소</button>
@@ -776,7 +776,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
           </div>
           {cError   && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '6px 8px', background: 'var(--shb)', borderRadius: 4 }}>{cError}</div>}
           {cSuccess && <div style={{ fontSize: 11, color: 'var(--slf)', padding: '6px 8px', background: 'rgba(34,197,94,0.08)', borderRadius: 4, border: '1px solid rgba(34,197,94,0.2)' }}>{cSuccess}</div>}
-          <button className="btn sm" style={{ background: 'var(--hs)', color: '#fff', borderColor: 'var(--hs)' }} onClick={submitCompany} disabled={cSaving}>
+          <button className="btn sm" style={{ background: 'var(--hs)', color: 'var(--white)', borderColor: 'var(--hs)' }} onClick={submitCompany} disabled={cSaving}>
             {cSaving ? '등록 중…' : '회사 등록'}
           </button>
         </div>
@@ -823,7 +823,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
           </div>
           {bError   && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '6px 8px', background: 'var(--shb)', borderRadius: 4 }}>{bError}</div>}
           {bSuccess && <div style={{ fontSize: 11, color: 'var(--slf)', padding: '6px 8px', background: 'rgba(34,197,94,0.08)', borderRadius: 4, border: '1px solid rgba(34,197,94,0.2)' }}>{bSuccess}</div>}
-          <button className="btn sm" style={{ background: 'var(--hs)', color: '#fff', borderColor: 'var(--hs)' }} onClick={submitBrand} disabled={bSaving}>
+          <button className="btn sm" style={{ background: 'var(--hs)', color: 'var(--white)', borderColor: 'var(--hs)' }} onClick={submitBrand} disabled={bSaving}>
             {bSaving ? '등록 중…' : '브랜드 등록'}
           </button>
         </div>
@@ -985,7 +985,7 @@ function MappingDesktopView() {
           <IcShield size={12} /> admin
         </span>
         <div style={{ marginLeft: 'auto' }}>
-          <button className="btn sm" style={{ background: 'var(--hs)', color: '#fff', borderColor: 'var(--hs)' }}
+          <button className="btn sm" style={{ background: 'var(--hs)', color: 'var(--white)', borderColor: 'var(--hs)' }}
             onClick={() => setShowCreate(true)}>
             + 직접 등록
           </button>
@@ -1017,7 +1017,7 @@ function MappingDesktopView() {
               <span style={{ fontSize: 9, opacity: 0.7 }}>{showFilters ? '▲' : '▼'}</span>
               필터
               {activeFilterCount > 0 && (
-                <span style={{ background: 'var(--hs)', color: '#fff', borderRadius: 8, fontSize: 9, fontWeight: 700,
+                <span style={{ background: 'var(--hs)', color: 'var(--white)', borderRadius: 8, fontSize: 9, fontWeight: 700,
                   padding: '1px 5px', lineHeight: 1.4 }}>{activeFilterCount}</span>
               )}
             </button>

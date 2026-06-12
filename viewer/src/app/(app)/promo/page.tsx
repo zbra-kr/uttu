@@ -10,6 +10,7 @@ import { BarChart, Bar, Cell as RCell, XAxis, YAxis, Tooltip, ResponsiveContaine
 import { supabaseBrowser } from '@/lib/supabase/client';
 import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
 import { CATEGORY_MAP } from '@/lib/queries';
+import { fmtDate as _fmtDate } from '@/lib/format';
 
 const sb = supabaseBrowser();
 
@@ -65,12 +66,7 @@ const KR_HOLIDAYS: Record<string, string> = {
   '2026-10-03':'개천절','2026-10-09':'한글날','2026-12-25':'크리스마스',
 };
 
-function fmtDate(s: string | null | undefined): string {
-  if (!s) return '상시';
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return '—';
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
-}
+const fmtDate = (s: string | null | undefined) => s ? _fmtDate(s) : '상시';
 function fmtDiscount(rate: number | null | undefined): string {
   if (rate == null) return '—';
   return `−${Math.round(Number(rate))}%`;
@@ -167,9 +163,9 @@ function PromoDesktopView() {
         <span className="sub">무신사 세일탭 · 기간·타입 필터 → 상품 분석</span>
       </div>
       <div className="tabs">
-        <div className={`tab ${tab === 'hub'      ? 'active' : ''}`} onClick={() => setTab('hub')}>상품 분석</div>
-        <div className={`tab ${tab === 'calendar' ? 'active' : ''}`} onClick={() => setTab('calendar')}>캘린더</div>
-        <div className={`tab ${tab === 'stats'    ? 'active' : ''}`} onClick={() => setTab('stats')}>통계</div>
+        <button type="button" className={`tab ${tab === 'hub'      ? 'active' : ''}`} onClick={() => setTab('hub')}>상품 분석</button>
+        <button type="button" className={`tab ${tab === 'calendar' ? 'active' : ''}`} onClick={() => setTab('calendar')}>캘린더</button>
+        <button type="button" className={`tab ${tab === 'stats'    ? 'active' : ''}`} onClick={() => setTab('stats')}>통계</button>
       </div>
       {tab === 'hub'      && <PromoHub jumpPromo={jumpPromo} onJumpConsumed={() => setJumpPromo(null)} />}
       {tab === 'calendar' && <PromoCalendar onSelectPromo={handleCalSelect} />}
@@ -1090,6 +1086,7 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
       .order('snapshot_date', { ascending: true })
       .limit(500)
       .then(({ data }) => { setPromos((data ?? []) as PromoRow[]); setLoading(false); });
+  // 날짜 범위 변경 시에만 재요청. setters 안정 참조
   }, [fetchFrom, fetchTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 날짜별 이벤트 맵 (date string key)
@@ -1141,7 +1138,7 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
 
   const DAY_HEADERS = ['일','월','화','수','목','금','토'];
   const SUN_COLOR   = 'var(--shf)';
-  const SAT_COLOR   = '#3B82F6'; // 파란색 (토)
+  const SAT_COLOR   = 'var(--chart-blue)'; // 파란색 (토)
 
   return (
     <>
@@ -1305,10 +1302,10 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {popup.evts.map(e => (
-                <div key={e.id} onClick={() => { onSelectPromo(e.id, e.snapshotDate); setPopup(null); }}
+                <button type="button" key={e.id} onClick={() => { onSelectPromo(e.id, e.snapshotDate); setPopup(null); }}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
                     borderRadius: 8, border: '1px solid var(--bd)', cursor: 'pointer',
-                    background: 'var(--snk)' }}
+                    background: 'var(--snk)', width: '100%', textAlign: 'left' }}
                   onMouseEnter={el => (el.currentTarget as HTMLElement).style.background = 'var(--hs-soft)'}
                   onMouseLeave={el => (el.currentTarget as HTMLElement).style.background = 'var(--snk)'}>
                   <span className={`sev ${e.sev}`} style={{ flexShrink: 0 }}>
@@ -1323,7 +1320,7 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
                       {TYPE_LABEL[e.type] ?? e.type} · 수집 {e.snapshotDate}
                     </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -1810,7 +1807,7 @@ function PromoStats() {
         <div className="row-flex center gap-8">
           <h2 style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>프로모션 통계</h2>
           {truncated && (
-            <span style={{ fontSize: 10, color: 'var(--warn, #f0a500)', background: 'var(--snk)', padding: '1px 6px', borderRadius: 3 }}>
+            <span style={{ fontSize: 10, color: 'var(--warn)', background: 'var(--snk)', padding: '1px 6px', borderRadius: 3 }}>
               * 상위 {ITEM_LIMIT.toLocaleString()}건 기준 (전체 {itemTotal.toLocaleString()}건)
             </span>
           )}

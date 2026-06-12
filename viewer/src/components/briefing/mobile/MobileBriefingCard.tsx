@@ -50,7 +50,7 @@ export default function MobileBriefingCard({ icon, title, comment, href, onClick
   };
 
   if (onClick) {
-    return <div style={sharedStyle} onClick={onClick} {...pointerProps}>{inner}</div>;
+    return <button type="button" style={{ all: 'unset', ...sharedStyle, cursor: 'pointer', display: 'block', width: '100%' }} onClick={onClick} {...pointerProps}>{inner}</button>;
   }
 
   return <Link href={href} style={sharedStyle} {...pointerProps}>{inner}</Link>;

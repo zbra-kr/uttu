@@ -7,11 +7,7 @@ import {
 import { supabaseBrowser } from '@/lib/supabase/client';
 import MentionAutocomplete from './MentionAutocomplete';
 import { IcX } from '../ui/icons';
-
-function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
+import { fmtDateTime } from '@/lib/format';
 
 function renderBody(text: string): React.ReactNode[] {
   const parts = text.split(/(@\S+|#\S+)/g);
@@ -95,6 +91,7 @@ export default function NoteDrawer({
       setLoading(false);
       onCountChange?.(data.length);
     });
+  // onCountChange prop 함수 제외 — 부모 재렌더링 시 무한 루프 방지
   }, [open, entity_type, entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBodyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -332,7 +329,7 @@ export default function NoteDrawer({
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', marginTop: 6 }}>
                         <span className="mono" style={{ fontSize: 10, color: 'var(--f4)', flex: 1 }}>
-                          {fmtDate(note.created_at)}
+                          {fmtDateTime(note.created_at)}
                           {note.updated_at > note.created_at && ' (수정됨)'}
                         </span>
                         {hoveredId === note.id && note.user_id === currentUserId && (

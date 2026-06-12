@@ -394,6 +394,7 @@ function RankingDesktopView() {
     periodLabel,
   ].filter(Boolean).join(' · ');
 
+  // fetchNoteCountForEntity·setNoteCount는 안정 참조 — deps 누락 무해
   // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     fetchNoteCountForEntity('ranking_filter', rankingEntityId).then(setNoteCount);
@@ -405,6 +406,7 @@ function RankingDesktopView() {
       logView('ranking_filter', rankingEntityId, rankingEntityLabel).catch(() => {});
     }, 300);
     return () => clearTimeout(t);
+  // rankingEntityLabel 제외 — label만 변경 시 뷰 중복 기록 방지
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rankingEntityId]);
 
@@ -428,7 +430,7 @@ function RankingDesktopView() {
 <button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
             <IcEdit /> 메모
             {noteCount > 0 && (
-              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: '#fff', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: 'var(--white)', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
                 {noteCount}
               </span>
             )}
@@ -779,7 +781,7 @@ function RankingDesktopView() {
             style={{
               position: 'absolute', top: 20, right: 20,
               background: 'rgba(255,255,255,0.15)', border: 'none',
-              color: '#fff', fontSize: 20, width: 36, height: 36,
+              color: 'var(--white)', fontSize: 20, width: 36, height: 36,
               borderRadius: '50%', cursor: 'pointer', lineHeight: 1,
             }}>
             ✕

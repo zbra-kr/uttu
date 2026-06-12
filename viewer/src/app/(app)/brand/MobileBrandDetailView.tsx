@@ -28,8 +28,8 @@ const AGE_CHIPS = [
 
 const GENDER_LABEL: Record<string, string> = { A: '공용', M: '남성', F: '여성' };
 const GENDER_KEYS = ['A', 'M', 'F'] as const;
-const GENDER_COLORS = ['var(--f3)', '#5a9fd4', 'var(--shf)'];
-const CAT_COLORS = ['var(--hs)', '#5a9fd4', 'var(--slf)', '#c4944a', 'var(--f3)'];
+const GENDER_COLORS = ['var(--f3)', 'var(--chart-blue-muted)', 'var(--shf)'];
+const CAT_COLORS = ['var(--hs)', 'var(--chart-blue-muted)', 'var(--slf)', 'var(--chart-tan)', 'var(--f3)'];
 
 function fmtPrice(v: number | null): string {
   if (v == null) return '—';
@@ -222,9 +222,9 @@ export default function MobileBrandDetailView() {
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
           <div style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>상품 랭킹 ({products.length}개)</div>
           {products.map((p, i) => (
-            <div key={p.musinsa_no} onClick={() => router.push(`/product?no=${p.musinsa_no}`)}
+            <button type="button" key={p.musinsa_no} onClick={() => router.push(`/product?no=${p.musinsa_no}`)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', width: '100%', textAlign: 'left',
                 paddingTop: i > 0 ? 8 : 0, marginTop: i > 0 ? 8 : 0,
                 borderTop: i > 0 ? '1px solid var(--bd)' : 'none',
               }}>
@@ -244,7 +244,7 @@ export default function MobileBrandDetailView() {
                   )}
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}

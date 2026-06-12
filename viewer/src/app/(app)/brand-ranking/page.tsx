@@ -10,6 +10,7 @@ import {
   CATEGORY_MAP, AGE_MAP,
   type BrandLeaderRow,
 } from '@/lib/queries';
+import { kstDaysAgo } from '@/lib/format';
 
 const CATEGORY_DISPLAY = [
   { code: '000', label: '전체' }, { code: '001', label: '상의' }, { code: '002', label: '아우터' },
@@ -24,9 +25,7 @@ const SORT_OPTS: [string, string][] = [
 ];
 const FILTER_KEY = 'uttu-brand-ranking-filters';
 
-function daysAgoStr(n: number) {
-  return new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
-}
+const daysAgoStr = (n: number) => kstDaysAgo(n);
 function periodToCompareDate(period: string, fromDate: string): string | undefined {
   if (period === 'today') return daysAgoStr(1);
   if (period === '7d')  return daysAgoStr(7);

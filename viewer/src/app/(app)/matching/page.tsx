@@ -339,7 +339,7 @@ function BrandPool() {
                       <td style={{ padding: '9px 10px', textAlign: 'right' }}>
                         <span className="mono" style={{
                           fontSize: 11,
-                          color: opAeok == null ? 'var(--f4)' : opAeok >= 0 ? 'var(--f2)' : '#D32F2F',
+                          color: opAeok == null ? 'var(--f4)' : opAeok >= 0 ? 'var(--f2)' : 'var(--grade-dn)',
                         }}>
                           {fmtWon(opAeok)}
                         </span>
@@ -384,11 +384,11 @@ function MatchCard({ m, onConfirm, onExclude }: {
 
   return (
     <div style={{
-      border: `0.5px solid ${confirmed ? 'var(--hs)' : gradeA ? 'color-mix(in srgb, #2E7D32 40%, var(--bs))' : 'var(--bs)'}`,
+      border: `0.5px solid ${confirmed ? 'var(--hs)' : gradeA ? 'color-mix(in srgb, var(--grade-a) 40%, var(--bs))' : 'var(--bs)'}`,
       borderRadius: 8, padding: '10px 12px',
       background: confirmed
         ? 'color-mix(in srgb, var(--hs) 6%, var(--sur))'
-        : gradeA ? 'color-mix(in srgb, #2E7D32 4%, var(--sur))'
+        : gradeA ? 'color-mix(in srgb, var(--grade-a) 4%, var(--sur))'
         : 'var(--sur)',
       display: 'flex', gap: 10, alignItems: 'flex-start',
     }}>
@@ -412,17 +412,17 @@ function MatchCard({ m, onConfirm, onExclude }: {
           )}
           {gradeA && (
             <span className="chip" style={{
-              background: '#2E7D32', color: '#fff', borderColor: '#2E7D32', fontSize: 10, fontWeight: 700,
+              background: 'var(--grade-a)', color: 'var(--white)', borderColor: 'var(--grade-a)', fontSize: 10, fontWeight: 700,
             }}>A</span>
           )}
           {gradeB && (
             <span className="chip" style={{
-              background: 'color-mix(in srgb, #1565C0 15%, var(--bg))', color: '#1565C0',
-              borderColor: '#1565C0', fontSize: 10, fontWeight: 700,
+              background: 'color-mix(in srgb, var(--grade-b) 15%, var(--bg))', color: 'var(--grade-b)',
+              borderColor: 'var(--grade-b)', fontSize: 10, fontWeight: 700,
             }}>B</span>
           )}
           {isAuto && m.score != null && (
-            <span className="mono" style={{ fontSize: 10, color: gradeA ? '#2E7D32' : '#1565C0' }}>
+            <span className="mono" style={{ fontSize: 10, color: gradeA ? 'var(--grade-a)' : 'var(--grade-b)' }}>
               {m.score}%
             </span>
           )}
@@ -525,6 +525,7 @@ function ProductMatching() {
     }).catch(console.error)
       .finally(() => { if (!cancelled) setLoadingProds(false); });
     return () => { cancelled = true; };
+  // 필터 변경 시에만 재요청. sb·setters는 안정 참조라 deps에서 의도적으로 제외
   }, [filterBrandIds, filterGender, filterCategory, filterKeyword, productPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 가격 클라이언트 필터
@@ -839,7 +840,7 @@ function ProductMatching() {
                       </div>
                       <div className="col-flex gap-6" style={{ alignItems: 'flex-end' }}>
                         {runMsg && runMsg.startsWith('allExcluded:') && (
-                          <div style={{ fontSize: 11, color: 'var(--f3)', textAlign: 'right', background: 'color-mix(in srgb, #F57C00 8%, var(--bg))', border: '0.5px solid #F57C00', borderRadius: 6, padding: '5px 10px' }}>
+                          <div style={{ fontSize: 11, color: 'var(--f3)', textAlign: 'right', background: 'color-mix(in srgb, var(--chart-orange) 8%, var(--bg))', border: '0.5px solid var(--chart-orange)', borderRadius: 6, padding: '5px 10px' }}>
                             후보 {runMsg.split(':')[1]}건 모두 제외됨
                             <button onClick={() => handleAutoMatch(true)} className="btn sm" style={{ marginLeft: 8, fontSize: 10 }}>
                               초기화 후 재실행
@@ -932,8 +933,8 @@ function ProductMatching() {
                         ] as [MatchFilter, string][]).map(([f, label]) => (
                           <button key={f} onClick={() => setMatchFilter(f)}
                             className={`btn sm ${matchFilter === f ? 'active' : ''}`}
-                            style={f === 'a' && matchFilter === f ? { background: '#2E7D32', borderColor: '#2E7D32', color: '#fff' }
-                              : f === 'b' && matchFilter === f ? { background: '#1565C0', borderColor: '#1565C0', color: '#fff' }
+                            style={f === 'a' && matchFilter === f ? { background: 'var(--grade-a)', borderColor: 'var(--grade-a)', color: 'var(--white)' }
+                              : f === 'b' && matchFilter === f ? { background: 'var(--grade-b)', borderColor: 'var(--grade-b)', color: 'var(--white)' }
                               : undefined}>
                             {label}
                           </button>
@@ -995,12 +996,12 @@ function MatchingDesktopView() {
       </div>
 
       <div className="tabs" style={{ marginBottom: 14 }}>
-        <div className={`tab ${tab === 'brands' ? 'active' : ''}`} onClick={() => setTab('brands')}>
+        <button type="button" className={`tab ${tab === 'brands' ? 'active' : ''}`} onClick={() => setTab('brands')}>
           경쟁 브랜드 풀
-        </div>
-        <div className={`tab ${tab === 'products' ? 'active' : ''}`} onClick={() => setTab('products')}>
+        </button>
+        <button type="button" className={`tab ${tab === 'products' ? 'active' : ''}`} onClick={() => setTab('products')}>
           상품 매칭
-        </div>
+        </button>
       </div>
 
       {tab === 'brands' ? <BrandPool /> : <ProductMatching />}

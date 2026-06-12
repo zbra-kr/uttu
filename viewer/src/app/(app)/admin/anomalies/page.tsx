@@ -11,6 +11,7 @@ import {
 } from '@/lib/queries-admin';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileAdminAnomaliesView from './MobileAdminAnomaliesView';
+import { fmtDateTime } from '@/lib/format';
 
 // ── 파라미터 팔레트 정의 ────────────────────────────────────────────────────────
 // 제안 목록일 뿐 — 여기 없는 키도 자유롭게 추가 가능
@@ -57,11 +58,6 @@ function paramsChips(params: Record<string, unknown>): string {
   ).join('  ·  ');
 }
 
-function fmtDate(iso: string): string {
-  return new Date(new Date(iso).getTime() + 9 * 3_600_000)
-    .toISOString().slice(0, 16).replace('T', ' ');
-}
-
 function slugify(s: string): string {
   return s.trim()
     .toLowerCase()
@@ -83,7 +79,7 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
       <span style={{
         position: 'absolute', top: 3, left: checked ? 17 : 3,
         width: 14, height: 14, borderRadius: '50%',
-        background: checked ? '#fff' : 'var(--bd)', transition: 'left 180ms',
+        background: checked ? 'var(--white)' : 'var(--bd)', transition: 'left 180ms',
       }} />
     </button>
   );
@@ -120,6 +116,7 @@ function EditModal({ rule, onClose, onSaved }: {
     rows.forEach(r => { p[r.key] = sliders[r.id] ?? r.numVal; });
     setRawJson(JSON.stringify(p, null, 2));
     setJsonErr(null);
+  // sliders 변경 시에만 rawJson 동기화. rows·setters 안정 참조
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sliders]);
 
@@ -643,7 +640,7 @@ function RuleRow({ rule, index, toggling, onToggle, onEdit, onDelete }: {
           <span className="pip" />{rule.severity}
         </span>
       </div>
-      <span className="mono dim" style={{ fontSize: 9, alignSelf: 'center' }}>{fmtDate(rule.updated_at)}</span>
+      <span className="mono dim" style={{ fontSize: 9, alignSelf: 'center' }}>{fmtDateTime(rule.updated_at)}</span>
       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
         <button onClick={() => onEdit(rule)} className="btn sm" style={{ fontSize: 10, padding: '2px 8px' }}>편집</button>
         {isCustom && (

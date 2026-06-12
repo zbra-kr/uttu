@@ -5,18 +5,7 @@ import { fetchAdminUsers, type AdminUser } from '@/lib/queries-admin';
 import UserDetailModal from '@/components/admin/UserDetailModal';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileAdminUsersView from './MobileAdminUsersView';
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const kst = new Date(new Date(iso).getTime() + 9 * 3_600_000);
-  return kst.toISOString().slice(0, 10).replace(/-/g, '.');
-}
+import { fmtTokens, fmtDate } from '@/lib/format';
 
 function UsageBar({ used, limit, usedToday, dailyLimit }: {
   used: number; limit: number | null;

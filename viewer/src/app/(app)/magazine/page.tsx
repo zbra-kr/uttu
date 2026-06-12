@@ -47,13 +47,14 @@ function MagazineDrawer({
     });
 
     fetchBrandIdsByNames(item.brand_names).then(setBrandIds);
+  // item.id 변경 시에만 재조회 — article_id·brand_names는 항상 item.id와 함께 변경됨
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
   return (
     <>
-      <div className="drawer-overlay" onClick={onClose} />
+      <div aria-hidden="true" className="drawer-overlay" onClick={onClose} />
       <aside className="drawer" style={{ width: 400 }}>
         <div className="drawer-head">
           <span className="chip">{item.category ?? '—'}</span>
@@ -130,7 +131,7 @@ function MagazineDrawer({
                     style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6,
                       padding: '5px 8px', borderRadius: 4, background: 'var(--snk)' }}>
                     {p.is_own && (
-                      <span style={{ fontSize: 9, background: 'var(--hs)', color: '#fff',
+                      <span style={{ fontSize: 9, background: 'var(--hs)', color: 'var(--white)',
                         padding: '1px 4px', borderRadius: 2, flexShrink: 0 }}>자사</span>
                     )}
                     <span style={{ fontSize: 12, color: 'var(--f2)', flex: 1, overflow: 'hidden',
@@ -218,6 +219,7 @@ function MagazinePage() {
       })
       .catch(console.error)
       .finally(() => setBoostLoading(false));
+  // 필터 3종 변경 시에만 재조회. setters·articleIds(sel에서 파생) 안정 참조
   }, [boostSev, ownOnly, sel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
@@ -715,7 +717,7 @@ function MagazinePage() {
             const rankBefore = b.meta?.rank_before;
             const rankAfter  = b.meta?.rank_after;
             const isNew      = b.anomaly_type === 'magazine_rank_new_entry';
-            const sevColor   = b.severity === 'high' ? 'var(--dn)' : b.severity === 'medium' ? 'var(--warn, #f0a500)' : 'var(--f3)';
+            const sevColor   = b.severity === 'high' ? 'var(--dn)' : b.severity === 'medium' ? 'var(--warn)' : 'var(--f3)';
             const productHref  = b.meta?.musinsa_no ? `/product?no=${b.meta.musinsa_no}` : null;
             const magazineHref = b.meta?.magazine_article_uuid ? `/magazine?id=${b.meta.magazine_article_uuid}` : null;
             return (
@@ -734,7 +736,7 @@ function MagazinePage() {
                     <a href={productHref} style={{ textDecoration: 'none', color: 'inherit',
                       display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
                       {b.meta?.is_own && (
-                        <span style={{ fontSize: 9, background: 'var(--hs)', color: '#fff',
+                        <span style={{ fontSize: 9, background: 'var(--hs)', color: 'var(--white)',
                           padding: '1px 4px', borderRadius: 2, flexShrink: 0 }}>자사</span>
                       )}
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -746,7 +748,7 @@ function MagazinePage() {
                   ) : (
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
                       {b.meta?.is_own && (
-                        <span style={{ fontSize: 9, background: 'var(--hs)', color: '#fff',
+                        <span style={{ fontSize: 9, background: 'var(--hs)', color: 'var(--white)',
                           padding: '1px 4px', borderRadius: 2, marginRight: 4 }}>자사</span>
                       )}
                       {b.entity_name ?? '—'}

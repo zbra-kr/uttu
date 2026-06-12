@@ -52,11 +52,11 @@ export default function Topbar({ breadcrumb, theme, onTheme, aipOpen, onToggleAi
           </React.Fragment>
         ))}
       </nav>
-      <div className="search" onClick={onOpenCmdk}>
+      <button type="button" className="search" onClick={onOpenCmdk}>
         <IcSearch />
         <span className="placeholder">회사·브랜드·상품 검색</span>
         <span className="kbd">⌘K</span>
-      </div>
+      </button>
       <div className="theme">
         <button aria-pressed={theme === 'light'} onClick={() => onTheme('light')}>light</button>
         <button aria-pressed={theme === 'dark'} onClick={() => onTheme('dark')}>dark</button>
@@ -74,7 +74,7 @@ export default function Topbar({ breadcrumb, theme, onTheme, aipOpen, onToggleAi
               position: 'absolute', top: 2, right: 2,
               minWidth: 14, height: 14, borderRadius: 7,
               padding: '0 3px',
-              background: 'var(--shf)', color: '#fff',
+              background: 'var(--shf)', color: 'var(--white)',
               fontSize: 9, fontFamily: 'var(--mono)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               lineHeight: 1, pointerEvents: 'none',

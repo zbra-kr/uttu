@@ -55,7 +55,7 @@ function computeMetrics(financials: DartFinancial[]): FinMetrics[] {
 }
 
 type Grade = 'good' | 'warn' | 'bad' | 'na';
-const GC: Record<Grade, string> = { good: 'var(--slf)', warn: '#F59E0B', bad: 'var(--shf)', na: 'var(--f4)' };
+const GC: Record<Grade, string> = { good: 'var(--slf)', warn: 'var(--warn)', bad: 'var(--shf)', na: 'var(--f4)' };
 const GL: Record<Grade, string> = { good: '양호', warn: '주의', bad: '위험', na: 'N/A' };
 function grade(v: number | null, g: number, w: number, hi = true): Grade {
   if (v == null) return 'na';
@@ -80,7 +80,7 @@ const TT = {
 };
 const AX = { fontSize: 9, fill: 'var(--f4)', fontFamily: 'var(--mono)' };
 const CM = { top: 4, right: 8, left: 0, bottom: 0 };
-const BRAND_COLORS = ['var(--hs)', '#22C55E', '#F59E0B', '#3B82F6', '#8B5CF6', '#EC4899', '#14B8A6'];
+const BRAND_COLORS = ['var(--hs)', 'var(--chart-green)', 'var(--warn)', 'var(--chart-blue)', 'var(--chart-violet)', 'var(--chart-pink)', 'var(--chart-teal)'];
 
 function classifyDisc(disclosures: DartDisclosure[]) {
   const cats: Record<string, number> = { '사업보고서': 0, '분기·반기': 0, '주요사항': 0, '증권발행': 0, '기타': 0 };
@@ -257,7 +257,7 @@ function TabOverview({
               <Legend wrapperStyle={{ fontSize: 10 }} />
               <ReferenceLine y={0} stroke="var(--bd)" strokeDasharray="3 3" />
               <Line type="monotone" dataKey="영업이익률" stroke="var(--hs)"  strokeWidth={1.5} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="순이익률"   stroke="#22C55E" strokeWidth={1.5} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="순이익률"   stroke="var(--chart-green)" strokeWidth={1.5} dot={{ r: 3 }} />
             </LineChart>
           </Chart>
         </Section>
@@ -428,7 +428,7 @@ function TabRanking({
               <XAxis dataKey="label" tick={AX} axisLine={false} tickLine={false} />
               <YAxis tick={AX} axisLine={false} tickLine={false} width={24} />
               <Tooltip {...TT} />
-              <Bar dataKey="count" name="상품수" fill="#22C55E" opacity={0.85} radius={[2, 2, 0, 0]} />
+              <Bar dataKey="count" name="상품수" fill="var(--chart-green)" opacity={0.85} radius={[2, 2, 0, 0]} />
             </BarChart>
           </Chart>
         </Section>
@@ -587,7 +587,7 @@ function TabFinancial({
             <Legend wrapperStyle={{ fontSize: 10 }} />
             <Bar dataKey="매출"     fill="var(--f3)"  opacity={0.6} radius={[2, 2, 0, 0]} />
             <Bar dataKey="영업이익" fill="var(--hs)"  opacity={0.85} radius={[2, 2, 0, 0]} />
-            <Bar dataKey="순이익"   fill="#22C55E"    opacity={0.85} radius={[2, 2, 0, 0]} />
+            <Bar dataKey="순이익"   fill="var(--chart-green)"    opacity={0.85} radius={[2, 2, 0, 0]} />
           </BarChart>
         </Chart>
       </Section>
@@ -603,7 +603,7 @@ function TabFinancial({
             <Legend wrapperStyle={{ fontSize: 10 }} />
             <ReferenceLine y={0} stroke="var(--bs)" strokeDasharray="3 3" />
             <Line type="monotone" dataKey="영업이익률" stroke="var(--hs)"  strokeWidth={1.5} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="순이익률"   stroke="#22C55E" strokeWidth={1.5} dot={{ r: 3 }} />
+            <Line type="monotone" dataKey="순이익률"   stroke="var(--chart-green)" strokeWidth={1.5} dot={{ r: 3 }} />
           </LineChart>
         </Chart>
       </Section>
@@ -617,7 +617,7 @@ function TabFinancial({
             <YAxis tick={AX} axisLine={false} tickLine={false} width={30} />
             <Tooltip {...TT} formatter={(v: unknown) => [`${v as number}%`, '']} />
             <ReferenceLine y={200} stroke="var(--shf)" strokeDasharray="4 3" label={{ value: '위험 200%', fill: 'var(--shf)', fontSize: 9, position: 'insideTopRight' }} />
-            <ReferenceLine y={100} stroke="#F59E0B" strokeDasharray="4 3" label={{ value: '주의 100%', fill: '#F59E0B', fontSize: 9, position: 'insideTopRight' }} />
+            <ReferenceLine y={100} stroke="var(--warn)" strokeDasharray="4 3" label={{ value: '주의 100%', fill: 'var(--warn)', fontSize: 9, position: 'insideTopRight' }} />
             <Line type="monotone" dataKey="부채비율" stroke="var(--shf)" strokeWidth={1.5} dot={{ r: 3 }} />
           </LineChart>
         </Chart>
@@ -634,7 +634,7 @@ function TabFinancial({
             <Legend wrapperStyle={{ fontSize: 10 }} />
             <ReferenceLine y={0} stroke="var(--bs)" strokeDasharray="3 3" />
             <Line type="monotone" dataKey="ROA" stroke="var(--hs)" strokeWidth={1.5} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="ROE" stroke="#3B82F6"   strokeWidth={1.5} dot={{ r: 3 }} />
+            <Line type="monotone" dataKey="ROE" stroke="var(--chart-blue)"   strokeWidth={1.5} dot={{ r: 3 }} />
           </LineChart>
         </Chart>
       </Section>
@@ -648,7 +648,7 @@ function TabFinancial({
             <YAxis tick={AX} axisLine={false} tickLine={false} width={30} />
             <Tooltip {...TT} formatter={(v: unknown) => [`${v as number}억`, '']} />
             <Legend wrapperStyle={{ fontSize: 10 }} />
-            <Bar dataKey="자기자본" stackId="a" fill="#22C55E" opacity={0.8} />
+            <Bar dataKey="자기자본" stackId="a" fill="var(--chart-green)" opacity={0.8} />
             <Bar dataKey="부채"    stackId="a" fill="var(--shf)" opacity={0.6} radius={[2, 2, 0, 0]} />
           </BarChart>
         </Chart>
@@ -684,7 +684,7 @@ function TabFinancial({
             <Legend wrapperStyle={{ fontSize: 10 }} />
             <ReferenceLine y={1} stroke="var(--f4)" strokeDasharray="3 3" label={{ value: '기준 1배', fill: 'var(--f4)', fontSize: 9, position: 'insideTopRight' }} />
             <Line type="monotone" dataKey="자산회전율" stroke="var(--hs)"  strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-            <Line type="monotone" dataKey="자본회전율" stroke="#3B82F6" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
+            <Line type="monotone" dataKey="자본회전율" stroke="var(--chart-blue)" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
           </LineChart>
         </Chart>
       </Section>

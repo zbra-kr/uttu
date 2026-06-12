@@ -12,6 +12,7 @@ import {
   CATEGORY_MAP,
   type ReviewRow, type OwnProduct, type CsAnomaly, type OwnProductWithPrice,
 } from '@/lib/queries';
+import { kstToday, kstDaysAgo } from '@/lib/format';
 
 const CATEGORY_ENTRIES = Object.entries(CATEGORY_MAP).filter(([code]) => code !== '000');
 const ALL_CATEGORY_CODES = new Set(CATEGORY_ENTRIES.map(([code]) => code));
@@ -43,7 +44,7 @@ const CS_LABELS: Record<string, string> = {
 };
 
 const SEV_COLOR = (s: string) =>
-  s === 'high' ? 'var(--dn)' : s === 'medium' ? 'var(--warn, #f0a500)' : 'var(--f3)';
+  s === 'high' ? 'var(--dn)' : s === 'medium' ? 'var(--warn)' : 'var(--f3)';
 
 // ── 리뷰 카드 ──────────────────────────────────────────────────────────────────
 function ReviewCard({
@@ -54,7 +55,7 @@ function ReviewCard({
 }) {
   const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
   const thumb = r.image_urls?.[0];
-  const starColor = r.rating <= 2 ? 'var(--dn)' : r.rating === 3 ? 'var(--warn, #f0a500)' : 'var(--slf, #00a651)';
+  const starColor = r.rating <= 2 ? 'var(--dn)' : r.rating === 3 ? 'var(--warn)' : 'var(--slf)';
 
   return (
     <>
@@ -126,7 +127,7 @@ function ReviewCard({
         {(r.purchase_option || r.member_height || r.member_weight || r.member_gender || r.satisfactions?.length) ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6, gridColumn: 2 }}>
             {r.purchase_option && (
-              <span style={{ fontSize: 10, background: 'var(--hs)', color: '#fff', padding: '2px 6px', borderRadius: 3, fontWeight: 500 }}>
+              <span style={{ fontSize: 10, background: 'var(--hs)', color: 'var(--white)', padding: '2px 6px', borderRadius: 3, fontWeight: 500 }}>
                 {r.purchase_option}
               </span>
             )}
@@ -168,7 +169,7 @@ function ReviewCard({
             style={{
               position: 'absolute', top: 20, right: 20,
               background: 'rgba(255,255,255,0.15)', border: 'none',
-              color: '#fff', fontSize: 20, width: 36, height: 36,
+              color: 'var(--white)', fontSize: 20, width: 36, height: 36,
               borderRadius: '50%', cursor: 'pointer', lineHeight: 1,
             }}>
             ✕
@@ -201,10 +202,10 @@ function ReviewsDesktopView() {
         <span className="sub">자사 리뷰 모니터링 · 조회 · 이상탐지</span>
       </div>
       <div className="tabs">
-        <div className={`tab ${tab === 'dash' ? 'active' : ''}`} onClick={() => changeTab('dash')}>대시보드</div>
-        <div className={`tab ${tab === 'browse' ? 'active' : ''}`} onClick={() => changeTab('browse')}>조회</div>
-        <div className={`tab ${tab === 'product-browse' ? 'active' : ''}`} onClick={() => changeTab('product-browse')}>상품별 조회</div>
-        <div className={`tab ${tab === 'anomaly' ? 'active' : ''}`} onClick={() => changeTab('anomaly')}>특이점 리뷰</div>
+        <button type="button" className={`tab ${tab === 'dash' ? 'active' : ''}`} onClick={() => changeTab('dash')}>대시보드</button>
+        <button type="button" className={`tab ${tab === 'browse' ? 'active' : ''}`} onClick={() => changeTab('browse')}>조회</button>
+        <button type="button" className={`tab ${tab === 'product-browse' ? 'active' : ''}`} onClick={() => changeTab('product-browse')}>상품별 조회</button>
+        <button type="button" className={`tab ${tab === 'anomaly' ? 'active' : ''}`} onClick={() => changeTab('anomaly')}>특이점 리뷰</button>
       </div>
       {tab === 'dash'           && <RvDashboard onAnomalyRoute={() => changeTab('anomaly')} />}
       {tab === 'browse'         && <RvBrowse />}
@@ -270,7 +271,11 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
           ['이미지 리뷰',  stats ? imageCount.toLocaleString() : '…', '이미지 첨부'],
           ['CS 이상탐지',  stats ? `H:${highAnomaly} M:${medAnomaly}` : '…', '최근 탐지'],
         ] as [string, string, string][]).map(([l, v, d], i) => (
-          <div key={i} className="kpi" onClick={i === 4 ? onAnomalyRoute : undefined}
+          <div key={i} className="kpi"
+            role={i === 4 ? 'button' : undefined}
+            tabIndex={i === 4 ? 0 : undefined}
+            onClick={i === 4 ? onAnomalyRoute : undefined}
+            onKeyDown={i === 4 ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAnomalyRoute(); } } : undefined}
             style={{ cursor: i === 4 ? 'pointer' : 'default' }}>
             <span className="label">{l}</span>
             <div className="val" style={{ color: i === 4 && highAnomaly > 0 ? 'var(--dn)' : undefined }}>{v}</div>
@@ -293,7 +298,7 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
                   <div style={{ flex: 1, height: 14, background: 'var(--snk)', borderRadius: 2 }}>
                     <div style={{
                       width: `${pct}%`, height: '100%',
-                      background: star <= 2 ? 'var(--dn)' : star === 3 ? 'var(--warn, #f0a500)' : 'var(--f2)',
+                      background: star <= 2 ? 'var(--dn)' : star === 3 ? 'var(--warn)' : 'var(--f2)',
                       borderRadius: 2,
                     }} />
                   </div>
@@ -460,11 +465,11 @@ function RangeSlider({ min, max, value, onChange }: {
 // B · 조회
 // ===========================================================================
 function RvBrowse() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = kstToday();
   const s = React.useRef(lsRead<Record<string, any>>('rv_browse_filters', {})).current;
 
   const [period, setPeriod]         = React.useState<string>(s.period ?? 'today');
-  const [fromDate, setFromDate]     = React.useState<string>(s.fromDate ?? new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]);
+  const [fromDate, setFromDate]     = React.useState<string>(s.fromDate ?? kstDaysAgo(30));
   const [toDate, setToDate]         = React.useState<string>(s.toDate ?? today);
   const [ratingFrom, setRatingFrom] = React.useState<number>(s.ratingFrom ?? 1);
   const [ratingTo, setRatingTo]     = React.useState<number>(s.ratingTo ?? 5);
@@ -536,9 +541,9 @@ function RvBrowse() {
 
   const calcDateFrom = React.useMemo(() => {
     if (period === 'today') return today;
-    if (period === '7d') return new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-    if (period === '30d') return new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-    if (period === '90d') return new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+    if (period === '7d') return kstDaysAgo(7);
+    if (period === '30d') return kstDaysAgo(30);
+    if (period === '90d') return kstDaysAgo(90);
     if (period === 'custom') return fromDate;
     return undefined;
   }, [period, fromDate, today]);
@@ -1183,7 +1188,7 @@ function RvAnomalyReviews() {
 // D · 상품별 조회 (master-detail)
 // ===========================================================================
 function RvProductBrowse() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = kstToday();
   const s = React.useRef(lsRead<Record<string, any>>('rv_product_filters', {})).current;
 
   // 필터 상태
@@ -1193,7 +1198,7 @@ function RvProductBrowse() {
   const [productKw, setProductKw]   = React.useState<string>(s.productKw ?? '');
   const [productKwInput, setProductKwInput] = React.useState<string>(s.productKw ?? '');
   const [period, setPeriod]         = React.useState<string>(s.period ?? 'today');
-  const [fromDate, setFromDate]     = React.useState<string>(s.fromDate ?? new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]);
+  const [fromDate, setFromDate]     = React.useState<string>(s.fromDate ?? kstDaysAgo(30));
   const [toDate, setToDate]         = React.useState<string>(s.toDate ?? today);
   const [ratingFrom, setRatingFrom] = React.useState<number>(s.ratingFrom ?? 1);
   const [ratingTo, setRatingTo]     = React.useState<number>(s.ratingTo ?? 5);
@@ -1257,14 +1262,15 @@ function RvProductBrowse() {
     }).catch(console.error)
       .finally(() => { if (!cancelled) setMasterLoading(false); });
     return () => { cancelled = true; };
+  // 필터 변경 시에만 재요청. setters 안정 참조
   }, [selectedBrandIds, categories, productKw, masterPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 디테일 리뷰 로드
   const calcDateFrom = React.useMemo(() => {
     if (period === 'today') return today;
-    if (period === '7d') return new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-    if (period === '30d') return new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-    if (period === '90d') return new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+    if (period === '7d') return kstDaysAgo(7);
+    if (period === '30d') return kstDaysAgo(30);
+    if (period === '90d') return kstDaysAgo(90);
     if (period === 'custom') return fromDate;
     return undefined;
   }, [period, fromDate, today]);
@@ -1639,7 +1645,7 @@ function RvProductBrowse() {
                     {/* 품절 */}
                     <div className="cell-c" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {p.is_sold_out && (
-                        <span style={{ fontSize: 9, background: 'var(--dn)', color: '#fff', padding: '1px 4px', borderRadius: 2 }}>품절</span>
+                        <span style={{ fontSize: 9, background: 'var(--dn)', color: 'var(--white)', padding: '1px 4px', borderRadius: 2 }}>품절</span>
                       )}
                     </div>
                     {/* 리뷰수 */}

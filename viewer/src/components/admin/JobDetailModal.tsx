@@ -2,20 +2,7 @@
 import React from 'react';
 import { IcX } from '@/components/ui/icons';
 import type { CollectionJob } from '@/lib/queries-admin';
-
-function fmtDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const kst = new Date(new Date(iso).getTime() + 9 * 3_600_000);
-  return kst.toISOString().slice(0, 19).replace('T', ' ').replace(/-/g, '.');
-}
-
-function fmtDuration(startIso: string, endIso: string | null): string {
-  const end = endIso ? new Date(endIso) : new Date();
-  const sec = Math.round((end.getTime() - new Date(startIso).getTime()) / 1000);
-  if (sec < 60)   return `${sec}초`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}분 ${sec % 60}초`;
-  return `${Math.floor(sec / 3600)}시간 ${Math.floor((sec % 3600) / 60)}분`;
-}
+import { fmtDuration, fmtDateTime } from '@/lib/format';
 
 const STATUS_COLOR: Record<string, string> = {
   done:    'var(--slf)',

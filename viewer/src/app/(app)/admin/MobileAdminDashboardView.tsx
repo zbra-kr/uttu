@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { fetchDashboardKpi, fetchDashboardActivity, type DashboardKpi, type DashboardActivity } from '@/lib/queries-admin';
+import { fmtTokens } from '@/lib/format';
 
 function timeSince(iso: string | null): string {
   if (!iso) return '—';
@@ -10,12 +11,6 @@ function timeSince(iso: string | null): string {
   if (sec < 3600) return `${Math.floor(sec / 60)}분 전`;
   if (sec < 86400) return `${Math.floor(sec / 3600)}시간 전`;
   return `${Math.floor(sec / 86400)}일 전`;
-}
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
-  return String(n);
 }
 
 const ACTIVITY_COLOR: Record<string, string> = {

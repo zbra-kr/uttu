@@ -436,13 +436,13 @@ function BrandPageInner() {
             {loading ? null : GENDER_ALL.map(([k, l], i) => {
               const cnt = genderMap[k] ?? 0;
               const pct = Math.round(cnt / genderTotal * 100);
-              const colors = ['var(--f3)', '#5a9fd4', 'var(--shf)'];
+              const colors = ['var(--f3)', 'var(--chart-blue-muted)', 'var(--shf)'];
               return pct > 0 ? <div key={k} title={`${l}: ${pct}% (${cnt}개)`} style={{ width: `${pct}%`, background: colors[i], transition: 'width 0.3s', cursor: 'default' }} /> : null;
             })}
           </div>
           <div className="dlt" style={{ marginTop: 6 }}>
             {loading ? <span className="muted">…</span> : GENDER_ALL.map(([k, l], i) => {
-              const colors = ['var(--f3)', '#5a9fd4', 'var(--shf)'];
+              const colors = ['var(--f3)', 'var(--chart-blue-muted)', 'var(--shf)'];
               return <span key={k} style={{ color: colors[i] }}>{l} {Math.round((genderMap[k] ?? 0) / genderTotal * 100)}%</span>;
             })}
           </div>
@@ -452,7 +452,7 @@ function BrandPageInner() {
         <div className="kpi">
           <span className="label">카테고리 집중도</span>
           {(() => {
-            const CAT_COLORS = ['var(--hs)', '#5a9fd4', 'var(--slf)', '#c4944a', 'var(--f3)'];
+            const CAT_COLORS = ['var(--hs)', 'var(--chart-blue-muted)', 'var(--slf)', 'var(--chart-tan)', 'var(--f3)'];
             return (
               <>
                 <div style={{ display: 'flex', gap: 0, marginTop: 8, height: 8, borderRadius: 3, overflow: 'hidden', background: 'var(--bs)' }}>
@@ -520,9 +520,9 @@ function BrandPageInner() {
                 <span>할인율</span>
               </div>
               {products.map((p, i) => (
-                <div key={i}
+                <button type="button" key={p.musinsa_no}
                   className={`row hover ${i % 2 ? 'alt' : ''}`}
-                  style={{ gridTemplateColumns: '36px 1fr 60px 54px 54px 60px 60px 58px', cursor: 'pointer' }}
+                  style={{ gridTemplateColumns: '36px 1fr 60px 54px 54px 60px 60px 58px', cursor: 'pointer', width: '100%', textAlign: 'left' }}
                   onClick={() => router.push(`/product?no=${p.musinsa_no}`)}
                 >
                   <span className="mono muted">{p.rank_position ?? '—'}</span>
@@ -539,7 +539,7 @@ function BrandPageInner() {
                       </span>
                     ) : <span className="dim mono" style={{ fontSize: 10 }}>—</span>}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           )}

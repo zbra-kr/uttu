@@ -5,18 +5,7 @@ import {
   AdminUser, AdminUserSession,
   updateAdminUser, fetchAdminUserSessions,
 } from '@/lib/queries-admin';
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function fmtDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const kst = new Date(new Date(iso).getTime() + 9 * 3_600_000);
-  return kst.toISOString().slice(0, 16).replace('T', ' ').replace(/-/g, '.');
-}
+import { fmtTokens, fmtDateTime } from '@/lib/format';
 
 function routeLabel(route: string | null): string {
   const MAP: Record<string, string> = {
@@ -124,7 +113,7 @@ export default function UserDetailModal({ user, onClose, onUpdated }: Props) {
 
   return (
     <>
-      <div className="overlay" onClick={onClose} />
+      <div aria-hidden="true" className="overlay" onClick={onClose} />
       <div className="drawer" style={{ width: 500 }}>
         {/* 헤더 */}
         <div className="drawer-head">

@@ -8,6 +8,7 @@ import {
 } from '@/lib/queries';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
+import { fmtDate } from '@/lib/format';
 import { IcX } from '@/components/ui/icons';
 
 const CAT_CHIPS = [
@@ -50,12 +51,8 @@ function getDateRange(preset: DatePreset, customFrom: string, customTo: string):
 }
 
 const SEV_COLOR: Record<string, string> = {
-  HIGH: 'var(--shf)', MEDIUM: '#F59E0B', LOW: 'var(--slf)',
+  HIGH: 'var(--shf)', MEDIUM: 'var(--warn)', LOW: 'var(--slf)',
 };
-
-function fmtDate(dt: string): string {
-  return dt.slice(0, 10).replace(/-/g, '.');
-}
 
 function fmtViews(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}만`;
@@ -109,7 +106,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
   return (
     <>
       {/* scrim */}
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,25,23,.45)', zIndex: 80 }} onClick={onClose} />
+      <div aria-hidden="true" style={{ position: 'fixed', inset: 0, background: 'rgba(28,25,23,.45)', zIndex: 80 }} onClick={onClose} />
 
       {/* sheet */}
       <div style={{
@@ -411,7 +408,7 @@ export default function MobileMagazineView() {
               style={{
                 flex: 1, padding: '6px 0', fontSize: 11, fontWeight: datePreset === chip.value ? 700 : 400,
                 background: datePreset === chip.value ? 'var(--hs)' : 'var(--sur)',
-                color: datePreset === chip.value ? '#fff' : 'var(--f3)',
+                color: datePreset === chip.value ? 'var(--white)' : 'var(--f3)',
                 border: '1px solid var(--bd)', borderRadius: 8, cursor: 'pointer',
               }}
             >

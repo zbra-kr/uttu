@@ -8,13 +8,9 @@ import {
 } from '@/lib/queries-admin';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileAdminNotificationsView from './MobileAdminNotificationsView';
+import { fmtDateTime, fmtTime } from '@/lib/format';
 
 // ── 포맷 헬퍼 ──────────────────────────────────────────────────────────────────
-function fmtDatetime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const kst = new Date(new Date(iso).getTime() + 9 * 3_600_000);
-  return kst.toISOString().slice(0, 16).replace('T', ' ');
-}
 
 function timeSince(iso: string | null): string {
   if (!iso) return '—';
@@ -237,7 +233,7 @@ function NotificationsAdminDesktopView() {
                   {recents.map(n => (
                     <tr key={n.id} style={{ borderBottom: '1px solid var(--snk)' }}>
                       <td style={{ padding: '5px 8px', fontFamily: 'var(--mono)', color: 'var(--f3)', whiteSpace: 'nowrap' }}>
-                        {fmtDatetime(n.created_at)}
+                        {fmtDateTime(n.created_at)}
                       </td>
                       <td style={{ padding: '5px 8px', color: 'var(--f2)' }}>{n.user_label}</td>
                       <td style={{ padding: '5px 8px' }}>
@@ -253,14 +249,14 @@ function NotificationsAdminDesktopView() {
                       </td>
                       <td style={{ textAlign: 'center', padding: '5px 8px' }}>
                         {n.sent_to_teams_at ? (
-                          <span style={{ color: 'var(--slf)', fontSize: 11 }}>{fmtDatetime(n.sent_to_teams_at).slice(11)}</span>
+                          <span style={{ color: 'var(--slf)', fontSize: 11 }}>{fmtTime(n.sent_to_teams_at).slice(0, 5)}</span>
                         ) : (
                           <span style={{ color: 'var(--f4)' }}>—</span>
                         )}
                       </td>
                       <td style={{ textAlign: 'center', padding: '5px 8px' }}>
                         {n.sent_to_telegram_at ? (
-                          <span style={{ color: 'var(--slf)', fontSize: 11 }}>{fmtDatetime(n.sent_to_telegram_at).slice(11)}</span>
+                          <span style={{ color: 'var(--slf)', fontSize: 11 }}>{fmtTime(n.sent_to_telegram_at).slice(0, 5)}</span>
                         ) : (
                           <span style={{ color: 'var(--f4)' }}>—</span>
                         )}

@@ -19,7 +19,7 @@ function SubmitBtn() {
       disabled={pending}
       style={{
         height: 40, width: '100%', fontSize: 13, fontWeight: 600,
-        background: 'var(--hs)', color: '#fff', border: 'none',
+        background: 'var(--hs)', color: 'var(--white)', border: 'none',
         borderRadius: 7, cursor: pending ? 'not-allowed' : 'pointer',
         opacity: pending ? 0.65 : 1, transition: 'opacity 150ms',
       }}

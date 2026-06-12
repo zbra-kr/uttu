@@ -115,7 +115,7 @@ export default function ProfileEditModal({ profile, onClose, onSaved }: Props) {
         <div className="row-flex gap-8" style={{ marginTop: 20, justifyContent: 'flex-end' }}>
           <button className="btn sm" onClick={onClose} disabled={saving}>취소</button>
           <button className="btn sm" onClick={handleSave} disabled={saving}
-            style={{ background: 'var(--hs)', color: '#fff', borderColor: 'var(--hs)' }}>
+            style={{ background: 'var(--hs)', color: 'var(--white)', borderColor: 'var(--hs)' }}>
             {saving ? '저장 중…' : '저장'}
           </button>
         </div>

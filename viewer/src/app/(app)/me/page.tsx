@@ -9,6 +9,7 @@ import { fetchMyProfile, uploadAvatar, MyProfile, fetchMyRecentNotes, fetchMenti
 import ProfileEditModal from '@/components/me/ProfileEditModal';
 import SubscriptionMatrix from '@/components/me/SubscriptionMatrix';
 import InboxList from '@/components/me/InboxList';
+import { fmtTokens } from '@/lib/format';
 
 function relTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -48,11 +49,6 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
 
 function formatJoined(iso: string): string {
   const d = new Date(iso);
@@ -167,7 +163,7 @@ function MeDesktopView() {
               }
               {uploading && (
                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: '#fff', fontSize: 11 }}>업로드 중…</span>
+                  <span style={{ color: 'var(--white)', fontSize: 11 }}>업로드 중…</span>
                 </div>
               )}
               {!uploading && (
@@ -175,7 +171,7 @@ function MeDesktopView() {
                   onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'rgba(0,0,0,0.35)'; }}
                   onMouseLeave={e => { e.currentTarget.style.opacity = '0'; e.currentTarget.style.background = 'transparent'; }}
                 >
-                  <span style={{ color: '#fff', fontSize: 10 }}>변경</span>
+                  <span style={{ color: 'var(--white)', fontSize: 10 }}>변경</span>
                 </div>
               )}
               <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handleAvatarChange} />

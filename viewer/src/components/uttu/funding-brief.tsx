@@ -2,21 +2,12 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { fmtDateTime } from '@/lib/format';
 
 interface Props {
   companyId: string;
   briefMd: string | null;
   briefAt: string | null;
-}
-
-function fmtAt(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const dy = String(d.getDate()).padStart(2, '0');
-  const h  = String(d.getHours()).padStart(2, '0');
-  const mi = String(d.getMinutes()).padStart(2, '0');
-  return `${y}.${mo}.${dy} ${h}:${mi}`;
 }
 
 const BRIEF_STYLE = `
@@ -144,7 +135,7 @@ export function FundingBrief({ companyId: _companyId, briefMd, briefAt }: Props)
           fontFamily: 'var(--mono)',
           textAlign: 'right',
         }}>
-          생성: {fmtAt(briefAt)}
+          생성: {fmtDateTime(briefAt)}
         </div>
       )}
     </>

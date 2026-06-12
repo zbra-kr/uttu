@@ -20,7 +20,7 @@ const fmtPct = (v: number | null) => v == null ? '—' : `${v > 0 ? '+' : ''}${v
 const fmtRaw = (v: number | null) => v == null ? '—' : `${v.toFixed(1)}%`;
 
 type Grade = 'good' | 'warn' | 'bad' | 'na';
-const GC: Record<Grade, string> = { good: 'var(--slf)', warn: '#F59E0B', bad: 'var(--shf)', na: 'var(--f4)' };
+const GC: Record<Grade, string> = { good: 'var(--slf)', warn: 'var(--warn)', bad: 'var(--shf)', na: 'var(--f4)' };
 function grade(v: number | null, g: number, w: number, hi = true): Grade {
   if (v == null) return 'na';
   return hi ? (v >= g ? 'good' : v >= w ? 'warn' : 'bad') : (v <= g ? 'good' : v <= w ? 'warn' : 'bad');

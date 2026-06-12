@@ -183,7 +183,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
             {unreadCount > 0 && (
               <span style={{
                 position: 'absolute', top: -4, right: -4, minWidth: 14, height: 14,
-                padding: '0 3px', background: 'var(--shf)', color: '#fff',
+                padding: '0 3px', background: 'var(--shf)', color: 'var(--white)',
                 borderRadius: 7, fontSize: 9, fontWeight: 700,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontFamily: 'var(--mono)', pointerEvents: 'none',
@@ -270,7 +270,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
         style={{
           position: 'fixed', right: 16, bottom: 20, zIndex: 50,
           width: 56, height: 56, borderRadius: 18,
-          background: 'var(--hs)', color: '#fff',
+          background: 'var(--hs)', color: 'var(--white)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 13, fontWeight: 700, letterSpacing: '0.02em',
           border: 'none', cursor: 'pointer', fontFamily: 'var(--mono)',

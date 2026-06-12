@@ -467,7 +467,7 @@ function ProductPageInner() {
             <button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
               <IcEdit /> 메모
               {noteCount > 0 && (
-                <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: '#fff', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+                <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: 'var(--white)', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
                   {noteCount}
                 </span>
               )}
@@ -495,7 +495,7 @@ function ProductPageInner() {
                 href={`https://www.musinsa.com/products/${detail.musinsa_no}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ position: 'absolute', bottom: 8, right: 8, background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 10, padding: '2px 8px', borderRadius: 3, textDecoration: 'none' }}
+                style={{ position: 'absolute', bottom: 8, right: 8, background: 'var(--img-overlay)', color: 'var(--white)', fontSize: 10, padding: '2px 8px', borderRadius: 3, textDecoration: 'none' }}
               >
                 무신사↗
               </a>
@@ -724,7 +724,7 @@ function ProductPageInner() {
                         .sort((a, b) => a.rank - b.rank)
                         .slice(0, 20)
                         .map((rec, i) => (
-                          <tr key={i} style={{ borderBottom: '1px solid var(--snk)' }}>
+                          <tr key={`${rec.year}-${rec.month}`} style={{ borderBottom: '1px solid var(--snk)' }}>
                             <td className="mono" style={{ padding: '4px 8px', color: 'var(--f3)' }}>{rec.year}</td>
                             <td className="mono" style={{ padding: '4px 8px', color: 'var(--f3)' }}>{rec.month}월</td>
                             <td className="mono" style={{ padding: '4px 8px', fontWeight: 600, color: rec.rank <= 10 ? 'var(--hs)' : rec.rank <= 50 ? 'var(--up)' : 'var(--f2)' }}>
@@ -763,7 +763,7 @@ function ProductPageInner() {
                     const genderLabel = r.best_gender === 'M' ? '남' : r.best_gender === 'F' ? '여' : '전체';
                     const ageLabel = r.best_age && r.best_age !== 'AGE_BAND_ALL' ? AGE_MAP[r.best_age] ?? r.best_age : '전체';
                     return (
-                    <div key={i} className={`row ${i % 2 ? 'alt' : ''}`}
+                    <div key={r.category_code} className={`row ${i % 2 ? 'alt' : ''}`}
                       style={{ gridTemplateColumns: '80px 1fr 110px', alignItems: 'flex-start', padding: '6px 8px' }}>
                       <span style={{ fontSize: 12 }}>{CATEGORY_MAP[r.category_code] ?? r.category_code}</span>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
@@ -775,7 +775,7 @@ function ProductPageInner() {
                             <span key={j} style={{
                               fontSize: 10, padding: '1px 5px', borderRadius: 3,
                               background: isBest ? 'var(--hs)' : 'var(--snk)',
-                              color: isBest ? '#fff' : 'var(--f3)',
+                              color: isBest ? 'var(--white)' : 'var(--f3)',
                               fontWeight: isBest ? 600 : 400,
                             }}>
                               {sg}·{sa} #{s.rank}
@@ -868,7 +868,7 @@ function ProductPageInner() {
                         {group.title}
                       </div>
                       {group.buckets.map(b => {
-                        const starColor = b.avgRating >= 4 ? 'var(--warn, #f0a500)' : b.avgRating >= 3 ? 'var(--f3)' : 'var(--dn)';
+                        const starColor = b.avgRating >= 4 ? 'var(--warn)' : b.avgRating >= 3 ? 'var(--f3)' : 'var(--dn)';
                         return (
                           <div key={b.label} style={{
                             display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7,
@@ -910,7 +910,7 @@ function ProductPageInner() {
                             {'★'.repeat(r.rating > 0 ? r.rating : 0)}{'☆'.repeat(r.rating > 0 ? 5 - r.rating : 5)}
                           </span>
                           {r.has_image && (
-                            <span style={{ fontSize: 9, background: 'var(--hs)', color: '#fff', padding: '1px 5px', borderRadius: 2 }}>사진</span>
+                            <span style={{ fontSize: 9, background: 'var(--hs)', color: 'var(--white)', padding: '1px 5px', borderRadius: 2 }}>사진</span>
                           )}
                         </div>
                         <span className="mono dim" style={{ fontSize: 10 }}>{r.review_date}</span>
@@ -923,7 +923,7 @@ function ProductPageInner() {
                       {(r.purchase_option || r.member_height || r.member_weight || r.member_gender || r.satisfactions?.length) ? (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
                           {r.purchase_option && (
-                            <span style={{ fontSize: 10, background: 'var(--hs)', color: '#fff', padding: '1px 5px', borderRadius: 3, fontWeight: 500 }}>
+                            <span style={{ fontSize: 10, background: 'var(--hs)', color: 'var(--white)', padding: '1px 5px', borderRadius: 3, fontWeight: 500 }}>
                               {r.purchase_option}
                             </span>
                           )}

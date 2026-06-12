@@ -50,6 +50,7 @@ export default function MobileRecommendView() {
         if (!error && data) setModules(data as RecommendModule[]);
         setLoading(false);
       });
+  // gender 변경 시에만 재요청. sb·setters 안정 참조
   }, [gender]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalItems = modules.reduce((s, m) => s + (m.items_count ?? 0), 0);

@@ -6,15 +6,12 @@ import {
   pollFundingJob,
   type FundingJob,
 } from '@/lib/queries-funding';
+import { fmtDate } from '@/lib/format';
 
 interface Props {
   companyId: string;
   fundingLastCollectedAt: string | null;
   onDone?: () => void;   // 수집 완료 시 콜백 (타임라인 갱신)
-}
-
-function fmt(iso: string): string {
-  return iso.slice(0, 10).replace(/-/g, '.');
 }
 
 function is7dFresh(iso: string | null): boolean {
@@ -114,7 +111,7 @@ export function FundingCollectButton({ companyId, fundingLastCollectedAt, onDone
 
   const cachedNotice = cached ? (
     <span style={{ fontSize: 11, color: 'var(--f3)' }}>
-      7일 내 수집 완료 ({fmt(cached)})
+      7일 내 수집 완료 ({fmtDate(cached)})
       {!forceMode && (
         <>
           {' '}·{' '}
@@ -149,7 +146,7 @@ export function FundingCollectButton({ companyId, fundingLastCollectedAt, onDone
       {/* 최근 수집일 안내 (초기 상태, 캐시 있을 때) */}
       {!job && !cached && !msg && isFresh && fundingLastCollectedAt && (
         <span style={{ fontSize: 11, color: 'var(--f4)' }}>
-          최근 수집 {fmt(fundingLastCollectedAt)}
+          최근 수집 {fmtDate(fundingLastCollectedAt)}
           {' '}·{' '}
           <button
             onClick={() => setForceMode(true)}

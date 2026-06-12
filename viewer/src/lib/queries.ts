@@ -1,4 +1,5 @@
 import { supabaseBrowser } from './supabase/client';
+import { kstDaysAgo } from './format';
 const supabase = supabaseBrowser();
 
 // 무신사 이미지 CDN 상대경로를 절대 URL로 정규화
@@ -572,7 +573,7 @@ export async function fetchReviewStats(days = 30): Promise<{
   total: number; avgRating: number; lowCount: number; ratingDist: number[]; imageCount: number;
 }> {
   const dateFilter = days !== 999
-    ? new Date(Date.now() - days * 86400000).toISOString().split('T')[0]
+    ? kstDaysAgo(days)
     : null;
 
   const makeQ = () => {
@@ -1028,100 +1029,18 @@ export interface CompanyRankStats {
 
 export async function fetchCompanyRankStats(brandNames: string[]): Promise<CompanyRankStats | null> {
   if (!brandNames.length) return null;
-
-  // 브랜드별 최신 snapshot_date (브랜드마다 수집일이 다를 수 있음)
-  const { data: dateData } = await supabase
-    .from('ranking_snapshots')
-    .select('brand_name, snapshot_date')
-    .in('brand_name', brandNames.slice(0, 200))
-    .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
-    .order('snapshot_date', { ascending: false })
-    .limit(brandNames.length * 10);
-
-  const brandLatest = new Map<string, string>();
-  for (const r of (dateData ?? []) as any[]) {
-    if (!brandLatest.has(r.brand_name)) brandLatest.set(r.brand_name, r.snapshot_date);
-  }
-  if (!brandLatest.size) return null;
-
-  const activeBrands = [...brandLatest.keys()];
-  const fromDate = [...brandLatest.values()].reduce((a, b) => (a < b ? a : b));
-
-  const { data } = await supabase
-    .from('ranking_snapshots')
-    .select('brand_name, product_name, rank_position, musinsa_no, category_code, snapshot_date')
-    .in('brand_name', activeBrands.slice(0, 200))
-    .eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
-    .gte('snapshot_date', fromDate)
-    .order('rank_position', { ascending: true })
-    .limit(50000);
-
-  // 각 브랜드의 최신 날짜 행만 선택
-  const rows = ((data ?? []) as any[]).filter(r => brandLatest.get(r.brand_name) === r.snapshot_date);
-  const allRows = rows.filter(r => r.category_code === '000');
-  const sku_count = allRows.length;
-  if (!sku_count) return null;
-
-  const top100_count = allRows.filter(r => r.rank_position <= 100).length;
-  const avg_rank = Math.round(allRows.reduce((s, r) => s + r.rank_position, 0) / sku_count);
-  const best = allRows[0];
-
-  const brandMap = new Map<string, { sku_count: number; top100_count: number }>();
-  for (const r of allRows) {
-    const g = brandMap.get(r.brand_name) ?? { sku_count: 0, top100_count: 0 };
-    g.sku_count++;
-    if (r.rank_position <= 100) g.top100_count++;
-    brandMap.set(r.brand_name, g);
-  }
-
-  const catMap = new Map<string, Set<number>>();
-  for (const r of rows.filter((r: any) => r.category_code !== '000')) {
-    const s = catMap.get(r.category_code) ?? new Set<number>();
-    s.add(r.musinsa_no);
-    catMap.set(r.category_code, s);
-  }
-
-  const snapshotDate = [...brandLatest.values()].reduce((a, b) => (a > b ? a : b));
-
-  return {
-    sku_count,
-    top100_count,
-    avg_rank,
-    best_rank: best?.rank_position ?? 0,
-    best_product_name: best?.product_name ?? '—',
-    snapshot_date: snapshotDate,
-    by_brand: [...brandMap.entries()]
-      .map(([brand_name, v]) => ({ brand_name, ...v }))
-      .sort((a, b) => b.sku_count - a.sku_count),
-    by_category: [...catMap.entries()]
-      .map(([category_code, s]) => ({ category_code, sku_count: s.size }))
-      .sort((a, b) => b.sku_count - a.sku_count),
-  };
+  const { data, error } = await supabase.rpc('get_company_rank_stats', { p_brand_names: brandNames });
+  if (error || !data) return null;
+  return data as CompanyRankStats;
 }
 
 export async function fetchCompanyTop100Trend(brandNames: string[], days = 30): Promise<{ date: string; top100_count: number }[]> {
   if (!brandNames.length) return [];
-  const fromDate = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-
-  const { data } = await supabase
-    .from('ranking_snapshots')
-    .select('snapshot_date, rank_position')
-    .in('brand_name', brandNames.slice(0, 200))
-    .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
-    .gte('snapshot_date', fromDate)
-    .order('snapshot_date', { ascending: true })
-    .limit(50000);
-
-  const byDate = new Map<string, number>();
-  for (const r of (data ?? []) as any[]) {
-    if (r.rank_position <= 100) {
-      byDate.set(r.snapshot_date, (byDate.get(r.snapshot_date) ?? 0) + 1);
-    }
-  }
-
-  return [...byDate.entries()]
-    .map(([date, top100_count]) => ({ date: date.slice(5), top100_count }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const fromDate = kstDaysAgo(days);
+  const { data, error } = await supabase.rpc('get_company_top100_trend', { p_brand_names: brandNames, p_from_date: fromDate });
+  if (error || !data) return [];
+  return (data as { snapshot_date: string; top100_count: number }[])
+    .map(r => ({ date: r.snapshot_date.slice(5), top100_count: r.top100_count }));
 }
 
 // ── 회사 상품 분포 (성별×연령, 가격대, 할인율, 리뷰) ─────────────────────
@@ -1135,85 +1054,9 @@ export interface CompanyProductDist {
 export async function fetchCompanyProductDist(brandNames: string[]): Promise<CompanyProductDist> {
   const empty: CompanyProductDist = { genderAge: [], priceBuckets: [], discountBuckets: [], reviewBuckets: [] };
   if (!brandNames.length) return empty;
-
-  // 브랜드별 최신 snapshot_date
-  const { data: dateData } = await supabase
-    .from('ranking_snapshots').select('brand_name, snapshot_date')
-    .in('brand_name', brandNames.slice(0, 200))
-    .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
-    .order('snapshot_date', { ascending: false }).limit(brandNames.length * 10);
-
-  const brandLatest2 = new Map<string, string>();
-  for (const r of (dateData ?? []) as any[]) {
-    if (!brandLatest2.has(r.brand_name)) brandLatest2.set(r.brand_name, r.snapshot_date);
-  }
-  if (!brandLatest2.size) return empty;
-
-  const fromDate2 = [...brandLatest2.values()].reduce((a, b) => (a < b ? a : b));
-
-  const { data } = await supabase
-    .from('ranking_snapshots')
-    .select('brand_name, gender_filter, age_filter, category_code, musinsa_no, final_price, discount_rate, review_score, snapshot_date')
-    .in('brand_name', [...brandLatest2.keys()].slice(0, 200))
-    .gte('snapshot_date', fromDate2)
-    .limit(50000);
-
-  const rows = ((data ?? []) as any[]).filter((r: any) => brandLatest2.get(r.brand_name) === r.snapshot_date);
-
-  const gaMap = new Map<string, Set<number>>();
-  for (const r of rows) {
-    const key = `${r.gender_filter}|${r.age_filter}`;
-    const s = gaMap.get(key) ?? new Set<number>();
-    s.add(r.musinsa_no);
-    gaMap.set(key, s);
-  }
-  const genderAge = [...gaMap.entries()].map(([key, s]) => {
-    const [gender, age] = key.split('|');
-    return { gender, age, sku_count: s.size };
-  });
-
-  const base = rows.filter(r => r.category_code === '000');
-  const uniqMap = new Map<number, any>();
-  for (const r of base) { if (!uniqMap.has(r.musinsa_no)) uniqMap.set(r.musinsa_no, r); }
-  const u = [...uniqMap.values()];
-
-  const mkBuckets = <T extends { min: number; max: number; label: string }>(
-    ranges: T[], getter: (r: any) => number | null
-  ) => ranges.map(b => ({
-    label: b.label,
-    count: u.filter(r => { const v = getter(r); return v != null && v >= b.min && v < b.max; }).length,
-  }));
-
-  const priceBuckets = mkBuckets([
-    { min: 0,      max: 30000,    label: '~3만' },
-    { min: 30000,  max: 50000,    label: '3~5만' },
-    { min: 50000,  max: 100000,   label: '5~10만' },
-    { min: 100000, max: 200000,   label: '10~20만' },
-    { min: 200000, max: 300000,   label: '20~30만' },
-    { min: 300000, max: 500000,   label: '30~50만' },
-    { min: 500000, max: Infinity, label: '50만+' },
-  ], r => r.final_price);
-
-  const discountBuckets = mkBuckets([
-    { min: 0,  max: 1,   label: '무할인' },
-    { min: 1,  max: 10,  label: '1~10%' },
-    { min: 10, max: 20,  label: '10~20%' },
-    { min: 20, max: 30,  label: '20~30%' },
-    { min: 30, max: 40,  label: '30~40%' },
-    { min: 40, max: 50,  label: '40~50%' },
-    { min: 50, max: 101, label: '50%+' },
-  ], r => r.discount_rate ?? 0);
-
-  const reviewBuckets = mkBuckets([
-    { min: 1,  max: 40,  label: '~40' },
-    { min: 40, max: 60,  label: '40~60' },
-    { min: 60, max: 70,  label: '60~70' },
-    { min: 70, max: 80,  label: '70~80' },
-    { min: 80, max: 90,  label: '80~90' },
-    { min: 90, max: 101, label: '90+' },
-  ], r => r.review_score);
-
-  return { genderAge, priceBuckets, discountBuckets, reviewBuckets };
+  const { data, error } = await supabase.rpc('get_company_product_dist', { p_brand_names: brandNames });
+  if (error || !data) return empty;
+  return data as CompanyProductDist;
 }
 
 export interface BrandTrendRow {
@@ -1223,25 +1066,15 @@ export interface BrandTrendRow {
 
 export async function fetchCompanyBrandTrend(brandNames: string[], days = 30): Promise<BrandTrendRow[]> {
   if (brandNames.length <= 1) return [];
-  const fromDate = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-
-  const { data } = await supabase
-    .from('ranking_snapshots')
-    .select('brand_name, snapshot_date, rank_position')
-    .in('brand_name', brandNames.slice(0, 200))
-    .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
-    .gte('snapshot_date', fromDate)
-    .order('snapshot_date', { ascending: true })
-    .limit(50000);
-
-  const rows = (data ?? []) as any[];
+  const fromDate = kstDaysAgo(days);
+  const { data, error } = await supabase.rpc('get_company_brand_trend', { p_brand_names: brandNames, p_from_date: fromDate });
+  if (error || !data) return [];
+  const rows = data as { snapshot_date: string; brand_name: string; top100_count: number }[];
   const byDate = new Map<string, Map<string, number>>();
   for (const r of rows) {
     if (!byDate.has(r.snapshot_date)) byDate.set(r.snapshot_date, new Map());
-    const dm = byDate.get(r.snapshot_date)!;
-    if (r.rank_position <= 100) dm.set(r.brand_name, (dm.get(r.brand_name) ?? 0) + 1);
+    byDate.get(r.snapshot_date)!.set(r.brand_name, r.top100_count);
   }
-
   return [...byDate.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, dm]) => ({
@@ -1499,48 +1332,45 @@ export interface BrandLeaderRow {
   brand_rank_change: number | null; // 전일 대비 브랜드 순위 변동 (양수=상승)
 }
 
-interface BrandSnapshotGroup {
-  ranks: number[];
-  discounts: number[];
-  prices: number[];
-  reviewScores: number[];
-  reviewCounts: number[];
+interface BrandSnapshotAgg {
+  sku_count: number;
+  top100_count: number;
+  avg_rank: number | null;
+  best_rank: number | null;
+  avg_discount: number | null;
+  avg_price: number | null;
+  min_price: number | null;
+  max_price: number | null;
+  avg_review_score: number | null;
+  total_review_count: number;
 }
 
 async function fetchBrandSnapshot(opts: {
   categoryCode: string; genderFilter: string; ageFilter: string; beforeDate?: string;
-}): Promise<{ date: string; map: Map<string, BrandSnapshotGroup> } | null> {
-  const { data: dateRow } = await supabase
-    .from('ranking_snapshots')
-    .select('snapshot_date')
-    .eq('category_code', opts.categoryCode)
-    .eq('gender_filter', opts.genderFilter)
-    .eq('age_filter', opts.ageFilter)
-    .lte('snapshot_date', opts.beforeDate ?? '9999-12-31')
-    .order('snapshot_date', { ascending: false })
-    .limit(1);
-  const date = (dateRow as any[])?.[0]?.snapshot_date;
-  if (!date) return null;
-
-  const { data } = await supabase
-    .from('ranking_snapshots')
-    .select('brand_name, rank_position, discount_rate, final_price, review_score, review_count')
-    .eq('category_code', opts.categoryCode)
-    .eq('gender_filter', opts.genderFilter)
-    .eq('age_filter', opts.ageFilter)
-    .eq('snapshot_date', date)
-    .order('rank_position', { ascending: true })
-    .limit(10000);
-
-  const map = new Map<string, BrandSnapshotGroup>();
-  for (const r of (data ?? []) as any[]) {
-    if (!map.has(r.brand_name)) map.set(r.brand_name, { ranks: [], discounts: [], prices: [], reviewScores: [], reviewCounts: [] });
-    const g = map.get(r.brand_name)!;
-    g.ranks.push(r.rank_position);
-    if (r.discount_rate != null && r.discount_rate > 0) g.discounts.push(r.discount_rate);
-    if (r.final_price != null && r.final_price > 0) g.prices.push(r.final_price);
-    if (r.review_score != null) g.reviewScores.push(r.review_score);
-    if (r.review_count != null) g.reviewCounts.push(r.review_count);
+}): Promise<{ date: string; map: Map<string, BrandSnapshotAgg> } | null> {
+  const { data, error } = await supabase.rpc('get_brand_snapshot_stats', {
+    p_category_code: opts.categoryCode,
+    p_gender_filter: opts.genderFilter,
+    p_age_filter:    opts.ageFilter,
+    p_before_date:   opts.beforeDate ?? '9999-12-31',
+  });
+  if (error || !data?.length) return null;
+  const rows = data as (BrandSnapshotAgg & { snapshot_date: string; brand_name: string })[];
+  const date = rows[0].snapshot_date;
+  const map = new Map<string, BrandSnapshotAgg>();
+  for (const r of rows) {
+    map.set(r.brand_name, {
+      sku_count:          r.sku_count,
+      top100_count:       r.top100_count,
+      avg_rank:           r.avg_rank,
+      best_rank:          r.best_rank,
+      avg_discount:       r.avg_discount,
+      avg_price:          r.avg_price,
+      min_price:          r.min_price,
+      max_price:          r.max_price,
+      avg_review_score:   r.avg_review_score,
+      total_review_count: r.total_review_count,
+    });
   }
   return { date, map };
 }
@@ -1603,16 +1433,15 @@ export async function fetchBrandLeaderboard(opts: {
   const results: BrandLeaderRow[] = [];
 
   for (const [brand_name, brandRank] of brsTodayMap) {
-    const g   = current?.map.get(brand_name) ?? null;
-    const pg  = prev?.map.get(brand_name) ?? null;
+    const g        = current?.map.get(brand_name) ?? null;
+    const pg       = prev?.map.get(brand_name) ?? null;
     const prevRank = brsPrevMap.get(brand_name) ?? null;
-    const info = infoMap.get(brand_name);
+    const info     = infoMap.get(brand_name);
 
-    const curTop100  = g ? g.ranks.filter(r => r <= 100).length : 0;
-    const curAvg     = g ? Math.round(g.ranks.reduce((s, r) => s + r, 0) / g.ranks.length) : null;
-    const prevTop100 = pg ? pg.ranks.filter(r => r <= 100).length : null;
-    const prevAvg    = pg ? Math.round(pg.ranks.reduce((s, r) => s + r, 0) / pg.ranks.length) : null;
-    const avg = (arr: number[]) => arr.length > 0 ? Math.round(arr.reduce((s, v) => s + v, 0) / arr.length) : null;
+    const curTop100  = g?.top100_count ?? 0;
+    const curAvg     = g?.avg_rank ?? null;
+    const prevTop100 = pg?.top100_count ?? null;
+    const prevAvg    = pg?.avg_rank ?? null;
 
     results.push({
       brand_name,
@@ -1622,16 +1451,16 @@ export async function fetchBrandLeaderboard(opts: {
       company_name: info?.company_name ?? null,
       brand_rank:        brandRank,
       brand_rank_change: prevRank !== null ? prevRank - brandRank : null,
-      top100_count: curTop100,
-      avg_rank:    curAvg,
-      best_rank:   g ? Math.min(...g.ranks) : null,
-      sku_count:   g ? g.ranks.length : 0,
-      avg_discount:      g ? avg(g.discounts) : null,
-      avg_price:         g ? avg(g.prices) : null,
-      min_price:         g && g.prices.length > 0 ? Math.min(...g.prices) : null,
-      max_price:         g && g.prices.length > 0 ? Math.max(...g.prices) : null,
-      avg_review_score:  g ? avg(g.reviewScores) : null,
-      total_review_count: g ? g.reviewCounts.reduce((s, v) => s + v, 0) : 0,
+      top100_count:        curTop100,
+      avg_rank:            curAvg,
+      best_rank:           g?.best_rank ?? null,
+      sku_count:           g?.sku_count ?? 0,
+      avg_discount:        g?.avg_discount ?? null,
+      avg_price:           g?.avg_price ?? null,
+      min_price:           g?.min_price ?? null,
+      max_price:           g?.max_price ?? null,
+      avg_review_score:    g?.avg_review_score ?? null,
+      total_review_count:  g?.total_review_count ?? 0,
       snapshot_date: snapshotDate,
       top100_change:   prevTop100 !== null ? curTop100 - prevTop100 : null,
       avg_rank_change: prevAvg !== null && curAvg !== null ? prevAvg - curAvg : null,
@@ -2100,29 +1929,16 @@ export async function fetchActivePromotions(limit = 20): Promise<PromoSummary[]>
   if (promos.length === 0) return [];
 
   const promoIds = promos.map((p: any) => p.id);
-  const { data: itemsData } = await supabase
-    .from('promotion_items')
-    .select('promotion_id, discount_rate')
-    .in('promotion_id', promoIds)
-    .not('discount_rate', 'is', null)
-    .gt('discount_rate', 0)
-    .limit(10000);
-
-  const discountMap = new Map<string, number[]>();
-  for (const item of (itemsData ?? []) as any[]) {
-    if (!discountMap.has(item.promotion_id)) discountMap.set(item.promotion_id, []);
-    discountMap.get(item.promotion_id)!.push(Number(item.discount_rate));
+  const { data: avgData } = await supabase.rpc('get_promotion_avg_discounts', { p_promotion_ids: promoIds });
+  const discountMap = new Map<string, number>();
+  for (const item of (avgData ?? []) as { promotion_id: string; avg_discount_rate: number }[]) {
+    discountMap.set(item.promotion_id, item.avg_discount_rate);
   }
 
-  return promos.map((p: any): PromoSummary => {
-    const rates = discountMap.get(p.id) ?? [];
-    return {
-      ...p,
-      avg_discount_rate: rates.length > 0
-        ? Math.round(rates.reduce((s, v) => s + v, 0) / rates.length)
-        : null,
-    };
-  });
+  return promos.map((p: any): PromoSummary => ({
+    ...p,
+    avg_discount_rate: discountMap.get(p.id) ?? null,
+  }));
 }
 
 export interface BrandRankRow {
@@ -2297,7 +2113,7 @@ export interface ShellStats {
 }
 
 export async function fetchShellStats(): Promise<ShellStats> {
-  const d7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const d7 = kstDaysAgo(7);
 
   const [anomalyRes, reviewRes, snapRes, magRes, promoRes] = await Promise.allSettled([
     supabase
