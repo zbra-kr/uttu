@@ -77,7 +77,7 @@ export default function MobileBriefingTabs({
             onClick={() => onDateChange(today)}
             style={{
               fontSize: 10, color: 'var(--f2)', padding: '3px 9px',
-              background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 6,
+              background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5,
               cursor: 'pointer', fontFamily: 'var(--mono)',
             }}
           >

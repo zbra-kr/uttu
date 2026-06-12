@@ -386,7 +386,7 @@ function MeDesktopView() {
                         await removeBookmark(bm.entity_type, bm.entity_id);
                         setBookmarks(prev => prev.filter(b => b.id !== bm.id));
                       }}
-                      style={{ width: 20, height: 20, borderRadius: 4, border: 'none', background: 'transparent', color: 'var(--f4)', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, padding: 0, lineHeight: 1 }}
+                      style={{ width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent', color: 'var(--f4)', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, padding: 0, lineHeight: 1 }}
                       onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--shf)'; }}
                       onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--f4)'; }}
                     >
@@ -422,7 +422,7 @@ function MeDesktopView() {
                             key={f.id}
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: 4,
-                              padding: '4px 8px', borderRadius: 4,
+                              padding: '4px 8px', borderRadius: 5,
                               background: 'var(--snk)', border: '0.5px solid var(--bs)',
                               fontSize: 12, color: 'var(--f1)', cursor: 'pointer',
                             }}

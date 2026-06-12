@@ -50,7 +50,7 @@ function normImgUrl(url: string | null): string | null {
 }
 // ── AlwaysPhoto ────────────────────────────────────────────────────────────────
 function AlwaysPhoto({ url }: { url: string | null }) {
-  const s: React.CSSProperties = { width: 72, height: 96, borderRadius: 4, flexShrink: 0, display: 'block' };
+  const s: React.CSSProperties = { width: 72, height: 96, borderRadius: 5, flexShrink: 0, display: 'block' };
   if (!url) return (
     <div style={{ ...s, background: 'var(--snk)', border: '0.5px solid var(--bs)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--f4)' }}>
       <IcSnap size={18} />
@@ -204,7 +204,7 @@ function LightboxOverlay({ url, onClose }: { url: string; onClose: () => void })
     <>
       <div aria-hidden="true" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 70, cursor: 'zoom-out' }} />
       <div style={{ position: 'fixed', inset: 0, zIndex: 71, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-        <img src={url} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 6, boxShadow: '0 8px 48px rgba(0,0,0,0.5)', pointerEvents: 'auto' }} onClick={e => e.stopPropagation()} />
+        <img src={url} alt="" style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 5, boxShadow: '0 8px 48px rgba(0,0,0,0.5)', pointerEvents: 'auto' }} onClick={e => e.stopPropagation()} />
       </div>
     </>
   );
@@ -346,13 +346,13 @@ function SnapModal({ snap, rankRow, onClose, onHashtagClick, onLightbox }: {
             <div style={{ padding: '14px 16px', borderTop: '0.5px solid var(--bs)' }}>
               <div style={SL}>연결 상품 {!prodLoading && `(${products.length}건)`}</div>
               {prodLoading
-                ? Array.from({ length: 3 }).map((_, i) => <div key={i} style={{ height: 44, background: 'var(--rai)', borderRadius: 4, marginBottom: 6 }} />)
+                ? Array.from({ length: 3 }).map((_, i) => <div key={i} style={{ height: 44, background: 'var(--rai)', borderRadius: 5, marginBottom: 6 }} />)
                 : products.length === 0
                   ? <p style={{ margin: 0, fontSize: 12, color: 'var(--f4)' }}>연결된 상품 없음</p>
                   : products.map((p, i) => (
                       <button type="button" key={p.musinsa_no ?? i} onClick={() => { if (p.musinsa_no) { onClose(); router.push(`/product?no=${p.musinsa_no}`); } }}
                         style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '7px 0', borderBottom: i < products.length - 1 ? '0.5px solid var(--bs)' : 'none', cursor: p.musinsa_no ? 'pointer' : 'default', width: '100%', textAlign: 'left' }}>
-                        {normImgUrl(p.thumbnail_url) ? <img src={normImgUrl(p.thumbnail_url)!} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} /> : <div style={{ width: 38, height: 38, background: 'var(--snk)', borderRadius: 4, flexShrink: 0 }} />}
+                        {normImgUrl(p.thumbnail_url) ? <img src={normImgUrl(p.thumbnail_url)!} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 5, flexShrink: 0 }} /> : <div style={{ width: 38, height: 38, background: 'var(--snk)', borderRadius: 5, flexShrink: 0 }} />}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 12, color: p.musinsa_no ? 'var(--f1)' : 'var(--f3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.product_name}</div>
                           <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginTop: 1 }}>{p.brand_name}{p.option_name ? ` · ${p.option_name}` : ''}</div>
@@ -1278,7 +1278,7 @@ function SnapDesktopView() {
                         if (active) setSnapSortDir(d => d === 'asc' ? 'desc' : 'asc');
                         else { setSnapSort(k as SnapSort); setSnapSortDir(defaultDir); }
                       }}>
-                      {label}{active ? (snapSortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                      {label}{active ? (snapSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </button>
                   );
                 })}
@@ -1309,7 +1309,7 @@ function SnapDesktopView() {
                         if (active) setMemberSortDir(d => d === 'asc' ? 'desc' : 'asc');
                         else { setMemberSort(k); setMemberSortDir(k === 'rank' ? 'asc' : 'desc'); }
                       }}>
-                      {label}{active ? (memberSortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                      {label}{active ? (memberSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </button>
                   );
                 })}
@@ -1351,7 +1351,7 @@ function SnapDesktopView() {
                         if (active) setBrandSortDir(d => d === 'asc' ? 'desc' : 'asc');
                         else { setBrandSort(k as SortOpt); setBrandSortDir('desc'); setBrandPage(0); }
                       }}>
-                      {label}{active ? (brandSortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                      {label}{active ? (brandSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </button>
                   );
                 })}
@@ -1385,7 +1385,7 @@ function SnapDesktopView() {
                         if (active) setCodiSortDir(d => d === 'asc' ? 'desc' : 'asc');
                         else { setCodiSort(k as SortOpt); setCodiSortDir('desc'); setCodiPage(0); }
                       }}>
-                      {label}{active ? (codiSortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                      {label}{active ? (codiSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </button>
                   );
                 })}

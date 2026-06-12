@@ -59,7 +59,7 @@ function ProductSearch({ onSelect }: { onSelect: (no: string) => void }) {
 
   return (
     <div style={{ position: 'relative' }}>
-      <div className="row-flex center gap-4" style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 4, padding: '3px 8px', width: 260 }}>
+      <div className="row-flex center gap-4" style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5, padding: '3px 8px', width: 260 }}>
         <span className="mono dim" style={{ fontSize: 11, flexShrink: 0 }}>
           {loading ? '…' : '⌕'}
         </span>
@@ -77,7 +77,7 @@ function ProductSearch({ onSelect }: { onSelect: (no: string) => void }) {
       {open && (
         <div style={{
           position: 'absolute', top: '100%', right: 0, marginTop: 4, width: 340,
-          background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4,
+          background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 5,
           boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 100, maxHeight: 320, overflowY: 'auto',
         }}>
           {results.map((r, i) => (
@@ -184,7 +184,7 @@ function ProductPortal({ onSelect }: { onSelect: (no: string) => void }) {
         {open && (
           <div style={{
             position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 8,
-            background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 8,
+            background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 7,
             boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100,
             maxHeight: 380, overflowY: 'auto',
           }}>
@@ -467,7 +467,7 @@ function ProductPageInner() {
             <button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
               <IcEdit /> 메모
               {noteCount > 0 && (
-                <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: 'var(--white)', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+                <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 7, background: 'var(--hs)', color: 'var(--white)', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
                   {noteCount}
                 </span>
               )}
@@ -635,7 +635,7 @@ function ProductPageInner() {
                       tickFormatter={v => `#${v}`}
                     />
                     <Tooltip
-                      contentStyle={{ background: 'var(--sur)', border: '0.5px solid var(--bs)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' }}
+                      contentStyle={{ background: 'var(--sur)', border: '0.5px solid var(--bs)', borderRadius: 5, fontSize: 11, fontFamily: 'var(--mono)' }}
                       formatter={(v: unknown) => [`#${v}`, '순위']}
                       labelStyle={{ color: 'var(--f3)', fontSize: 10 }}
                     />
@@ -683,7 +683,7 @@ function ProductPageInner() {
                       tickFormatter={v => `${Math.round(v / 1000)}k`}
                     />
                     <Tooltip
-                      contentStyle={{ background: 'var(--sur)', border: '0.5px solid var(--bs)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' }}
+                      contentStyle={{ background: 'var(--sur)', border: '0.5px solid var(--bs)', borderRadius: 5, fontSize: 11, fontFamily: 'var(--mono)' }}
                       formatter={(v: unknown) => [Number(v).toLocaleString() + '원', '가격']}
                       labelStyle={{ color: 'var(--f3)', fontSize: 10 }}
                     />
@@ -872,7 +872,7 @@ function ProductPageInner() {
                         return (
                           <div key={b.label} style={{
                             display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7,
-                            padding: '5px 8px', borderRadius: 6, background: 'var(--snk)',
+                            padding: '5px 8px', borderRadius: 5, background: 'var(--snk)',
                           }}>
                             <span style={{ width: 58, fontSize: 10, color: 'var(--f4)', flexShrink: 0, textAlign: 'right' }}>
                               {b.label}

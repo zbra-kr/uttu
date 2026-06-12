@@ -103,7 +103,7 @@ export default function MobileAdminMappingView() {
               flex: 1, padding: '8px 0', fontSize: 12, fontWeight: tab === t ? 700 : 400,
               background: tab === t ? 'var(--hs)' : 'var(--sur)',
               color: tab === t ? 'var(--rai)' : 'var(--f3)',
-              border: '1px solid var(--bd)', borderRadius: 8, cursor: 'pointer',
+              border: '1px solid var(--bd)', borderRadius: 7, cursor: 'pointer',
             }}
           >
             {label}
@@ -117,14 +117,14 @@ export default function MobileAdminMappingView() {
         value={search}
         onChange={e => setSearch(e.target.value)}
         style={{
-          width: '100%', padding: '9px 12px', borderRadius: 8,
+          width: '100%', padding: '9px 12px', borderRadius: 7,
           border: '1px solid var(--bd)', background: 'var(--sur)',
           color: 'var(--f1)', fontSize: 13, outline: 'none', boxSizing: 'border-box',
         }}
       />
 
       {loadError && (
-        <div style={{ background: 'var(--shb)', border: '1px solid var(--shf)', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: 'var(--shf)' }}>
+        <div style={{ background: 'var(--shb)', border: '1px solid var(--shf)', borderRadius: 7, padding: '10px 12px', fontSize: 12, color: 'var(--shf)' }}>
           {loadError}
         </div>
       )}
@@ -147,11 +147,11 @@ export default function MobileAdminMappingView() {
                   )}
                 </div>
                 {r.dart_skip ? (
-                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--f4)', background: 'var(--snk)', padding: '2px 6px', borderRadius: 4 }}>SKIP</span>
+                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--f4)', background: 'var(--snk)', padding: '2px 6px', borderRadius: 5 }}>SKIP</span>
                 ) : r.dart_corp_code ? (
-                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--slf)', background: 'var(--slb)', padding: '2px 6px', borderRadius: 4 }}>매핑됨</span>
+                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--slf)', background: 'var(--slb)', padding: '2px 6px', borderRadius: 5 }}>매핑됨</span>
                 ) : (
-                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--smf)', background: 'var(--smb)', padding: '2px 6px', borderRadius: 4 }}>미매핑</span>
+                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--smf)', background: 'var(--smb)', padding: '2px 6px', borderRadius: 5 }}>미매핑</span>
                 )}
               </div>
             </div>
@@ -169,9 +169,9 @@ export default function MobileAdminMappingView() {
                   <div style={{ fontSize: 11, color: 'var(--f4)', marginTop: 2 }}>{r.company_name ?? '회사 미연결'}</div>
                 </div>
                 {r.company_id ? (
-                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--slf)', background: 'var(--slb)', padding: '2px 6px', borderRadius: 4 }}>연결됨</span>
+                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--slf)', background: 'var(--slb)', padding: '2px 6px', borderRadius: 5 }}>연결됨</span>
                 ) : (
-                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--smf)', background: 'var(--smb)', padding: '2px 6px', borderRadius: 4 }}>미연결</span>
+                  <span style={{ fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--smf)', background: 'var(--smb)', padding: '2px 6px', borderRadius: 5 }}>미연결</span>
                 )}
               </div>
             </div>

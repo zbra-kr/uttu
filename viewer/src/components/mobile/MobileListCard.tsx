@@ -46,7 +46,7 @@ export default function MobileListCard({
             <span style={{
               fontSize: 10, fontWeight: 600, fontFamily: 'var(--mono)',
               color: 'var(--hs)', background: 'var(--hs-soft)',
-              padding: '1px 5px', borderRadius: 4, flexShrink: 0,
+              padding: '1px 5px', borderRadius: 5, flexShrink: 0,
             }}>
               {badge}
             </span>

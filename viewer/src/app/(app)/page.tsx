@@ -540,9 +540,9 @@ function HomeDesktopView() {
                   return (
                     <div key={star} className="row-flex center gap-6">
                       <span className="mono" style={{ fontSize: 10, color: 'var(--f4)', width: 14, textAlign: 'right', flexShrink: 0 }}>★{star}</span>
-                      <div style={{ flex: 1, height: 7, background: 'var(--snk)', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ flex: 1, height: 7, background: 'var(--snk)', borderRadius: 5, overflow: 'hidden' }}>
                         <div style={{
-                          width: `${pct}%`, height: '100%', borderRadius: 4,
+                          width: `${pct}%`, height: '100%', borderRadius: 5,
                           background: star >= 4 ? 'var(--tu)' : star <= 2 ? 'var(--td)' : 'var(--f3)',
                           transition: 'width 500ms ease',
                         }} />

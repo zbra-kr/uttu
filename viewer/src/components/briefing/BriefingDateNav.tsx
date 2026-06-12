@@ -61,7 +61,7 @@ export default function BriefingDateNav({ currentDate, activeTab, availableDates
     cursor: 'pointer',
     fontSize: 13,
     padding: '4px 8px',
-    borderRadius: 6,
+    borderRadius: 5,
     display: 'flex',
     alignItems: 'center',
     gap: 4,
@@ -148,7 +148,7 @@ export default function BriefingDateNav({ currentDate, activeTab, availableDates
               color: 'var(--hs)',
               fontWeight: 600,
               padding: '3px 8px',
-              borderRadius: 4,
+              borderRadius: 5,
               whiteSpace: 'nowrap',
             }}
             onClick={() => navigate(today)}

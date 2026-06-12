@@ -29,7 +29,7 @@ export default function MobileAdminLLMView() {
               fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)',
               color: m.is_active ? 'var(--slf)' : 'var(--f4)',
               background: m.is_active ? 'var(--slb)' : 'var(--snk)',
-              padding: '2px 6px', borderRadius: 4,
+              padding: '2px 6px', borderRadius: 5,
             }}>
               {m.is_active ? '활성' : '비활성'}
             </span>

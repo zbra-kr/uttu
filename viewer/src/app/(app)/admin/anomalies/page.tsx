@@ -136,7 +136,7 @@ function EditModal({ rule, onClose, onSaved }: {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 12, padding: 24, width: 460, maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 10, padding: 24, width: 460, maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600 }}>{rule.label}</div>
@@ -148,7 +148,7 @@ function EditModal({ rule, onClose, onSaved }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <label style={{ fontSize: 11, color: 'var(--f3)' }}>룰 이름</label>
           <input value={label} onChange={e => setLabel(e.target.value)}
-            style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 6, padding: '7px 12px', fontSize: 13, color: 'var(--f1)' }} />
+            style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5, padding: '7px 12px', fontSize: 13, color: 'var(--f1)' }} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -188,7 +188,7 @@ function EditModal({ rule, onClose, onSaved }: {
                 <span style={{ fontSize: 11, color: 'var(--f3)', fontFamily: 'var(--mono)', minWidth: 100 }}>{r.key}</span>
                 <input type="number" value={sliders[r.id] ?? r.numVal}
                   onChange={e => setSliders(p => ({ ...p, [r.id]: Number(e.target.value) }))}
-                  style={{ flex: 1, background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 4, padding: '4px 8px', fontSize: 12, color: 'var(--f1)', fontFamily: 'var(--mono)' }} />
+                  style={{ flex: 1, background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontSize: 12, color: 'var(--f1)', fontFamily: 'var(--mono)' }} />
               </div>
             ))}
           </div>
@@ -200,7 +200,7 @@ function EditModal({ rule, onClose, onSaved }: {
                 setRawJson(e.target.value);
                 try { JSON.parse(e.target.value); setJsonErr(null); } catch { setJsonErr('JSON 형식 오류'); }
               }}
-              style={{ background: 'var(--snk)', border: `1px solid ${jsonErr ? 'var(--shf)' : 'var(--bd)'}`, borderRadius: 6, padding: '7px 12px', fontSize: 11, color: 'var(--f1)', resize: 'vertical', fontFamily: 'var(--mono)' }} />
+              style={{ background: 'var(--snk)', border: `1px solid ${jsonErr ? 'var(--shf)' : 'var(--bd)'}`, borderRadius: 5, padding: '7px 12px', fontSize: 11, color: 'var(--f1)', resize: 'vertical', fontFamily: 'var(--mono)' }} />
             {jsonErr && <span style={{ fontSize: 10, color: 'var(--shf)' }}>{jsonErr}</span>}
           </div>
         )}
@@ -208,7 +208,7 @@ function EditModal({ rule, onClose, onSaved }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <label style={{ fontSize: 11, color: 'var(--f3)' }}>설명</label>
           <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2}
-            style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 6, padding: '7px 12px', fontSize: 12, color: 'var(--f1)', resize: 'none', fontFamily: 'inherit' }} />
+            style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5, padding: '7px 12px', fontSize: 12, color: 'var(--f1)', resize: 'none', fontFamily: 'inherit' }} />
         </div>
 
         {err && <span style={{ fontSize: 11, color: 'var(--shf)' }}>{err}</span>}
@@ -323,7 +323,7 @@ function RuleBuilderModal({ onClose, onCreated, customCount }: {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 14, padding: 28, width: 580, maxHeight: '92vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
+      <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 10, padding: 28, width: 580, maxHeight: '92vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -359,7 +359,7 @@ function RuleBuilderModal({ onClose, onCreated, customCount }: {
                 onChange={e => setName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && name.trim()) setStep(2); }}
                 placeholder="예: 급격한 가격 하락 + 품절 동시 발생"
-                style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 8, padding: '11px 14px', fontSize: 14, color: 'var(--f1)' }}
+                style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 7, padding: '11px 14px', fontSize: 14, color: 'var(--f1)' }}
               />
               <span style={{ fontSize: 10, color: 'var(--f4)' }}>탐지 키는 다음 단계에서 자동 생성됩니다</span>
             </div>
@@ -462,7 +462,7 @@ function RuleBuilderModal({ onClose, onCreated, customCount }: {
 
               {/* 파라미터 행 */}
               {rows.map(r => (
-                <div key={r.id} style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div key={r.id} style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 7, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {/* 키 입력 */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '0 0 140px' }}>
@@ -471,7 +471,7 @@ function RuleBuilderModal({ onClose, onCreated, customCount }: {
                         value={r.key}
                         onChange={e => updateRow(r.id, { key: e.target.value, preset: PALETTE.find(p => p.key === e.target.value) })}
                         placeholder="key 이름"
-                        style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 4, padding: '4px 8px', fontSize: 11, color: 'var(--f1)', fontFamily: 'var(--mono)', width: '100%' }}
+                        style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontSize: 11, color: 'var(--f1)', fontFamily: 'var(--mono)', width: '100%' }}
                       />
                     </div>
                     {/* 값 입력 */}
@@ -483,7 +483,7 @@ function RuleBuilderModal({ onClose, onCreated, customCount }: {
                           value={r.numVal}
                           step={r.preset?.step ?? 1}
                           onChange={e => updateRow(r.id, { numVal: Number(e.target.value) })}
-                          style={{ width: 72, background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 4, padding: '4px 8px', fontSize: 12, color: 'var(--f1)', fontFamily: 'var(--mono)', fontWeight: 600 }}
+                          style={{ width: 72, background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontSize: 12, color: 'var(--f1)', fontFamily: 'var(--mono)', fontWeight: 600 }}
                         />
                         {r.preset && (
                           <span style={{ fontSize: 10, color: 'var(--f4)' }}>
@@ -540,14 +540,14 @@ function RuleBuilderModal({ onClose, onCreated, customCount }: {
                     setRawJson(e.target.value);
                     try { JSON.parse(e.target.value); setJsonErr(null); } catch { setJsonErr('JSON 형식 오류'); }
                   }}
-                  style={{ background: 'var(--snk)', border: `1px solid ${jsonErr ? 'var(--shf)' : 'var(--bd)'}`, borderRadius: 8, padding: '10px 12px', fontSize: 12, color: 'var(--f1)', resize: 'vertical', fontFamily: 'var(--mono)' }} />
+                  style={{ background: 'var(--snk)', border: `1px solid ${jsonErr ? 'var(--shf)' : 'var(--bd)'}`, borderRadius: 7, padding: '10px 12px', fontSize: 12, color: 'var(--f1)', resize: 'vertical', fontFamily: 'var(--mono)' }} />
                 {jsonErr && <span style={{ fontSize: 10, color: 'var(--shf)' }}>{jsonErr}</span>}
               </div>
             )}
 
             {/* Live JSON preview (빌더 모드) */}
             {!rawMode && rows.length > 0 && (
-              <div style={{ background: 'var(--snk)', borderRadius: 8, padding: '8px 12px' }}>
+              <div style={{ background: 'var(--snk)', borderRadius: 7, padding: '8px 12px' }}>
                 <span style={{ fontSize: 9, color: 'var(--f4)', display: 'block', marginBottom: 3 }}>JSON 미리보기</span>
                 <code style={{ fontSize: 11, color: 'var(--f3)', fontFamily: 'var(--mono)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{rawJson}</code>
               </div>
@@ -563,7 +563,7 @@ function RuleBuilderModal({ onClose, onCreated, customCount }: {
                 탐지 키 (detector_key) <span style={{ color: 'var(--shf)' }}>*</span>
               </label>
               <input value={detKey} onChange={e => setDetKey(e.target.value)}
-                style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: 'var(--f1)', fontFamily: 'var(--mono)' }} />
+                style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 7, padding: '9px 12px', fontSize: 12, color: 'var(--f1)', fontFamily: 'var(--mono)' }} />
               <span style={{ fontSize: 10, color: 'var(--f4)' }}>
                 워커가 이 키를 읽어 어떤 로직을 실행할지 결정합니다. 자동 생성됐으며 수정 가능합니다.
               </span>
@@ -574,7 +574,7 @@ function RuleBuilderModal({ onClose, onCreated, customCount }: {
               <textarea value={detDesc} onChange={e => setDetDesc(e.target.value)}
                 placeholder="어떤 상황에서 이 룰이 발동되는지 간략히 기술하세요"
                 rows={3}
-                style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: 'var(--f1)', resize: 'none', fontFamily: 'inherit' }} />
+                style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 7, padding: '9px 12px', fontSize: 12, color: 'var(--f1)', resize: 'none', fontFamily: 'inherit' }} />
             </div>
 
             {/* 최종 요약 카드 */}
@@ -588,7 +588,7 @@ function RuleBuilderModal({ onClose, onCreated, customCount }: {
               </div>
               <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>{detKey || '—'}</div>
               {rawJson !== '{}' && (
-                <code style={{ fontSize: 11, color: 'var(--f3)', fontFamily: 'var(--mono)', background: 'var(--snk)', padding: '6px 10px', borderRadius: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                <code style={{ fontSize: 11, color: 'var(--f3)', fontFamily: 'var(--mono)', background: 'var(--snk)', padding: '6px 10px', borderRadius: 5, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                   {rawJson}
                 </code>
               )}
@@ -729,7 +729,7 @@ function AdminAnomaliesDesktopView() {
           <div style={{ fontSize: 12, color: 'var(--shf)', fontWeight: 600, marginBottom: 4 }}>API 오류</div>
           <div style={{ fontSize: 11, color: 'var(--shf)', fontFamily: 'var(--mono)' }}>{apiErr}</div>
           <div style={{ fontSize: 11, color: 'var(--f2)', marginTop: 8 }}>
-            테이블이 없으면 <code style={{ fontFamily: 'var(--mono)', background: 'rgba(0,0,0,0.1)', padding: '1px 4px', borderRadius: 3 }}>01100_detector_rules.sql</code> 마이그레이션을 실행하세요.
+            테이블이 없으면 <code style={{ fontFamily: 'var(--mono)', background: 'var(--snk)', padding: '1px 4px', borderRadius: 3 }}>01100_detector_rules.sql</code> 마이그레이션을 실행하세요.
           </div>
         </div>
       )}

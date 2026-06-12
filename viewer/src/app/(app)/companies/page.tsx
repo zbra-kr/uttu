@@ -164,7 +164,7 @@ function CompaniesDesktopView() {
       </div>
 
       {errMsg && (
-        <div style={{ padding: '12px 16px', borderRadius: 8, background: 'var(--shb)', color: 'var(--shf)', fontSize: 13 }}>
+        <div style={{ padding: '12px 16px', borderRadius: 7, background: 'var(--shb)', color: 'var(--shf)', fontSize: 13 }}>
           {errMsg}
         </div>
       )}

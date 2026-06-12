@@ -135,13 +135,13 @@ export default function MobileBrandDetailView() {
       <div style={{ padding: '14px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {info.logo_url && (
-            <img src={info.logo_url} alt="" width={48} height={48} style={{ borderRadius: 8, objectFit: 'contain', border: '1px solid var(--bd)', flexShrink: 0 }} />
+            <img src={info.logo_url} alt="" width={48} height={48} style={{ borderRadius: 7, objectFit: 'contain', border: '1px solid var(--bd)', flexShrink: 0 }} />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--f1)' }}>{info.name}</span>
               {info.is_own && (
-                <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--hs)', background: 'var(--hs-soft)', padding: '1px 5px', borderRadius: 4 }}>자사</span>
+                <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--hs)', background: 'var(--hs-soft)', padding: '1px 5px', borderRadius: 5 }}>자사</span>
               )}
             </div>
             {info.company_name && (
@@ -272,8 +272,8 @@ export default function MobileBrandDetailView() {
               <div style={{ fontSize: 10, color: 'var(--f3)', width: 52, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {CATEGORY_MAP[code] ?? code}
               </div>
-              <div style={{ flex: 1, height: 8, background: 'var(--bs)', borderRadius: 4, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.round((cnt / catBarMax) * 100)}%`, background: 'var(--hs)', borderRadius: 4 }} />
+              <div style={{ flex: 1, height: 8, background: 'var(--bs)', borderRadius: 5, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.round((cnt / catBarMax) * 100)}%`, background: 'var(--hs)', borderRadius: 5 }} />
               </div>
               <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', width: 20, textAlign: 'right', flexShrink: 0 }}>{cnt}</div>
             </div>
@@ -288,8 +288,8 @@ export default function MobileBrandDetailView() {
           {priceDist.map(d => (
             <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
               <div style={{ fontSize: 10, color: 'var(--f3)', width: 36, flexShrink: 0 }}>{d.name}</div>
-              <div style={{ flex: 1, height: 8, background: 'var(--bs)', borderRadius: 4, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.round((d.count / priceMax) * 100)}%`, background: 'var(--f3)', borderRadius: 4 }} />
+              <div style={{ flex: 1, height: 8, background: 'var(--bs)', borderRadius: 5, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.round((d.count / priceMax) * 100)}%`, background: 'var(--f3)', borderRadius: 5 }} />
               </div>
               <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', width: 20, textAlign: 'right', flexShrink: 0 }}>{d.count}</div>
             </div>

@@ -79,7 +79,7 @@ export default function BriefingCalendarPopover({ currentDate, availableDates, o
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <button
           onClick={prevMonth}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--f2)', fontSize: 16, padding: '2px 8px', borderRadius: 4, lineHeight: 1 }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--f2)', fontSize: 16, padding: '2px 8px', borderRadius: 5, lineHeight: 1 }}
           onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--snk)'; }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none'; }}
         >
@@ -95,7 +95,7 @@ export default function BriefingCalendarPopover({ currentDate, availableDates, o
             background: 'none', border: 'none',
             cursor: nextDisabled ? 'not-allowed' : 'pointer',
             color: nextDisabled ? 'var(--f4)' : 'var(--f2)',
-            fontSize: 16, padding: '2px 8px', borderRadius: 4, lineHeight: 1,
+            fontSize: 16, padding: '2px 8px', borderRadius: 5, lineHeight: 1,
             opacity: nextDisabled ? 0.35 : 1,
           }}
           onMouseEnter={e => { if (!nextDisabled) (e.currentTarget as HTMLButtonElement).style.background = 'var(--snk)'; }}

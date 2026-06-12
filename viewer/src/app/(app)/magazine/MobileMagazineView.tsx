@@ -106,7 +106,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
   return (
     <>
       {/* scrim */}
-      <div aria-hidden="true" style={{ position: 'fixed', inset: 0, background: 'rgba(28,25,23,.45)', zIndex: 80 }} onClick={onClose} />
+      <div aria-hidden="true" style={{ position: 'fixed', inset: 0, background: 'var(--img-overlay)', zIndex: 80 }} onClick={onClose} />
 
       {/* sheet */}
       <div style={{
@@ -124,7 +124,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
         {/* 닫기 버튼 */}
         <button onClick={onClose} style={{
           position: 'absolute', top: 12, right: 14,
-          width: 28, height: 28, border: '1px solid var(--bs)', borderRadius: 8,
+          width: 28, height: 28, border: '1px solid var(--bs)', borderRadius: 7,
           background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', color: 'var(--f3)', padding: 0,
         }}>
@@ -197,7 +197,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
                         key={name}
                         onClick={bid ? () => { onClose(); router.push(`/brand?id=${bid}`); } : undefined}
                         style={{
-                          fontSize: 12, padding: '5px 11px', borderRadius: 12,
+                          fontSize: 12, padding: '5px 11px', borderRadius: 10,
                           background: bid ? 'var(--hs-soft)' : 'var(--snk)',
                           color: bid ? 'var(--hs)' : 'var(--f2)',
                           border: `1px solid ${bid ? 'var(--hs)' : 'var(--bd)'}`,
@@ -236,7 +236,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
                       const delta = b.meta?.rank_delta;
                       return (
                         <span key={b.id} style={{
-                          fontSize: 10, padding: '2px 7px', borderRadius: 8,
+                          fontSize: 10, padding: '2px 7px', borderRadius: 7,
                           background: 'var(--sur)', border: `1px solid ${SEV_COLOR[b.severity] ?? 'var(--bd)'}`,
                           color: SEV_COLOR[b.severity] ?? 'var(--f3)', fontFamily: 'var(--mono)', fontWeight: 600,
                         }}>
@@ -295,7 +295,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
                       {/* 랭킹 효과 바 */}
                       {boost && (
                         <div style={{
-                          padding: '7px 10px', borderRadius: 8,
+                          padding: '7px 10px', borderRadius: 7,
                           background: 'color-mix(in oklab, var(--shf) 6%, transparent)',
                           border: `1px solid ${SEV_COLOR[boost.severity] ?? 'var(--bd)'}40`,
                           display: 'flex', alignItems: 'center', gap: 8,
@@ -352,7 +352,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
             target="_blank"
             rel="noopener noreferrer"
             style={{
-              display: 'block', width: '100%', padding: '13px 0', borderRadius: 12,
+              display: 'block', width: '100%', padding: '13px 0', borderRadius: 10,
               background: 'var(--snk)', border: '1px solid var(--bd)', color: 'var(--f1)',
               fontSize: 14, fontWeight: 600, textAlign: 'center', textDecoration: 'none',
             }}
@@ -409,7 +409,7 @@ export default function MobileMagazineView() {
                 flex: 1, padding: '6px 0', fontSize: 11, fontWeight: datePreset === chip.value ? 700 : 400,
                 background: datePreset === chip.value ? 'var(--hs)' : 'var(--sur)',
                 color: datePreset === chip.value ? 'var(--white)' : 'var(--f3)',
-                border: '1px solid var(--bd)', borderRadius: 8, cursor: 'pointer',
+                border: '1px solid var(--bd)', borderRadius: 7, cursor: 'pointer',
               }}
             >
               {chip.label}
@@ -425,7 +425,7 @@ export default function MobileMagazineView() {
               value={customFrom}
               onChange={e => setCustomFrom(e.target.value)}
               style={{
-                flex: 1, height: 36, padding: '0 10px', borderRadius: 8, fontSize: 12,
+                flex: 1, height: 36, padding: '0 10px', borderRadius: 7, fontSize: 12,
                 border: '1px solid var(--bd)', background: 'var(--snk)', color: 'var(--f1)',
                 outline: 'none', boxSizing: 'border-box',
               }}
@@ -436,7 +436,7 @@ export default function MobileMagazineView() {
               value={customTo}
               onChange={e => setCustomTo(e.target.value)}
               style={{
-                flex: 1, height: 36, padding: '0 10px', borderRadius: 8, fontSize: 12,
+                flex: 1, height: 36, padding: '0 10px', borderRadius: 7, fontSize: 12,
                 border: '1px solid var(--bd)', background: 'var(--snk)', color: 'var(--f1)',
                 outline: 'none', boxSizing: 'border-box',
               }}
@@ -460,7 +460,7 @@ export default function MobileMagazineView() {
               }}
             >
               {r.thumbnail_url && (
-                <div style={{ width: 72, height: 72, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: 'var(--snk)' }}>
+                <div style={{ width: 72, height: 72, borderRadius: 7, overflow: 'hidden', flexShrink: 0, background: 'var(--snk)' }}>
                   <img
                     src={r.thumbnail_url}
                     alt=""

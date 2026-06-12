@@ -134,7 +134,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
         <button
           onClick={() => setDrawerOpen(true)}
           style={{
-            width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 8,
+            width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 7,
             background: 'var(--snk)', display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 3.5,
             cursor: 'pointer', flexShrink: 0, padding: 0,
@@ -150,7 +150,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
           <button
             onClick={() => router.back()}
             style={{
-              width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 8,
+              width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 7,
               background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', flexShrink: 0, padding: 0, color: 'var(--f2)',
             }}
@@ -171,7 +171,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
           <button
             onClick={() => setBellOpen(o => !o)}
             style={{
-              width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 8,
+              width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 7,
               background: bellOpen ? 'var(--hs-soft)' : 'var(--snk)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer',
@@ -194,7 +194,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
           </button>
           <Link href="/me" style={{ textDecoration: 'none' }}>
             <div style={{
-              width: 30, height: 30, borderRadius: 8, background: 'var(--snk)',
+              width: 30, height: 30, borderRadius: 7, background: 'var(--snk)',
               border: '1px solid var(--bs)', display: 'flex', alignItems: 'center',
               justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--f2)',
               fontFamily: 'var(--mono)', overflow: 'hidden',
@@ -227,7 +227,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
         <>
           {/* scrim */}
           <div
-            style={{ position: 'fixed', inset: 0, background: 'rgba(28,25,23,.4)', zIndex: 60 }}
+            style={{ position: 'fixed', inset: 0, background: 'var(--img-overlay)', zIndex: 60 }}
             onClick={() => setBellOpen(false)}
           />
           {/* panel */}
@@ -287,7 +287,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
         <>
           {/* scrim */}
           <div
-            style={{ position: 'fixed', inset: 0, background: 'rgba(28,25,23,.42)', zIndex: 70 }}
+            style={{ position: 'fixed', inset: 0, background: 'var(--img-overlay)', zIndex: 70 }}
             onClick={() => setDrawerOpen(false)}
           />
           {/* panel */}
@@ -308,7 +308,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
                 {user?.role && (
                   <span style={{
                     fontSize: 10, color: 'var(--hs)', border: '1px solid var(--hs)',
-                    borderRadius: 4, padding: '1px 5px', marginLeft: 6, fontWeight: 500,
+                    borderRadius: 5, padding: '1px 5px', marginLeft: 6, fontWeight: 500,
                   }}>
                     {user.role}
                   </span>
@@ -347,7 +347,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
                     href={path}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 11, padding: '8px 11px',
-                      borderRadius: 8, fontSize: 12.5, color: active ? 'var(--hs)' : 'var(--f2)',
+                      borderRadius: 7, fontSize: 12.5, color: active ? 'var(--hs)' : 'var(--f2)',
                       background: active ? 'var(--hs-soft)' : 'transparent',
                       fontWeight: active ? 600 : 400, textDecoration: 'none',
                     }}

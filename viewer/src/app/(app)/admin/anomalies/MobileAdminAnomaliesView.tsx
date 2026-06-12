@@ -47,7 +47,7 @@ export default function MobileAdminAnomaliesView() {
               flex: 1, padding: '6px 0', fontSize: 11, fontWeight: filter === v ? 700 : 400,
               background: filter === v ? 'var(--hs)' : 'var(--sur)',
               color: filter === v ? 'var(--rai)' : 'var(--f3)',
-              border: '1px solid var(--bd)', borderRadius: 8, cursor: 'pointer',
+              border: '1px solid var(--bd)', borderRadius: 7, cursor: 'pointer',
             }}
           >
             {label} <span style={{ opacity: 0.75 }}>({cnt})</span>
@@ -77,7 +77,7 @@ export default function MobileAdminAnomaliesView() {
                   fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)',
                   color: SEV_COLOR[r.severity] ?? 'var(--f4)',
                   background: SEV_BG[r.severity] ?? 'var(--snk)',
-                  padding: '2px 6px', borderRadius: 4,
+                  padding: '2px 6px', borderRadius: 5,
                 }}>
                   {r.severity}
                 </span>
@@ -85,7 +85,7 @@ export default function MobileAdminAnomaliesView() {
                   fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)',
                   color: r.enabled ? 'var(--slf)' : 'var(--f4)',
                   background: r.enabled ? 'var(--slb)' : 'var(--snk)',
-                  padding: '2px 6px', borderRadius: 4,
+                  padding: '2px 6px', borderRadius: 5,
                 }}>
                   {r.enabled ? 'ON' : 'OFF'}
                 </span>

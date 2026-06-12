@@ -60,7 +60,7 @@ export default function MobileAdminJobsView() {
                 fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)', flexShrink: 0,
                 color: STATUS_COLOR[j.status] ?? 'var(--f4)',
                 background: STATUS_BG[j.status] ?? 'var(--snk)',
-                padding: '2px 6px', borderRadius: 4,
+                padding: '2px 6px', borderRadius: 5,
               }}>
                 {j.status}
               </span>

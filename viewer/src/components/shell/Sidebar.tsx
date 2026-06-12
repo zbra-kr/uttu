@@ -232,14 +232,14 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
         {menuOpen && show && (
           <div style={{
             position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, right: 0,
-            background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 8,
+            background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 7,
             padding: 4, zIndex: 200,
             boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
           }}>
             <Link
               href="/me"
               onClick={() => setMenuOpen(false)}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, fontSize: 12, color: 'var(--f1)', textDecoration: 'none', transition: 'background 100ms' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 5, fontSize: 12, color: 'var(--f1)', textDecoration: 'none', transition: 'background 100ms' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--snk)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
@@ -248,7 +248,7 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
             <Link
               href="/me?tab=password"
               onClick={() => setMenuOpen(false)}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, fontSize: 12, color: 'var(--f1)', textDecoration: 'none', transition: 'background 100ms' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 5, fontSize: 12, color: 'var(--f1)', textDecoration: 'none', transition: 'background 100ms' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--snk)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
@@ -257,7 +257,7 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
             <div style={{ height: 1, background: 'var(--bd)', margin: '4px 6px' }} />
             <button
               onClick={handleSignOut}
-              style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6, fontSize: 12, color: 'var(--shf)', background: 'none', border: 'none', cursor: 'pointer', transition: 'background 100ms', textAlign: 'left' }}
+              style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 5, fontSize: 12, color: 'var(--shf)', background: 'none', border: 'none', cursor: 'pointer', transition: 'background 100ms', textAlign: 'left' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--shb)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
@@ -295,7 +295,7 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
             <button
               onClick={e => { e.stopPropagation(); setMenuOpen(o => !o); }}
               title="메뉴"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: menuOpen ? 'var(--hs)' : 'var(--f4)', flexShrink: 0, display: 'flex', alignItems: 'center', borderRadius: 4, transition: 'color 100ms' }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: menuOpen ? 'var(--hs)' : 'var(--f4)', flexShrink: 0, display: 'flex', alignItems: 'center', borderRadius: 5, transition: 'color 100ms' }}
               onMouseEnter={e => (e.currentTarget.style.color = 'var(--f1)')}
               onMouseLeave={e => (e.currentTarget.style.color = menuOpen ? 'var(--hs)' : 'var(--f4)')}
             >

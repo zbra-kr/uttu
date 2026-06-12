@@ -94,12 +94,20 @@ ai_messages, ai_sessions, ai_user_quotas, ai_usage_daily, profiles, user_notes, 
 ${DB_SCHEMA}`;
 }
 
-// 사용자 개인정보 테이블 — AI 쿼리 완전 차단
+// 사용자 개인정보·운영 테이블 — AI 쿼리 완전 차단
+// DB 레벨: uttu_ai_readonly 역할(01408_ai_readonly_role.sql)이 1차 차단
+// TS 레벨: 에러 메시지 노출 전 조기 차단 (다층 방어)
 const AI_QUERY_BLOCKED_TABLES = [
-  'ai_messages', 'ai_sessions', 'ai_user_quotas', 'ai_usage_daily',
-  'profiles', 'user_notes', 'user_subscriptions', 'user_mention_configs',
+  // AI 시스템 테이블
+  'ai_messages', 'ai_sessions', 'ai_user_quotas', 'ai_usage_daily', 'ai_allowed_models',
+  // 사용자 개인정보 테이블
+  'profiles', 'user_notes', 'user_bookmarks', 'user_view_history', 'user_saved_filters',
+  'user_notification_subscriptions', 'user_notifications',
+  'user_subscriptions', 'user_mention_configs',
+  // 운영·설정 테이블
+  'anomaly_notes', 'detector_rules',
+  // auth 스키마
   'auth\\.users', 'auth\\.sessions', 'auth\\.audit_log_entries',
-  'detector_rules',
 ];
 
 async function execQueryDb(

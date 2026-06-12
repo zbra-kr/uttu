@@ -74,7 +74,7 @@ const fmtPct = (v: number | null) => v == null ? '—' : `${v.toFixed(1)}%`;
 const fmtChg = (v: number | null) => v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
 
 const TT = {
-  contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' },
+  contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 11, fontFamily: 'var(--mono)' },
   labelStyle: { color: 'var(--f3)' },
   cursor: { fill: 'var(--snk)' },
 };
@@ -148,8 +148,8 @@ function HorizBar({ name, value, max, color = 'var(--hs)' }: { name: string; val
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
       <div style={{ fontSize: 10, color: 'var(--f3)', width: 64, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-      <div style={{ flex: 1, height: 8, background: 'var(--bs)', borderRadius: 4, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${Math.round((value / max) * 100)}%`, background: color, borderRadius: 4 }} />
+      <div style={{ flex: 1, height: 8, background: 'var(--bs)', borderRadius: 5, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${Math.round((value / max) * 100)}%`, background: color, borderRadius: 5 }} />
       </div>
       <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', width: 24, textAlign: 'right', flexShrink: 0 }}>{value}</div>
     </div>
@@ -341,7 +341,7 @@ function TabOverview({
               {b.nation_name && <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginLeft: 6 }}>{b.nation_name}</span>}
             </div>
             {b.is_own
-              ? <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--hs)', background: 'var(--hs-soft)', padding: '1px 5px', borderRadius: 4 }}>자사</span>
+              ? <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--hs)', background: 'var(--hs-soft)', padding: '1px 5px', borderRadius: 5 }}>자사</span>
               : <span style={{ fontSize: 9, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>경쟁사</span>}
             <span style={{ fontSize: 11, color: 'var(--f4)' }}>›</span>
           </div>
@@ -537,7 +537,7 @@ function TabFinancial({
       <Section title="재무 건전성 스코어카드">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {scoreItems.map(s => (
-            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: 'var(--snk)', borderRadius: 6, border: `1px solid ${GC[s.g]}30` }}>
+            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', background: 'var(--snk)', borderRadius: 5, border: `1px solid ${GC[s.g]}30` }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: GC[s.g], flexShrink: 0 }} />
               <span style={{ fontSize: 10, color: 'var(--f3)' }}>{s.label}</span>
               <span style={{ fontSize: 11, fontWeight: 600, color: GC[s.g], fontFamily: 'var(--mono)' }}>{s.val}</span>
@@ -722,7 +722,7 @@ function TabDisclosure({ disclosures }: { disclosures: DartDisclosure[] }) {
 
       {/* 정정 공시 알림 */}
       {corrections.length > 0 && (
-        <div style={{ padding: '10px 13px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, fontSize: 12, color: 'var(--shf)' }}>
+        <div style={{ padding: '10px 13px', background: 'var(--shb)', border: '1px solid color-mix(in srgb, var(--shf) 30%, transparent)', borderRadius: 10, fontSize: 12, color: 'var(--shf)' }}>
           ⚠ 정정 공시 {corrections.length}건 — {corrections.slice(0, 2).map(d => d.report_nm).join(', ')}{corrections.length > 2 ? ` 외 ${corrections.length - 2}건` : ''}
         </div>
       )}
@@ -887,10 +887,10 @@ export default function MobileCompanyDetailView() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--f1)' }}>{info.corp_name}</span>
           {info.is_listed && (
-            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--slf)', background: 'var(--slb)', padding: '1px 5px', borderRadius: 4 }}>상장</span>
+            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--slf)', background: 'var(--slb)', padding: '1px 5px', borderRadius: 5 }}>상장</span>
           )}
           {info.corp_code && (
-            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--hs)', background: 'var(--hs-soft)', padding: '1px 5px', borderRadius: 4 }}>DART ✓</span>
+            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--hs)', background: 'var(--hs-soft)', padding: '1px 5px', borderRadius: 5 }}>DART ✓</span>
           )}
         </div>
         {info.stock_code && (
@@ -918,7 +918,7 @@ export default function MobileCompanyDetailView() {
         {TAB_ITEMS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             style={{
-              flexShrink: 0, padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+              flexShrink: 0, padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: 'pointer',
               border: '1px solid',
               borderColor: tab === t.key ? 'var(--hs)' : 'var(--bd)',
               background: tab === t.key ? 'var(--hs-soft)' : 'var(--sur)',

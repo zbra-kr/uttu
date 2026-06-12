@@ -125,10 +125,10 @@ function BrandPool() {
           </div>
           <input
             type="text" value={keyword} onChange={e => setKeyword(e.target.value)}
-            placeholder="브랜드명으로 검색…"
+            placeholder="브랜드 검색…"
             style={{
               width: '100%', fontFamily: 'var(--sans)', fontSize: 12, padding: '6px 10px',
-              border: '0.5px solid var(--bs)', borderRadius: 6,
+              border: '0.5px solid var(--bs)', borderRadius: 5,
               background: 'var(--bg)', color: 'var(--f1)', boxSizing: 'border-box',
             }} />
           {searching && (
@@ -141,7 +141,7 @@ function BrandPool() {
           )}
           {!searching && results.length > 0 && (
             <div style={{
-              marginTop: 8, border: '0.5px solid var(--bs)', borderRadius: 6,
+              marginTop: 8, border: '0.5px solid var(--bs)', borderRadius: 5,
               overflow: 'hidden', maxHeight: 280, overflowY: 'auto',
             }}>
               {results.map(br => {
@@ -385,7 +385,7 @@ function MatchCard({ m, onConfirm, onExclude }: {
   return (
     <div style={{
       border: `0.5px solid ${confirmed ? 'var(--hs)' : gradeA ? 'color-mix(in srgb, var(--grade-a) 40%, var(--bs))' : 'var(--bs)'}`,
-      borderRadius: 8, padding: '10px 12px',
+      borderRadius: 7, padding: '10px 12px',
       background: confirmed
         ? 'color-mix(in srgb, var(--hs) 6%, var(--sur))'
         : gradeA ? 'color-mix(in srgb, var(--grade-a) 4%, var(--sur))'
@@ -393,7 +393,7 @@ function MatchCard({ m, onConfirm, onExclude }: {
       display: 'flex', gap: 10, alignItems: 'flex-start',
     }}>
       <div style={{
-        width: 48, height: 48, flexShrink: 0, borderRadius: 6,
+        width: 48, height: 48, flexShrink: 0, borderRadius: 5,
         overflow: 'hidden', background: 'var(--snk)', border: '0.5px solid var(--bs)',
       }}>
         {m.competitor_thumbnail && (
@@ -676,7 +676,7 @@ function ProductMatching() {
             onChange={e => { setFilterCategory(e.target.value); setProductPage(0); }}
             style={{
               fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 6px',
-              border: '0.5px solid var(--bs)', borderRadius: 4,
+              border: '0.5px solid var(--bs)', borderRadius: 5,
               background: filterCategory ? 'color-mix(in srgb, var(--hs) 12%, var(--bg))' : 'var(--bg)',
               color: filterCategory ? 'var(--hs)' : 'var(--f2)',
             }}>
@@ -690,10 +690,10 @@ function ProductMatching() {
           {/* 가격 */}
           <span style={{ fontSize: 11, color: 'var(--f3)', fontWeight: 500, flexShrink: 0 }}>가격</span>
           <input type="number" value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="최소"
-            style={{ width: 68, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 6px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+            style={{ width: 68, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 6px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
           <span style={{ fontSize: 11, color: 'var(--f4)' }}>~</span>
           <input type="number" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="최대"
-            style={{ width: 68, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 6px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+            style={{ width: 68, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 6px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
           <span style={{ fontSize: 10, color: 'var(--f4)' }}>원</span>
           <div style={{ width: 1, background: 'var(--bs)', alignSelf: 'stretch', margin: '0 2px' }} />
 
@@ -702,7 +702,7 @@ function ProductMatching() {
             onChange={e => setFilterKwInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { setFilterKeyword(filterKwInput); setProductPage(0); } }}
             placeholder="상품명 검색 (Enter)"
-            style={{ width: 130, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+            style={{ width: 130, fontFamily: 'var(--sans)', fontSize: 11, padding: '3px 8px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
 
           {filterActive && (
             <button className="btn sm" onClick={resetFilters}>초기화</button>
@@ -840,7 +840,7 @@ function ProductMatching() {
                       </div>
                       <div className="col-flex gap-6" style={{ alignItems: 'flex-end' }}>
                         {runMsg && runMsg.startsWith('allExcluded:') && (
-                          <div style={{ fontSize: 11, color: 'var(--f3)', textAlign: 'right', background: 'color-mix(in srgb, var(--chart-orange) 8%, var(--bg))', border: '0.5px solid var(--chart-orange)', borderRadius: 6, padding: '5px 10px' }}>
+                          <div style={{ fontSize: 11, color: 'var(--f3)', textAlign: 'right', background: 'color-mix(in srgb, var(--chart-orange) 8%, var(--bg))', border: '0.5px solid var(--chart-orange)', borderRadius: 5, padding: '5px 10px' }}>
                             후보 {runMsg.split(':')[1]}건 모두 제외됨
                             <button onClick={() => handleAutoMatch(true)} className="btn sm" style={{ marginLeft: 8, fontSize: 10 }}>
                               초기화 후 재실행
@@ -873,8 +873,8 @@ function ProductMatching() {
                     <div style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
                       <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--f2)', marginBottom: 6 }}>경쟁 상품 직접 추가</div>
                       <input type="text" value={compKw} onChange={e => setCompKw(e.target.value)}
-                        placeholder="경쟁 상품명으로 검색…"
-                        style={{ width: '100%', fontFamily: 'var(--sans)', fontSize: 12, padding: '6px 10px', border: '0.5px solid var(--bs)', borderRadius: 6, background: 'var(--bg)', color: 'var(--f1)', boxSizing: 'border-box' }} />
+                        placeholder="경쟁 상품 검색…"
+                        style={{ width: '100%', fontFamily: 'var(--sans)', fontSize: 12, padding: '6px 10px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)', boxSizing: 'border-box' }} />
                     </div>
                     {(compKw || compSearching) && (
                       <div style={{ maxHeight: 220, overflowY: 'auto' }}>
@@ -889,10 +889,10 @@ function ProductMatching() {
                               style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--bs)', background: added ? 'var(--snk)' : undefined }}>
                               <div className="row-flex center gap-8">
                                 {p.thumbnail_url ? (
-                                  <img src={p.thumbnail_url} alt="" style={{ width: 36, height: 36, borderRadius: 4, objectFit: 'cover', border: '0.5px solid var(--bs)', flexShrink: 0 }}
+                                  <img src={p.thumbnail_url} alt="" style={{ width: 36, height: 36, borderRadius: 5, objectFit: 'cover', border: '0.5px solid var(--bs)', flexShrink: 0 }}
                                     onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
                                 ) : (
-                                  <div style={{ width: 36, height: 36, borderRadius: 4, background: 'var(--snk)', border: '0.5px solid var(--bs)', flexShrink: 0 }} />
+                                  <div style={{ width: 36, height: 36, borderRadius: 5, background: 'var(--snk)', border: '0.5px solid var(--bs)', flexShrink: 0 }} />
                                 )}
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ fontSize: 12, fontWeight: 500, color: added ? 'var(--f3)' : 'var(--f1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280 }}>

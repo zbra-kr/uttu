@@ -12,7 +12,7 @@ export default function MobileSegmentBadge({ label }: MobileSegmentBadgeProps) {
       color: 'var(--hs)',
       background: 'var(--hs-soft)',
       padding: '2px 6px',
-      borderRadius: 4,
+      borderRadius: 5,
       border: '1px solid var(--bd)',
       whiteSpace: 'nowrap',
     }}>

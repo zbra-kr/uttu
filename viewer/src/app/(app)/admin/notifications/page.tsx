@@ -123,7 +123,7 @@ function NotificationsAdminDesktopView() {
           {/* 메타 행 */}
           <div style={{
             display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap',
-            background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 8,
+            background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 7,
             padding: '10px 16px', marginBottom: 24, fontSize: 12, color: 'var(--f3)',
           }}>
             <span>마지막 발송: <strong style={{ color: 'var(--f1)' }}>{timeSince(kpi?.last_dispatch_at ?? null)}</strong></span>
@@ -238,7 +238,7 @@ function NotificationsAdminDesktopView() {
                       <td style={{ padding: '5px 8px', color: 'var(--f2)' }}>{n.user_label}</td>
                       <td style={{ padding: '5px 8px' }}>
                         <span style={{
-                          fontSize: 10, padding: '2px 6px', borderRadius: 4,
+                          fontSize: 10, padding: '2px 6px', borderRadius: 5,
                           background: 'var(--snk)', color: 'var(--f2)',
                         }}>
                           {eventLabel(n.event_type)}

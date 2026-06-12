@@ -143,7 +143,7 @@ function LoginDesktopView() {
             </div>
 
             {state?.error && (
-              <div style={{ background: 'var(--shb)', border: '0.5px solid var(--shf)', borderRadius: 6, padding: '9px 11px', fontSize: 12, color: 'var(--shf)' }}>
+              <div style={{ background: 'var(--shb)', border: '0.5px solid var(--shf)', borderRadius: 5, padding: '9px 11px', fontSize: 12, color: 'var(--shf)' }}>
                 {state.error}
               </div>
             )}

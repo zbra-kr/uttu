@@ -132,7 +132,7 @@ function AdminUsersDesktopView() {
 
       {/* 검색 + 필터 */}
       <div className="row-flex gap-8 center">
-        <div className="row-flex center gap-6" style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 4, padding: '4px 10px', flex: 1, maxWidth: 300 }}>
+        <div className="row-flex center gap-6" style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 10px', flex: 1, maxWidth: 300 }}>
           <IcSearch size={14} style={{ color: 'var(--f4)', flexShrink: 0 }} />
           <input
             value={q}

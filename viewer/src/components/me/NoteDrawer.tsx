@@ -254,7 +254,7 @@ export default function NoteDrawer({
                   style={{
                     background: hoveredId === note.id && editingId !== note.id ? 'var(--snk)' : 'var(--rai)',
                     border: '0.5px solid var(--bs)',
-                    borderRadius: 6,
+                    borderRadius: 5,
                     padding: 12,
                     transition: 'background 100ms',
                   }}
@@ -268,7 +268,7 @@ export default function NoteDrawer({
                         style={{
                           width: '100%', boxSizing: 'border-box',
                           background: 'var(--bg)', border: '0.5px solid var(--bd)',
-                          borderRadius: 4, padding: 8, fontSize: 12,
+                          borderRadius: 5, padding: 8, fontSize: 12,
                           color: 'var(--f1)', resize: 'vertical', outline: 'none',
                           fontFamily: 'var(--sans)',
                         }}
@@ -380,7 +380,7 @@ export default function NoteDrawer({
             style={{
               width: '100%', boxSizing: 'border-box',
               background: 'var(--bg)', border: '0.5px solid var(--bd)',
-              borderRadius: 4, padding: 8, fontSize: 12,
+              borderRadius: 5, padding: 8, fontSize: 12,
               color: 'var(--f1)', resize: 'vertical', outline: 'none',
               fontFamily: 'var(--sans)',
             }}

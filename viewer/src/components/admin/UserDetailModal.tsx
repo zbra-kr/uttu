@@ -119,7 +119,7 @@ export default function UserDetailModal({ user, onClose, onUpdated }: Props) {
         <div className="drawer-head">
           <div className="row-flex center gap-10">
             <div style={{
-              width: 32, height: 32, borderRadius: 6, flexShrink: 0,
+              width: 32, height: 32, borderRadius: 5, flexShrink: 0,
               background: 'var(--snk)', border: '0.5px solid var(--bd)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, overflow: 'hidden',
@@ -261,7 +261,7 @@ export default function UserDetailModal({ user, onClose, onUpdated }: Props) {
             ) : (
               <div className="col-flex gap-4">
                 {sessions.map(s => (
-                  <div key={s.id} style={{ padding: '7px 10px', background: 'var(--snk)', borderRadius: 4, fontSize: 11 }}>
+                  <div key={s.id} style={{ padding: '7px 10px', background: 'var(--snk)', borderRadius: 5, fontSize: 11 }}>
                     <div className="row-flex between center">
                       <span style={{ color: 'var(--f2)', fontWeight: 500 }}>
                         {s.title ?? routeLabel(s.route)}
@@ -283,7 +283,7 @@ export default function UserDetailModal({ user, onClose, onUpdated }: Props) {
 
           {/* 에러 + 저장 */}
           {errMsg && (
-            <div style={{ padding: '8px 12px', background: 'var(--shb)', color: 'var(--shf)', borderRadius: 4, fontSize: 12, fontFamily: 'var(--mono)' }}>
+            <div style={{ padding: '8px 12px', background: 'var(--shb)', color: 'var(--shf)', borderRadius: 5, fontSize: 12, fontFamily: 'var(--mono)' }}>
               {errMsg}
             </div>
           )}

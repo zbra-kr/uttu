@@ -30,7 +30,7 @@ export default function MobileAdminUsersView() {
         value={search}
         onChange={e => setSearch(e.target.value)}
         style={{
-          width: '100%', padding: '9px 12px', borderRadius: 8,
+          width: '100%', padding: '9px 12px', borderRadius: 7,
           border: '1px solid var(--bd)', background: 'var(--sur)',
           color: 'var(--f1)', fontSize: 13, outline: 'none', boxSizing: 'border-box',
         }}
@@ -55,7 +55,7 @@ export default function MobileAdminUsersView() {
                   fontSize: 9, fontWeight: 600, fontFamily: 'var(--mono)',
                   color: u.role === 'admin' ? 'var(--shf)' : 'var(--f3)',
                   background: u.role === 'admin' ? 'var(--shb)' : 'var(--snk)',
-                  padding: '2px 6px', borderRadius: 4,
+                  padding: '2px 6px', borderRadius: 5,
                 }}>
                   {u.role}
                 </span>

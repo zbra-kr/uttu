@@ -40,7 +40,7 @@ export const Line = ({ h = 180, series, yMin, yMax, style = {}, dots = true, acc
           <XAxis dataKey="i" hide={!labels} tick={{ fontSize: 9, fill: 'var(--f4)', fontFamily: 'var(--mono)' }} axisLine={false} tickLine={false} />
           <YAxis domain={domain} hide reversed={reversed} />
           <Tooltip
-            contentStyle={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' }}
+            contentStyle={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 11, fontFamily: 'var(--mono)' }}
             labelStyle={{ color: 'var(--f3)' }}
             itemStyle={{ color: 'var(--f1)' }}
           />
@@ -171,7 +171,7 @@ export const Stars = ({ rating, max = 5, size = 12 }: StarsProps) => (
 );
 
 const tooltipStyle = {
-  contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' },
+  contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 11, fontFamily: 'var(--mono)' },
   labelStyle: { color: 'var(--f3)' },
   itemStyle: { color: 'var(--f1)' },
   cursor: { fill: 'var(--snk)' },

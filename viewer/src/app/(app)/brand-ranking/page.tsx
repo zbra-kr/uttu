@@ -237,7 +237,7 @@ function BrandRankingDesktopView() {
                 return (
                   <button key={key} className={`btn sm${active ? ' active' : ''}`}
                     onClick={() => { if (active) setSortDir((d: 'asc' | 'desc') => d === 'asc' ? 'desc' : 'asc'); else { setSort(key); setSortDir('asc'); } }}>
-                    {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                    {label}{active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                   </button>
                 );
               })}

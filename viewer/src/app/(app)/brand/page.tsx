@@ -62,7 +62,7 @@ function BrandSearch({ onSelect }: { onSelect: (id: string) => void }) {
 
   return (
     <div style={{ position: 'relative' }}>
-      <div className="row-flex center gap-4" style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 4, padding: '3px 8px', width: 220 }}>
+      <div className="row-flex center gap-4" style={{ background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5, padding: '3px 8px', width: 220 }}>
         <span className="mono dim" style={{ fontSize: 11, flexShrink: 0 }}>{loading ? '…' : '⌕'}</span>
         <input value={query} onChange={handleChange}
           onKeyDown={e => {
@@ -79,7 +79,7 @@ function BrandSearch({ onSelect }: { onSelect: (id: string) => void }) {
         />
       </div>
       {open && (
-        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, width: 260, background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 100, maxHeight: 280, overflowY: 'auto' }}>
+        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, width: 260, background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 5, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 100, maxHeight: 280, overflowY: 'auto' }}>
           {results.map((r, i) => (
             <div key={r.id} onMouseDown={() => pick(r)}
               style={{ padding: '7px 12px', cursor: 'pointer', background: i === activeIdx ? 'var(--snk)' : 'transparent', borderBottom: '1px solid var(--snk)' }}>
@@ -164,7 +164,7 @@ function BrandPortal({ onSelect }: { onSelect: (id: string) => void }) {
         {open && (
           <div style={{
             position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 8,
-            background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 8,
+            background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 7,
             boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100,
             maxHeight: 380, overflowY: 'auto',
           }}>
@@ -485,7 +485,7 @@ function BrandPageInner() {
             <span className="mono dim" style={{ fontSize: 11 }}>로딩 중…</span>
           </div>
         ) : rankHistory.length < 2 ? (
-          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--snk)', borderRadius: 4 }}>
+          <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--snk)', borderRadius: 5 }}>
             <span className="mono dim" style={{ fontSize: 11 }}>스냅샷 2일 이상 수집 후 표시됩니다</span>
           </div>
         ) : (

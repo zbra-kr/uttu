@@ -104,7 +104,7 @@ export default function SavedFiltersDropdown({ page, currentFilter, onLoad }: Pr
             <div style={{
               position: 'absolute', top: '100%', left: 0, marginTop: 4,
               minWidth: 160, background: 'var(--sur)', border: '1px solid var(--bd)',
-              borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,.18)', zIndex: 100,
+              borderRadius: 5, boxShadow: '0 4px 12px rgba(0,0,0,.18)', zIndex: 100,
               overflow: 'hidden',
             }}>
               {filters.length === 0 ? (
@@ -162,7 +162,7 @@ export default function SavedFiltersDropdown({ page, currentFilter, onLoad }: Pr
               placeholder="필터 이름"
               style={{
                 padding: '4px 8px', background: 'var(--snk)',
-                border: '0.5px solid var(--bs)', borderRadius: 4,
+                border: '0.5px solid var(--bs)', borderRadius: 5,
                 fontSize: 12, color: 'var(--f1)', outline: 'none',
                 width: 100,
               }}

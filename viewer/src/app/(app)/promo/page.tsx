@@ -502,7 +502,7 @@ function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null;
     : `최근 ${period.replace('d', '')}일`;
 
   const TOOLTIP_STYLE = {
-    contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' },
+    contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 11, fontFamily: 'var(--mono)' },
     labelStyle:   { color: 'var(--f3)' },
     itemStyle:    { color: 'var(--f1)' },
   };
@@ -570,7 +570,7 @@ function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null;
               selected={brandFilter}
               onAdd={b => setBrandFilter(prev => new Set([...prev, b]))}
               onRemove={b => setBrandFilter(prev => { const n = new Set(prev); n.delete(b); return n; })}
-              placeholder="브랜드 검색"
+              placeholder="브랜드 검색…"
             />
           </FilterBlock>
         </div>
@@ -900,8 +900,8 @@ function PromoHub({ jumpPromo, onJumpConsumed }: { jumpPromo?: JumpPromo | null;
                   <span style={{ fontSize: 12, color: 'var(--f4)' }}>품절</span>
                   <span className="mono dim" style={{ fontSize: 12 }}>{limitedSoldOut}개 · {limitedPct}%</span>
                 </div>
-                <div style={{ marginTop: 10, background: 'var(--bs)', borderRadius: 4, height: 5 }}>
-                  <div style={{ width: `${100 - limitedPct}%`, background: 'var(--hs)', height: '100%', borderRadius: 4, transition: 'width 0.4s' }} />
+                <div style={{ marginTop: 10, background: 'var(--bs)', borderRadius: 5, height: 5 }}>
+                  <div style={{ width: `${100 - limitedPct}%`, background: 'var(--hs)', height: '100%', borderRadius: 5, transition: 'width 0.4s' }} />
                 </div>
               </>
             )}
@@ -1290,7 +1290,7 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000,
           display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           onClick={() => setPopup(null)}>
-          <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 12, padding: 20,
+          <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 10, padding: 20,
             minWidth: 340, maxWidth: 500, maxHeight: '75vh', overflowY: 'auto',
             boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}
             onClick={e => e.stopPropagation()}>
@@ -1304,7 +1304,7 @@ function PromoCalendar({ onSelectPromo }: { onSelectPromo: (id: string, snapshot
               {popup.evts.map(e => (
                 <button type="button" key={e.id} onClick={() => { onSelectPromo(e.id, e.snapshotDate); setPopup(null); }}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
-                    borderRadius: 8, border: '1px solid var(--bd)', cursor: 'pointer',
+                    borderRadius: 7, border: '1px solid var(--bd)', cursor: 'pointer',
                     background: 'var(--snk)', width: '100%', textAlign: 'left' }}
                   onMouseEnter={el => (el.currentTarget as HTMLElement).style.background = 'var(--hs-soft)'}
                   onMouseLeave={el => (el.currentTarget as HTMLElement).style.background = 'var(--snk)'}>
@@ -1794,7 +1794,7 @@ function PromoStats() {
   const WEEKDAY_LABELS = ['일','월','화','수','목','금','토'];
 
   const TOOLTIP_STYLE = {
-    contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' },
+    contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 11, fontFamily: 'var(--mono)' },
     labelStyle:   { color: 'var(--f3)' },
     itemStyle:    { color: 'var(--f1)' },
   };

@@ -73,7 +73,7 @@ export default function MentionAutocomplete({ query, onSelect, onClose, anchorRe
         ...posStyle,
         background: 'var(--bg)',
         border: '0.5px solid var(--bd)',
-        borderRadius: 6,
+        borderRadius: 5,
         boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
         maxHeight: 220,
         overflowY: 'auto',

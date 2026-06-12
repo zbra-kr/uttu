@@ -51,8 +51,8 @@ function BarRow({ label, count, maxCount, color, extraLabel }: {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
       <span style={{ width: 80, fontSize: 11, color: 'var(--f3)', textAlign: 'right', flexShrink: 0 }}>{label}</span>
-      <div style={{ flex: 1, height: 18, background: 'var(--snk)', borderRadius: 4, overflow: 'hidden' }}>
-        <div style={{ height: '100%', borderRadius: 4, width: `${pctVal}%`, background: color ?? 'var(--f3)', minWidth: count > 0 ? 2 : 0 }} />
+      <div style={{ flex: 1, height: 18, background: 'var(--snk)', borderRadius: 5, overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: 5, width: `${pctVal}%`, background: color ?? 'var(--f3)', minWidth: count > 0 ? 2 : 0 }} />
       </div>
       <span style={{ width: 70, fontSize: 11, color: 'var(--f4)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
         {extraLabel ?? `${count.toLocaleString()}개`}
@@ -169,7 +169,7 @@ function DemoCard({ row }: { row: DemoRow }) {
   const aLabel = AGE_LABEL[row.age] ?? row.age;
   return (
     <div style={{
-      background: 'var(--rai)', border: '0.5px solid var(--bs)', borderRadius: 8, padding: '10px 12px',
+      background: 'var(--rai)', border: '0.5px solid var(--bs)', borderRadius: 7, padding: '10px 12px',
     }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f2)', marginBottom: 6 }}>
         {gLabel} · {aLabel}

@@ -148,7 +148,7 @@ export default function MobileProductDetailView() {
       {/* ── 헤더 ── */}
       <div style={{ padding: '14px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
         {detail.thumbnail_url && (
-          <img src={detail.thumbnail_url} alt="" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, marginBottom: 12 }} />
+          <img src={detail.thumbnail_url} alt="" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 7, marginBottom: 12 }} />
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
           <span
@@ -166,7 +166,7 @@ export default function MobileProductDetailView() {
             </span>
           )}
           {detail.is_own && (
-            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--hs)', background: 'var(--hs-soft)', padding: '1px 5px', borderRadius: 4, marginLeft: 'auto' }}>자사</span>
+            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--hs)', background: 'var(--hs-soft)', padding: '1px 5px', borderRadius: 5, marginLeft: 'auto' }}>자사</span>
           )}
         </div>
         <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--f1)', lineHeight: 1.4 }}>
@@ -231,7 +231,7 @@ export default function MobileProductDetailView() {
                 domain={[Math.max(1, minRank - Math.max(2, Math.round((maxRank - minRank) * 0.2))), maxRank + Math.max(2, Math.round((maxRank - minRank) * 0.2))]}
                 tick={{ fontSize: 9, fill: 'var(--f4)', fontFamily: 'var(--mono)' }} tickLine={false} axisLine={false} width={30} tickFormatter={v => `#${v}`}
               />
-              <Tooltip contentStyle={{ background: 'var(--sur)', border: '0.5px solid var(--bs)', borderRadius: 4, fontSize: 11 }} formatter={(v: unknown) => [`#${v}`, '순위']} labelStyle={{ fontSize: 10 }} />
+              <Tooltip contentStyle={{ background: 'var(--sur)', border: '0.5px solid var(--bs)', borderRadius: 5, fontSize: 11 }} formatter={(v: unknown) => [`#${v}`, '순위']} labelStyle={{ fontSize: 10 }} />
               <Line type="monotone" dataKey="rank" stroke={rankColor} strokeWidth={2} dot={rankChartData.length <= 7} activeDot={{ r: 4 }} />
               <ReferenceDot x={rankChartData[ranks.indexOf(minRank)]?.date} y={minRank} r={4} fill={rankColor} stroke="var(--sur)" strokeWidth={1.5} />
             </LineChart>
@@ -252,7 +252,7 @@ export default function MobileProductDetailView() {
             <LineChart data={priceChartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
               <XAxis dataKey="date" tick={{ fontSize: 9, fill: 'var(--f4)', fontFamily: 'var(--mono)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
               <YAxis domain={[minPrice - pricePad, maxPrice + pricePad]} tick={{ fontSize: 9, fill: 'var(--f4)' }} tickLine={false} axisLine={false} width={44} tickFormatter={v => `${Math.round(v / 1000)}k`} />
-              <Tooltip contentStyle={{ background: 'var(--sur)', border: '0.5px solid var(--bs)', borderRadius: 4, fontSize: 11 }} formatter={(v: unknown) => [`${Number(v).toLocaleString()}원`, '가격']} labelStyle={{ fontSize: 10 }} />
+              <Tooltip contentStyle={{ background: 'var(--sur)', border: '0.5px solid var(--bs)', borderRadius: 5, fontSize: 11 }} formatter={(v: unknown) => [`${Number(v).toLocaleString()}원`, '가격']} labelStyle={{ fontSize: 10 }} />
               <Line type="monotone" dataKey="price" stroke="var(--f1)" strokeWidth={2} dot={priceChartData.length <= 7} activeDot={{ r: 4 }} />
               {priceChartData.filter(d => d.discount > 0).map(d => (
                 <ReferenceDot key={d.date} x={d.date} y={d.price} r={4} fill="var(--shf)" stroke="var(--sur)" strokeWidth={1.5} />
@@ -379,12 +379,12 @@ export default function MobileProductDetailView() {
           <div style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>태그</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {activeFlags.map(label => (
-              <span key={label} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: 'var(--hs-soft)', color: 'var(--hs)', border: '0.5px solid var(--hs)' }}>
+              <span key={label} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'var(--hs-soft)', color: 'var(--hs)', border: '0.5px solid var(--hs)' }}>
                 {label}
               </span>
             ))}
             {detail.labels.map(l => (
-              <span key={l} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, background: 'var(--snk)', color: 'var(--f3)' }}>
+              <span key={l} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: 'var(--snk)', color: 'var(--f3)' }}>
                 {l}
               </span>
             ))}
@@ -432,7 +432,7 @@ export default function MobileProductDetailView() {
             <div key={group.title} style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--f3)', marginBottom: 6 }}>{group.title}</div>
               {group.buckets.map(b => (
-                <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, padding: '4px 8px', borderRadius: 6, background: 'var(--snk)' }}>
+                <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, padding: '4px 8px', borderRadius: 5, background: 'var(--snk)' }}>
                   <span style={{ width: 54, fontSize: 10, color: 'var(--f4)', textAlign: 'right', flexShrink: 0 }}>{b.label}</span>
                   <span style={{ fontSize: 13, color: b.avgRating >= 4 ? 'var(--hs)' : b.avgRating >= 3 ? 'var(--f3)' : 'var(--td)' }}>
                     {'★'.repeat(Math.round(b.avgRating))}{'☆'.repeat(5 - Math.round(b.avgRating))}

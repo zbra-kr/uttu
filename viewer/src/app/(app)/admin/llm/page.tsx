@@ -219,7 +219,7 @@ function AdminLlmDesktopView() {
         {/* 추가 폼 */}
         {showForm && (
           <form onSubmit={handleSubmit} style={{
-            background: 'var(--snk)', border: '0.5px solid var(--bd)', borderRadius: 6,
+            background: 'var(--snk)', border: '0.5px solid var(--bd)', borderRadius: 5,
             padding: '14px 16px', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10,
           }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -229,7 +229,7 @@ function AdminLlmDesktopView() {
                 <select
                   value={form.provider}
                   onChange={e => setForm(f => ({ ...f, provider: e.target.value, model_id: '', display_name: '' }))}
-                  style={{ background: 'var(--sur)', border: '0.5px solid var(--bd)', borderRadius: 4, padding: '4px 8px', fontSize: 12, color: 'var(--f1)' }}
+                  style={{ background: 'var(--sur)', border: '0.5px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontSize: 12, color: 'var(--f1)' }}
                 >
                   {(['anthropic', 'openai', 'google'] as const).map(p => (
                     <option key={p} value={p} disabled={!providerKeyOk(p)}>
@@ -267,7 +267,7 @@ function AdminLlmDesktopView() {
                   value={form.model_id}
                   onChange={e => setForm(f => ({ ...f, model_id: e.target.value }))}
                   placeholder="gpt-4o"
-                  style={{ background: 'var(--sur)', border: '0.5px solid var(--bd)', borderRadius: 4, padding: '4px 8px', fontSize: 12, color: 'var(--f1)', fontFamily: 'var(--mono)' }}
+                  style={{ background: 'var(--sur)', border: '0.5px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontSize: 12, color: 'var(--f1)', fontFamily: 'var(--mono)' }}
                 />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 2, minWidth: 180 }}>
@@ -276,7 +276,7 @@ function AdminLlmDesktopView() {
                   value={form.display_name}
                   onChange={e => setForm(f => ({ ...f, display_name: e.target.value }))}
                   placeholder="GPT-4o"
-                  style={{ background: 'var(--sur)', border: '0.5px solid var(--bd)', borderRadius: 4, padding: '4px 8px', fontSize: 12, color: 'var(--f1)' }}
+                  style={{ background: 'var(--sur)', border: '0.5px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontSize: 12, color: 'var(--f1)' }}
                 />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 90 }}>
@@ -286,7 +286,7 @@ function AdminLlmDesktopView() {
                   onChange={e => setForm(f => ({ ...f, max_tokens: e.target.value }))}
                   placeholder="8192"
                   type="number"
-                  style={{ background: 'var(--sur)', border: '0.5px solid var(--bd)', borderRadius: 4, padding: '4px 8px', fontSize: 12, color: 'var(--f1)', fontFamily: 'var(--mono)' }}
+                  style={{ background: 'var(--sur)', border: '0.5px solid var(--bd)', borderRadius: 5, padding: '4px 8px', fontSize: 12, color: 'var(--f1)', fontFamily: 'var(--mono)' }}
                 />
               </div>
             </div>
@@ -351,7 +351,7 @@ function AdminLlmDesktopView() {
                     <button
                       onClick={() => handleToggle(m)}
                       style={{
-                        width: 34, height: 18, borderRadius: 9, border: 'none', cursor: 'pointer',
+                        width: 34, height: 18, borderRadius: 7, border: 'none', cursor: 'pointer',
                         background: m.is_active ? 'var(--hs)' : 'var(--bd)',
                         position: 'relative', transition: 'background 0.15s',
                       }}

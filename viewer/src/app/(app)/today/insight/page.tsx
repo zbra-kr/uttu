@@ -129,7 +129,7 @@ function InsightPageContent({ page, audience, date }: { page: InsightPage; audie
             href={page.link}
             style={{
               display: 'block', textAlign: 'center', padding: '13px 0',
-              background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 12,
+              background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10,
               fontSize: 14, fontWeight: 600, color: 'var(--f1)', textDecoration: 'none',
             }}
           >
@@ -186,14 +186,14 @@ function InsightDetailContent() {
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <button
               onClick={() => goTo(idx - 1)} disabled={idx === 0}
-              style={{ background: 'none', border: '1px solid var(--bd)', borderRadius: 6, padding: '4px 10px', cursor: idx === 0 ? 'not-allowed' : 'pointer', color: 'var(--f3)', fontSize: 13, opacity: idx === 0 ? 0.4 : 1 }}
+              style={{ background: 'none', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 10px', cursor: idx === 0 ? 'not-allowed' : 'pointer', color: 'var(--f3)', fontSize: 13, opacity: idx === 0 ? 0.4 : 1 }}
             >
               ‹
             </button>
             <span style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>{idx + 1} / {total}</span>
             <button
               onClick={() => goTo(idx + 1)} disabled={idx >= total - 1}
-              style={{ background: 'none', border: '1px solid var(--bd)', borderRadius: 6, padding: '4px 10px', cursor: idx >= total - 1 ? 'not-allowed' : 'pointer', color: 'var(--f3)', fontSize: 13, opacity: idx >= total - 1 ? 0.4 : 1 }}
+              style={{ background: 'none', border: '1px solid var(--bd)', borderRadius: 5, padding: '4px 10px', cursor: idx >= total - 1 ? 'not-allowed' : 'pointer', color: 'var(--f3)', fontSize: 13, opacity: idx >= total - 1 ? 0.4 : 1 }}
             >
               ›
             </button>

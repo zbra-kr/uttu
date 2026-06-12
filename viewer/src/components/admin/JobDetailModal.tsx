@@ -39,7 +39,7 @@ export default function JobDetailModal({ job, onClose }: Props) {
     >
       <div style={{
         background: 'var(--bg)', border: '0.5px solid var(--bd)',
-        borderRadius: 8, width: '100%', maxWidth: 560,
+        borderRadius: 7, width: '100%', maxWidth: 560,
         maxHeight: '80vh', display: 'flex', flexDirection: 'column',
         boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
       }}>
@@ -66,7 +66,7 @@ export default function JobDetailModal({ job, onClose }: Props) {
             onClick={onClose}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--f3)', padding: 4, borderRadius: 4,
+              color: 'var(--f3)', padding: 4, borderRadius: 5,
               display: 'flex', alignItems: 'center',
             }}
             title="닫기 (Esc)"
@@ -106,7 +106,7 @@ export default function JobDetailModal({ job, onClose }: Props) {
               </div>
               <pre style={{
                 background: 'var(--snk)', border: '0.5px solid var(--shf)',
-                borderRadius: 4, padding: '10px 12px',
+                borderRadius: 5, padding: '10px 12px',
                 fontFamily: 'var(--mono)', fontSize: 11, lineHeight: 1.6,
                 color: 'var(--shf)', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
                 maxHeight: 260, overflowY: 'auto', margin: 0,

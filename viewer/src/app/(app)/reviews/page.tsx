@@ -71,12 +71,12 @@ function ReviewCard({
           {thumb ? (
             <img src={thumb} alt="" onClick={() => setLightboxUrl(thumb)}
               style={{
-                width: 44, height: 44, borderRadius: 4, objectFit: 'cover',
+                width: 44, height: 44, borderRadius: 5, objectFit: 'cover',
                 display: 'block', border: '0.5px solid var(--bs)', cursor: 'zoom-in',
               }} />
           ) : (
             <div style={{
-              width: 44, height: 44, borderRadius: 4,
+              width: 44, height: 44, borderRadius: 5,
               background: 'var(--snk)', border: '0.5px solid var(--bs)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 16, color: 'var(--f4)',
@@ -163,12 +163,12 @@ function ReviewCard({
           <img
             src={lightboxUrl} alt=""
             onClick={e => e.stopPropagation()}
-            style={{ maxWidth: '88vw', maxHeight: '88vh', objectFit: 'contain', borderRadius: 6, cursor: 'default' }} />
+            style={{ maxWidth: '88vw', maxHeight: '88vh', objectFit: 'contain', borderRadius: 5, cursor: 'default' }} />
           <button
             onClick={() => setLightboxUrl(null)}
             style={{
               position: 'absolute', top: 20, right: 20,
-              background: 'rgba(255,255,255,0.15)', border: 'none',
+              background: 'color-mix(in srgb, var(--rai) 15%, transparent)', border: 'none',
               color: 'var(--white)', fontSize: 20, width: 36, height: 36,
               borderRadius: '50%', cursor: 'pointer', lineHeight: 1,
             }}>
@@ -692,11 +692,11 @@ function RvBrowse() {
                 onChange={e => { setPQuery(e.target.value); setPOpen(true); }}
                 onFocus={() => setPOpen(true)}
                 placeholder="상품명/스타일코드 검색"
-                style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+                style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
               {pOpen && pQuery.trim() && (
                 <div style={{
                   position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
-                  background: 'var(--bg)', border: '0.5px solid var(--bs)', borderRadius: 4,
+                  background: 'var(--bg)', border: '0.5px solid var(--bs)', borderRadius: 5,
                   boxShadow: '0 4px 12px rgba(0,0,0,0.15)', marginTop: 2, maxHeight: 180, overflowY: 'auto',
                 }}>
                   {pSearching ? (
@@ -811,8 +811,8 @@ function RvBrowse() {
               <input type="text" value={kwInput}
                 onChange={e => setKwInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { setKeyword(kwInput); setPage(0); } }}
-                placeholder="Enter로 검색…"
-                style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+                placeholder="리뷰어 검색 (Enter)"
+                style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
               {keyword && (
                 <button className="btn sm icon" onClick={() => { setKwInput(''); setKeyword(''); setPage(0); }}><IcX /></button>
               )}
@@ -1090,7 +1090,7 @@ function RvAnomalyReviews() {
                     </div>
                     {/* 이상탐지 설명 */}
                     <div style={{
-                      marginTop: 8, padding: '6px 10px', borderRadius: 4,
+                      marginTop: 8, padding: '6px 10px', borderRadius: 5,
                       background: `${sevColor(selectedAnomaly.severity)}12`,
                       borderLeft: `3px solid ${sevColor(selectedAnomaly.severity)}`,
                     }}>
@@ -1400,7 +1400,7 @@ function RvProductBrowse() {
                 onChange={e => setProductKwInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { setProductKw(productKwInput); setMasterPage(0); } }}
                 placeholder="상품명 검색 (Enter)"
-                style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+                style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
               {productKw && (
                 <button className="btn sm icon" onClick={() => { setProductKwInput(''); setProductKw(''); setMasterPage(0); }}><IcX /></button>
               )}
@@ -1520,7 +1520,7 @@ function RvProductBrowse() {
                 onChange={e => setRvKwInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { setRvKeyword(rvKwInput); setRvPage(0); } }}
                 placeholder="리뷰 내용 검색 (Enter)"
-                style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+                style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12, padding: '4px 8px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
               {rvKeyword && (
                 <button className="btn sm icon" onClick={() => { setRvKwInput(''); setRvKeyword(''); setRvPage(0); }}><IcX /></button>
               )}

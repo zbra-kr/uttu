@@ -31,7 +31,7 @@ export default function ReviewDetailSheet({ review, showProductButton = true, on
     <>
       {/* scrim */}
       <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(28,25,23,.45)', zIndex: 80 }}
+        style={{ position: 'fixed', inset: 0, background: 'var(--img-overlay)', zIndex: 80 }}
         onClick={onClose}
       />
       {/* sheet */}
@@ -56,7 +56,7 @@ export default function ReviewDetailSheet({ review, showProductButton = true, on
             <div style={{ fontSize: 11, color: 'var(--f4)', marginTop: 1 }}>{review.brand_name}</div>
           </div>
           <button onClick={onClose} style={{
-            width: 28, height: 28, border: '1px solid var(--bs)', borderRadius: 8,
+            width: 28, height: 28, border: '1px solid var(--bs)', borderRadius: 7,
             background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', color: 'var(--f3)', padding: 0, flexShrink: 0,
           }}>
@@ -79,17 +79,17 @@ export default function ReviewDetailSheet({ review, showProductButton = true, on
           {(review.purchase_option || review.member_height || review.member_weight || review.member_gender) && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
               {review.purchase_option && (
-                <span style={{ fontSize: 11, padding: '3px 9px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 12, color: 'var(--f2)' }}>
+                <span style={{ fontSize: 11, padding: '3px 9px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 10, color: 'var(--f2)' }}>
                   {review.purchase_option}
                 </span>
               )}
               {(review.member_height || review.member_weight) && (
-                <span style={{ fontSize: 11, padding: '3px 9px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 12, color: 'var(--f2)', fontFamily: 'var(--mono)' }}>
+                <span style={{ fontSize: 11, padding: '3px 9px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 10, color: 'var(--f2)', fontFamily: 'var(--mono)' }}>
                   {[review.member_height ? `${review.member_height}cm` : null, review.member_weight ? `${review.member_weight}kg` : null].filter(Boolean).join(' · ')}
                 </span>
               )}
               {review.member_gender && (
-                <span style={{ fontSize: 11, padding: '3px 9px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 12, color: 'var(--f2)' }}>
+                <span style={{ fontSize: 11, padding: '3px 9px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 10, color: 'var(--f2)' }}>
                   {GENDER_LABEL[review.member_gender] ?? review.member_gender}
                 </span>
               )}
@@ -169,7 +169,7 @@ export default function ReviewDetailSheet({ review, showProductButton = true, on
             <button
               onClick={() => { onClose(); router.push(`/product?no=${review.musinsa_no}`); }}
               style={{
-                width: '100%', padding: '13px 0', borderRadius: 12,
+                width: '100%', padding: '13px 0', borderRadius: 10,
                 background: 'var(--hs)', color: 'var(--white)',
                 fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer',
               }}

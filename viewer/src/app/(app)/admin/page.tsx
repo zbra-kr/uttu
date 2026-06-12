@@ -128,7 +128,7 @@ function AdminDashboardDesktopView() {
           <IcShield size={20} style={{ color: 'var(--hs)' }} />
           <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>관리 대시보드</h1>
           <span style={{
-            fontSize: 10, padding: '2px 7px', borderRadius: 4,
+            fontSize: 10, padding: '2px 7px', borderRadius: 5,
             background: 'var(--shb)', color: 'var(--shf)', border: '1px solid var(--shd)',
           }}>admin</span>
         </div>
@@ -137,7 +137,7 @@ function AdminDashboardDesktopView() {
           disabled={refreshing}
           style={{
             display: 'flex', alignItems: 'center', gap: 5,
-            padding: '6px 12px', borderRadius: 6, border: '1px solid var(--bd)',
+            padding: '6px 12px', borderRadius: 5, border: '1px solid var(--bd)',
             background: 'var(--sur)', color: 'var(--f2)', cursor: 'pointer',
             fontSize: 12, opacity: refreshing ? 0.5 : 1,
           }}
@@ -219,7 +219,7 @@ function AdminDashboardDesktopView() {
               {/* 알림 상태 요약 */}
               {(kpi?.notifications.stuck ?? 0) > 0 && (
                 <div style={{
-                  marginTop: 12, padding: '10px 14px', borderRadius: 8,
+                  marginTop: 12, padding: '10px 14px', borderRadius: 7,
                   background: 'var(--shb)', border: '1px solid var(--shd)',
                   fontSize: 12, color: 'var(--shf)',
                 }}>
@@ -247,7 +247,7 @@ function AdminDashboardDesktopView() {
                     const meta = ACTIVITY_META[a.type];
                     const inner = (
                       <div style={{
-                        padding: '8px 10px', borderRadius: 6,
+                        padding: '8px 10px', borderRadius: 5,
                         background: i % 2 === 0 ? 'var(--snk)' : 'transparent',
                       }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>

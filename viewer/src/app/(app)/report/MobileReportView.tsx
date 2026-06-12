@@ -63,7 +63,7 @@ export default function MobileReportView() {
             { label: '상승 상품', value: kpi.risingCount.toLocaleString() },
             { label: '콘텐츠', value: kpi.contentCount.toLocaleString() },
           ].map(k => (
-            <div key={k.label} style={{ textAlign: 'center', padding: '8px 0', background: 'var(--snk)', borderRadius: 6 }}>
+            <div key={k.label} style={{ textAlign: 'center', padding: '8px 0', background: 'var(--snk)', borderRadius: 5 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--f1)', fontFamily: 'var(--mono)' }}>{k.value}</div>
               <div style={{ fontSize: 10, color: 'var(--f4)', marginTop: 1 }}>{k.label}</div>
             </div>

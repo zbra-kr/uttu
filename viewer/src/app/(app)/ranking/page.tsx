@@ -136,7 +136,7 @@ function PriceInput({
       placeholder={placeholder}
       style={{
         width: 54, padding: '3px 6px', background: 'var(--snk)',
-        border: '0.5px solid var(--bs)', borderRadius: 4,
+        border: '0.5px solid var(--bs)', borderRadius: 5,
         fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--f1)',
         outline: 'none', textAlign: 'right', boxSizing: 'border-box', flexShrink: 0,
       }}
@@ -430,7 +430,7 @@ function RankingDesktopView() {
 <button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
             <IcEdit /> 메모
             {noteCount > 0 && (
-              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: 'var(--white)', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 7, background: 'var(--hs)', color: 'var(--white)', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
                 {noteCount}
               </span>
             )}
@@ -534,7 +534,7 @@ function RankingDesktopView() {
                 selected={brands}
                 onAdd={b => { addBrand(b); setPage(1); }}
                 onRemove={b => { removeBrand(b); setPage(1); }}
-                placeholder="브랜드명 검색…"
+                placeholder="브랜드 검색 (Enter)"
               />
             </FilterBlock>
 
@@ -584,7 +584,7 @@ function RankingDesktopView() {
                       else { setSort(key); setSortDir('asc'); }
                       setPage(1);
                     }}>
-                    {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                    {label}{active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                   </button>
                 );
               })}
@@ -774,13 +774,13 @@ function RankingDesktopView() {
           <img
             src={lightboxUrl} alt=""
             onClick={e => e.stopPropagation()}
-            style={{ maxWidth: '80vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: 6 }}
+            style={{ maxWidth: '80vw', maxHeight: '80vh', objectFit: 'contain', borderRadius: 5 }}
           />
           <button
             onClick={() => setLightboxUrl(null)}
             style={{
               position: 'absolute', top: 20, right: 20,
-              background: 'rgba(255,255,255,0.15)', border: 'none',
+              background: 'color-mix(in srgb, var(--rai) 15%, transparent)', border: 'none',
               color: 'var(--white)', fontSize: 20, width: 36, height: 36,
               borderRadius: '50%', cursor: 'pointer', lineHeight: 1,
             }}>

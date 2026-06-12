@@ -7,17 +7,23 @@ import { IcSpark, IcChevL, IcChevR, IcExpand, IcContract, IcClock } from '../ui/
 import { fetchAllowedModels, updatePreferredModel, type AllowedModel } from '@/lib/queries-me';
 
 const QUICK_PROMPTS_BY_ROUTE: Record<string, string[]> = {
-  '/':         ['오늘의 핵심 변화 요약', '자사 영향이 큰 이상탐지', '수집 작업 현황'],
-  '/ranking':  ['오늘 TOP10 핵심 변화', '여성 20대 급등 상품', '자사 상위 랭킹 현황'],
-  '/anomaly':  ['HIGH 이상탐지 요약', '미처리 항목 우선순위', '오늘 신규 탐지 건수'],
-  '/company':  ['이 회사 핵심 지표', '산하 브랜드 성과', '자사 대비 경쟁 분석'],
-  '/brand':    ['이 브랜드 강점·약점', '자사 동종 SKU 비교', '최근 랭킹 추이'],
-  '/product':  ['이 상품 변화 원인', '자사 유사 SKU 비교', '최근 가격 패턴'],
-  '/promo':    ['현재 진행 프로모션 요약', '경쟁 압박 카테고리', '자사 대응 권장안'],
-  '/snap':     ['이번 스냅 트렌드 키워드', '자사 매칭 우선순위', '인기 스타일 분석'],
-  '/magazine': ['최근 기사 트렌드', '자사 브랜드 언급 현황', '캠페인 활용 아이디어'],
-  '/reviews':  ['최근 부정 리뷰 패턴', '품질 이슈 클러스터', '응답 우선 순위'],
-  '/companies':['자사 보유 법인 목록', '재무 데이터 있는 경쟁사', '매출 TOP5 회사'],
+  '/':              ['오늘의 핵심 변화 요약', '자사 영향이 큰 이상탐지', '수집 작업 현황'],
+  '/ranking':       ['오늘 TOP10 핵심 변화', '여성 20대 급등 상품', '자사 상위 랭킹 현황'],
+  '/anomaly':       ['HIGH 이상탐지 요약', '미처리 항목 우선순위', '오늘 신규 탐지 건수'],
+  '/company':       ['이 회사 핵심 지표', '산하 브랜드 성과', '자사 대비 경쟁 분석'],
+  '/brand':         ['이 브랜드 강점·약점', '자사 동종 SKU 비교', '최근 랭킹 추이'],
+  '/product':       ['이 상품 변화 원인', '자사 유사 SKU 비교', '최근 가격 패턴'],
+  '/promo':         ['현재 진행 프로모션 요약', '경쟁 압박 카테고리', '자사 대응 권장안'],
+  '/snap':          ['이번 스냅 트렌드 키워드', '자사 매칭 우선순위', '인기 스타일 분석'],
+  '/magazine':      ['최근 기사 트렌드', '자사 브랜드 언급 현황', '캠페인 활용 아이디어'],
+  '/reviews':       ['최근 부정 리뷰 패턴', '품질 이슈 클러스터', '응답 우선 순위'],
+  '/companies':     ['자사 보유 법인 목록', '재무 데이터 있는 경쟁사', '매출 TOP5 회사'],
+  '/matching':      ['미확정 매칭 우선순위', 'A등급 매칭 요약', '자사 매칭 공백 카테고리'],
+  '/recommend':     ['이번 주 급등 추천 상품', '자사 연관 트렌드 키워드', '추천 점수 상위 10개'],
+  '/report':        ['이번 주 핵심 이슈', '자사 성과 요약', '경쟁사 순위 변동 분석'],
+  '/brand-ranking': ['오늘 브랜드 TOP10', '자사 브랜드 순위 현황', '신규 진입 브랜드'],
+  '/today':         ['오늘의 핵심 변화', '자사 영향 큰 트렌드', '오늘 수집 이상 현황'],
+  '/me':            ['내 구독 이상탐지 현황', '최근 받은 알림 분석', '구독 최적화 제안'],
 };
 
 const ROUTE_LABEL: Record<string, string> = {
@@ -73,7 +79,7 @@ function MdCode({ children, className }: { children?: React.ReactNode; className
 
 const PRE_S: React.CSSProperties = {
   background: 'var(--snk)', border: '0.5px solid var(--bs)',
-  borderRadius: 6, padding: '10px 12px',
+  borderRadius: 5, padding: '10px 12px',
   overflowX: 'auto', margin: '6px 0',
   fontFamily: 'var(--mono)', fontSize: 12, lineHeight: 1.6,
   color: 'var(--f1)', whiteSpace: 'pre',
@@ -602,7 +608,7 @@ export default function AiPanel({ open, onToggle, context, route, mobileMode }: 
           {/* 차단 / 한도 초과 상태 */}
           {quota?.is_blocked ? (
             <div style={{
-              padding: '10px 12px', borderRadius: 4, fontSize: 12,
+              padding: '10px 12px', borderRadius: 5, fontSize: 12,
               background: 'var(--shb)', color: 'var(--shf)',
               fontFamily: 'var(--mono)', textAlign: 'center',
             }}>
@@ -610,7 +616,7 @@ export default function AiPanel({ open, onToggle, context, route, mobileMode }: 
             </div>
           ) : quota?.limit_monthly != null && quota.used_monthly >= quota.limit_monthly ? (
             <div style={{
-              padding: '10px 12px', borderRadius: 4, fontSize: 12,
+              padding: '10px 12px', borderRadius: 5, fontSize: 12,
               background: 'var(--shb)', color: 'var(--shf)',
               fontFamily: 'var(--mono)', textAlign: 'center',
             }}>

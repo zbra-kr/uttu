@@ -65,7 +65,7 @@ function MagazineDrawer({
 
         <div className="drawer-body" style={{ overflowY: 'auto', flex: 1 }}>
           {item.thumbnail_url && (
-            <div style={{ margin: '-4px -4px 14px', borderRadius: 6, overflow: 'hidden', maxHeight: 200 }}>
+            <div style={{ margin: '-4px -4px 14px', borderRadius: 5, overflow: 'hidden', maxHeight: 200 }}>
               <img
                 src={item.thumbnail_url}
                 alt={item.title}
@@ -129,7 +129,7 @@ function MagazineDrawer({
                 {products.map((p, i) => (
                   <a key={i} href={`/product?no=${p.musinsa_no}`}
                     style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6,
-                      padding: '5px 8px', borderRadius: 4, background: 'var(--snk)' }}>
+                      padding: '5px 8px', borderRadius: 5, background: 'var(--snk)' }}>
                     {p.is_own && (
                       <span style={{ fontSize: 9, background: 'var(--hs)', color: 'var(--white)',
                         padding: '1px 4px', borderRadius: 2, flexShrink: 0 }}>자사</span>
@@ -382,7 +382,7 @@ function MagazinePage() {
               onKeyDown={e => { if (e.key === 'Enter') { setKeyword(kwInput); setPage(0); } }}
               placeholder="제목 검색…"
               style={{ paddingLeft: 26, paddingRight: 8, height: 28, fontSize: 12,
-                background: 'var(--snk)', border: '0.5px solid var(--bs)', borderRadius: 4,
+                background: 'var(--snk)', border: '0.5px solid var(--bs)', borderRadius: 5,
                 color: 'var(--f1)', width: 180 }}
             />
           </div>
@@ -390,16 +390,16 @@ function MagazinePage() {
           {/* 날짜 범위 */}
           <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
             style={{ height: 28, fontSize: 11, background: 'var(--snk)', border: '0.5px solid var(--bs)',
-              borderRadius: 4, padding: '0 6px', color: 'var(--f2)' }} />
+              borderRadius: 5, padding: '0 6px', color: 'var(--f2)' }} />
           <span className="mono dim" style={{ fontSize: 11 }}>~</span>
           <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
             style={{ height: 28, fontSize: 11, background: 'var(--snk)', border: '0.5px solid var(--bs)',
-              borderRadius: 4, padding: '0 6px', color: 'var(--f2)' }} />
+              borderRadius: 5, padding: '0 6px', color: 'var(--f2)' }} />
 
           {/* 정렬 */}
           <select value={sort} onChange={e => { setSort(e.target.value as typeof sort); setPage(0); }}
             style={{ height: 28, fontSize: 11, background: 'var(--snk)', border: '0.5px solid var(--bs)',
-              borderRadius: 4, padding: '0 6px', color: 'var(--f2)' }}>
+              borderRadius: 5, padding: '0 6px', color: 'var(--f2)' }}>
             <option value="published_at">최신순</option>
             <option value="view_count">조회수순</option>
             <option value="comment_count">댓글순</option>
@@ -577,7 +577,7 @@ function MagazinePage() {
                   ['카테고리', `${Object.keys(catDist).length}종`, ''],
                   ['브랜드×조회', fmt(totalViews > 0 ? Math.round(totalViews / Math.max(1, Object.keys(brandCount).length)) : 0), '평균'],
                 ].map(([l, v, s], i) => (
-                  <div key={i} style={{ background: 'var(--snk)', borderRadius: 6, padding: '8px 10px' }}>
+                  <div key={i} style={{ background: 'var(--snk)', borderRadius: 5, padding: '8px 10px' }}>
                     <div style={{ fontSize: 10, color: 'var(--f4)', marginBottom: 2 }}>{l}</div>
                     <div className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--f1)' }}>
                       {v}{s && <span style={{ fontSize: 10, color: 'var(--f4)', marginLeft: 2 }}>{s}</span>}

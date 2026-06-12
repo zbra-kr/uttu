@@ -34,7 +34,7 @@ export default function MobileNewsPickList({ picks }: Props) {
             <span style={{
               fontSize: 9.5, fontFamily: 'var(--mono)',
               color: 'var(--f3)', background: 'var(--snk)',
-              padding: '2px 6px', borderRadius: 4, flexShrink: 0,
+              padding: '2px 6px', borderRadius: 5, flexShrink: 0,
               border: '1px solid var(--bd)',
             }}>
               {pick.source_name}

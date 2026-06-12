@@ -32,7 +32,7 @@ import { FundingBrief } from '@/components/uttu/funding-brief';
 
 // ── 상수 ──────────────────────────────────────────────────────────────
 const TT: any = {
-  contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' },
+  contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 11, fontFamily: 'var(--mono)' },
   labelStyle: { color: 'var(--f3)' },
   itemStyle: { color: 'var(--f1)' },
   cursor: { fill: 'var(--snk)' },
@@ -223,7 +223,7 @@ function CompanyPortal({ onSelect }: { onSelect: (id: string) => void }) {
             style={{ background: 'none', border: 'none', outline: 'none', fontSize: 14, width: '100%', color: 'var(--f1)', textAlign: 'center' }} />
         </div>
         {open && (
-          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 8, background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100, maxHeight: 380, overflowY: 'auto' }}>
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 8, background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 7, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100, maxHeight: 380, overflowY: 'auto' }}>
             {results.map((r, i) => (
               <div key={r.id} onMouseDown={() => handleSelect(r)}
                 style={{ padding: '10px 16px', cursor: 'pointer', background: i === activeIdx ? 'var(--snk)' : 'transparent', borderBottom: '1px solid var(--snk)' }}>
@@ -686,7 +686,7 @@ function TabFinancial({ financials, top100Trend, rankStats }: {
       <SecPanel title="E1 · 재무 건전성 스코어카드">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {scoreItems.map(s => (
-            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'var(--snk)', borderRadius: 6, border: `1px solid ${GC[s.g]}30` }}>
+            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'var(--snk)', borderRadius: 5, border: `1px solid ${GC[s.g]}30` }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: GC[s.g], flexShrink: 0 }} />
               <span style={{ fontSize: 11, color: 'var(--f3)' }}>{s.label}</span>
               <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: GC[s.g] }}>{s.val}</span>
@@ -864,7 +864,7 @@ function TabFinancial({ financials, top100Trend, rankStats }: {
           </div>
         </div>
         {avgTop100 != null && (
-          <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--snk)', borderRadius: 6, fontSize: 11, color: 'var(--f3)' }}>
+          <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--snk)', borderRadius: 5, fontSize: 11, color: 'var(--f3)' }}>
             최근 30일 일평균 TOP100 <span className="mono" style={{ color: 'var(--hs)', fontWeight: 600 }}>{avgTop100}개</span> · 최신 매출 <span className="mono" style={{ color: 'var(--f1)', fontWeight: 600 }}>{fmtB(financials[0]?.revenue)}</span>
           </div>
         )}
@@ -891,7 +891,7 @@ function TabDisclosure({ disclosures }: { disclosures: DartDisclosure[] }) {
     <div className="col-flex gap-14">
       {/* D3: 정정 공시 알림 */}
       {corrections.length > 0 && (
-        <div style={{ padding: '10px 14px', background: 'color-mix(in oklab, var(--shf) 8%, transparent)', border: '1px solid color-mix(in oklab, var(--shf) 30%, transparent)', borderRadius: 8, fontSize: 12, color: 'var(--shf)' }}>
+        <div style={{ padding: '10px 14px', background: 'color-mix(in oklab, var(--shf) 8%, transparent)', border: '1px solid color-mix(in oklab, var(--shf) 30%, transparent)', borderRadius: 7, fontSize: 12, color: 'var(--shf)' }}>
           ⚠ 정정 공시 {corrections.length}건 포함 — {corrections.slice(0, 2).map(d => d.report_nm).join(', ')}{corrections.length > 2 ? ` 외 ${corrections.length - 2}건` : ''}
         </div>
       )}
@@ -1116,7 +1116,7 @@ function CompanyPageInner() {
           >
             ←
             <span style={{ color: 'var(--f3)' }}>{parentCompany.corp_name}</span>
-            <span style={{ fontSize: 10, padding: '1px 5px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 4 }}>모회사</span>
+            <span style={{ fontSize: 10, padding: '1px 5px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5 }}>모회사</span>
           </button>
         </div>
       )}
@@ -1132,7 +1132,7 @@ function CompanyPageInner() {
           <button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
             <IcEdit /> 메모
             {noteCount > 0 && (
-              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: 'var(--hs)', color: 'var(--white)', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 7, background: 'var(--hs)', color: 'var(--white)', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
                 {noteCount}
               </span>
             )}

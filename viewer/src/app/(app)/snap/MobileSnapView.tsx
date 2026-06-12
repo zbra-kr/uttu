@@ -37,7 +37,7 @@ export default function MobileSnapView() {
             <div
               key={r.id}
               onClick={() => r.thumbnail_url && setFullscreen(r)}
-              style={{ borderRadius: 8, overflow: 'hidden', cursor: r.thumbnail_url ? 'pointer' : 'default', position: 'relative', aspectRatio: '3/4', background: 'var(--snk)' }}
+              style={{ borderRadius: 7, overflow: 'hidden', cursor: r.thumbnail_url ? 'pointer' : 'default', position: 'relative', aspectRatio: '3/4', background: 'var(--snk)' }}
             >
               {r.thumbnail_url ? (
                 <img

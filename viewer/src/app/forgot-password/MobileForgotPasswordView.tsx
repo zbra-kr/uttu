@@ -75,7 +75,7 @@ export default function MobileForgotPasswordView() {
                   name="email" type="email" required autoFocus autoComplete="email"
                   placeholder="name@bcave.co.kr"
                   style={{
-                    height: 42, padding: '0 12px', borderRadius: 8, fontSize: 13,
+                    height: 42, padding: '0 12px', borderRadius: 7, fontSize: 13,
                     border: '1px solid var(--bd)', background: 'var(--snk)',
                     color: 'var(--f1)', outline: 'none', width: '100%', boxSizing: 'border-box',
                   }}
@@ -83,7 +83,7 @@ export default function MobileForgotPasswordView() {
               </div>
 
               {state?.error && (
-                <div style={{ background: 'var(--shb)', border: '1px solid var(--shf)', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: 'var(--shf)' }}>
+                <div style={{ background: 'var(--shb)', border: '1px solid var(--shf)', borderRadius: 7, padding: '10px 12px', fontSize: 12, color: 'var(--shf)' }}>
                   {state.error}
                 </div>
               )}

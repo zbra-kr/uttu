@@ -55,7 +55,7 @@ function RemarkEditor({ value, onSave }: { value: string | null; onSave: (v: str
     <textarea autoFocus rows={2} value={draft} onChange={e => setDraft(e.target.value)}
       onBlur={commit} onKeyDown={e => { if (e.key === 'Escape') { setEditing(false); setDraft(value ?? ''); } }}
       style={{ fontSize: 11, color: 'var(--f1)', background: 'var(--snk)', border: '1px solid var(--bd)',
-        borderRadius: 4, padding: '3px 6px', width: '100%', resize: 'none', outline: 'none',
+        borderRadius: 5, padding: '3px 6px', width: '100%', resize: 'none', outline: 'none',
         fontFamily: 'inherit', lineHeight: 1.5, marginTop: 4 }} />
   );
   return (
@@ -145,8 +145,8 @@ function DartSection({ company, onSaved }: { company: UnifiedCompany; onSaved: (
       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
         DART 코드 매핑
         {company.corp_code && (
-          <span style={{ marginLeft: 8, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--slf)', background: 'rgba(34,197,94,0.08)',
-            border: '1px solid rgba(34,197,94,0.2)', borderRadius: 4, padding: '1px 6px', fontWeight: 400, textTransform: 'none' }}>
+          <span style={{ marginLeft: 8, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--slf)', background: 'var(--slb)',
+            border: '1px solid color-mix(in srgb, var(--slf) 25%, transparent)', borderRadius: 5, padding: '1px 6px', fontWeight: 400, textTransform: 'none' }}>
             ✓ {company.corp_code}
           </span>
         )}
@@ -175,9 +175,9 @@ function DartSection({ company, onSaved }: { company: UnifiedCompany; onSaved: (
             </div>
             <button className="btn sm" onClick={doSearch} disabled={searchLoading}>{searchLoading ? '…' : '검색'}</button>
           </div>
-          {searchError && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '5px 8px', background: 'var(--shb)', borderRadius: 4 }}>{searchError}</div>}
+          {searchError && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '5px 8px', background: 'var(--shb)', borderRadius: 5 }}>{searchError}</div>}
           {candidates.length > 0 && (
-            <div className="tbl" style={{ border: '1px solid var(--bd)', borderRadius: 6 }}>
+            <div className="tbl" style={{ border: '1px solid var(--bd)', borderRadius: 5 }}>
               <div className="row head" style={{ gridTemplateColumns: '1fr 90px 70px' }}>
                 <span>DART 회사명</span><span>corp_code</span><span />
               </div>
@@ -203,7 +203,7 @@ function DartSection({ company, onSaved }: { company: UnifiedCompany; onSaved: (
             </div>
             <button className="btn sm" onClick={() => doVerify()} disabled={verifyLoading}>{verifyLoading ? '…' : '검증'}</button>
           </div>
-          {verifyError && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '5px 8px', background: 'var(--shb)', borderRadius: 4 }}>{verifyError}</div>}
+          {verifyError && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '5px 8px', background: 'var(--shb)', borderRadius: 5 }}>{verifyError}</div>}
           {verify && (
             <div className="panel col-flex gap-8" style={{ background: 'var(--snk)' }}>
               <div className="row-flex between"><span style={{ fontSize: 11, color: 'var(--f4)', width: 80 }}>DART 회사명</span><span style={{ fontSize: 12, fontWeight: 600 }}>{verify.corp_name}</span></div>
@@ -218,11 +218,11 @@ function DartSection({ company, onSaved }: { company: UnifiedCompany; onSaved: (
               </div>
               <div className="row-flex between"><span style={{ fontSize: 11, color: 'var(--f4)', width: 80 }}>상장 구분</span><span style={{ fontSize: 12 }}>{clsLabel(verify.corp_cls)}</span></div>
               {bizMatch === 'mismatch' && (
-                <div style={{ fontSize: 11, color: 'var(--warn)', padding: '5px 8px', background: 'color-mix(in srgb, var(--warn) 8%, transparent)', borderRadius: 4, border: '1px solid color-mix(in srgb, var(--warn) 20%, transparent)' }}>
+                <div style={{ fontSize: 11, color: 'var(--warn)', padding: '5px 8px', background: 'color-mix(in srgb, var(--warn) 8%, transparent)', borderRadius: 5, border: '1px solid color-mix(in srgb, var(--warn) 20%, transparent)' }}>
                   ⚠️ 사업자번호 불일치
                 </div>
               )}
-              {saveError && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '5px 8px', background: 'var(--shb)', borderRadius: 4 }}>{saveError}</div>}
+              {saveError && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '5px 8px', background: 'var(--shb)', borderRadius: 5 }}>{saveError}</div>}
               <div className="row-flex gap-6">
                 <button className="btn sm" style={{ background: 'var(--hs)', color: 'var(--white)', borderColor: 'var(--hs)', flex: 1 }} onClick={doSave} disabled={saving}>
                   {saving ? '저장 중…' : bizMatch === 'mismatch' ? '⚠️ 강제 저장' : '저장'}
@@ -304,7 +304,7 @@ function ParentSection({ company, onSaved }: { company: UnifiedCompany; onSaved:
         </div>
         {searching && <div style={{ fontSize: 11, color: 'var(--f4)' }}>검색 중…</div>}
         {results.length > 0 && (
-          <div style={{ border: '1px solid var(--bd)', borderRadius: 6, overflow: 'hidden', maxHeight: 160, overflowY: 'auto' }}>
+          <div style={{ border: '1px solid var(--bd)', borderRadius: 5, overflow: 'hidden', maxHeight: 160, overflowY: 'auto' }}>
             {results.map(c => (
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
                 borderBottom: '1px solid var(--bd)' }} className="hover">
@@ -418,7 +418,7 @@ function SubsidiarySection({ company }: { company: UnifiedCompany }) {
         </div>
         {searching && <div style={{ fontSize: 11, color: 'var(--f4)' }}>검색 중…</div>}
         {results.length > 0 && (
-          <div style={{ border: '1px solid var(--bd)', borderRadius: 6, overflow: 'hidden', maxHeight: 160, overflowY: 'auto' }}>
+          <div style={{ border: '1px solid var(--bd)', borderRadius: 5, overflow: 'hidden', maxHeight: 160, overflowY: 'auto' }}>
             {results.map(c => (
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
                 cursor: 'pointer', borderBottom: '1px solid var(--bd)' }}
@@ -592,7 +592,7 @@ function BrandSection({ company }: { company: UnifiedCompany }) {
         {brands.map(b => {
           const isChk = checkedIds.has(b.id); const isBusy = busyIds.has(b.id);
           return (
-            <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6,
+            <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 5,
               background: isChk ? 'var(--snk)' : 'transparent' }}>
               <input type="checkbox" checked={isChk}
                 onChange={() => setCheckedIds(prev => { const n = new Set(prev); isChk ? n.delete(b.id) : n.add(b.id); return n; })}
@@ -629,7 +629,7 @@ function BrandSection({ company }: { company: UnifiedCompany }) {
             {sg.brands.length === 0 ? (
               <div style={{ fontSize: 11, color: 'var(--f4)', padding: '2px 8px 6px', fontStyle: 'italic' }}>브랜드 없음</div>
             ) : sg.brands.map(b => (
-              <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px 4px 20px', borderRadius: 6 }}>
+              <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px 4px 20px', borderRadius: 5 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     color: b.company_skip ? 'var(--f4)' : 'var(--f2)', textDecoration: b.company_skip ? 'line-through' : 'none' }}>
@@ -666,7 +666,7 @@ function BrandSection({ company }: { company: UnifiedCompany }) {
         </div>
         {addSearching && <div style={{ fontSize: 11, color: 'var(--f4)' }}>검색 중…</div>}
         {addResults.length > 0 && (
-          <div className="tbl" style={{ border: '1px solid var(--bd)', borderRadius: 6 }}>
+          <div className="tbl" style={{ border: '1px solid var(--bd)', borderRadius: 5 }}>
             {addResults.map(b => (
               <div key={b.id} className="row hover" style={{ gridTemplateColumns: '1fr auto', alignItems: 'center' }}>
                 <div style={{ minWidth: 0 }}>
@@ -755,7 +755,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
     <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)' }} />
-      <div style={{ position: 'relative', background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 12,
+      <div style={{ position: 'relative', background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 10,
         padding: 24, display: 'flex', gap: 20, maxWidth: 720, width: '90vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
         <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none',
           cursor: 'pointer', color: 'var(--f4)', fontSize: 18, lineHeight: 1, padding: 4 }}>✕</button>
@@ -774,8 +774,8 @@ function CreateModal({ onClose }: { onClose: () => void }) {
               dart_fetched_at 설정 (DART 완료 표시)
             </label>
           </div>
-          {cError   && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '6px 8px', background: 'var(--shb)', borderRadius: 4 }}>{cError}</div>}
-          {cSuccess && <div style={{ fontSize: 11, color: 'var(--slf)', padding: '6px 8px', background: 'rgba(34,197,94,0.08)', borderRadius: 4, border: '1px solid rgba(34,197,94,0.2)' }}>{cSuccess}</div>}
+          {cError   && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '6px 8px', background: 'var(--shb)', borderRadius: 5 }}>{cError}</div>}
+          {cSuccess && <div style={{ fontSize: 11, color: 'var(--slf)', padding: '6px 8px', background: 'var(--slb)', borderRadius: 5, border: '1px solid color-mix(in srgb, var(--slf) 25%, transparent)' }}>{cSuccess}</div>}
           <button className="btn sm" style={{ background: 'var(--hs)', color: 'var(--white)', borderColor: 'var(--hs)' }} onClick={submitCompany} disabled={cSaving}>
             {cSaving ? '등록 중…' : '회사 등록'}
           </button>
@@ -796,7 +796,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
             <div>
               <div style={{ fontSize: 11, color: 'var(--f3)', marginBottom: 4 }}>회사 연결 (선택)</div>
               {bCompanySelected ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'var(--snk)', borderRadius: 6, border: '1px solid var(--bd)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', background: 'var(--snk)', borderRadius: 5, border: '1px solid var(--bd)' }}>
                   <span style={{ fontSize: 12, flex: 1 }}>{bCompanySelected.corp_name}</span>
                   <button className="btn sm" style={{ fontSize: 10, padding: '2px 6px', color: 'var(--shf)' }} onClick={() => { setBCompanySelected(null); setBCompanyQ(''); }}>✕</button>
                 </div>
@@ -808,7 +808,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
                   </div>
                   {bSearching && <div style={{ fontSize: 11, color: 'var(--f4)' }}>검색 중…</div>}
                   {bCompanyResults.length > 0 && (
-                    <div style={{ border: '1px solid var(--bd)', borderRadius: 6, overflow: 'hidden' }}>
+                    <div style={{ border: '1px solid var(--bd)', borderRadius: 5, overflow: 'hidden' }}>
                       {bCompanyResults.map(c => (
                         <div key={c.id} className="row hover" style={{ gridTemplateColumns: '1fr', cursor: 'pointer' }}
                           onClick={() => { setBCompanySelected(c); setBCompanyQ(''); setBCompanyResults([]); }}>
@@ -821,8 +821,8 @@ function CreateModal({ onClose }: { onClose: () => void }) {
               )}
             </div>
           </div>
-          {bError   && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '6px 8px', background: 'var(--shb)', borderRadius: 4 }}>{bError}</div>}
-          {bSuccess && <div style={{ fontSize: 11, color: 'var(--slf)', padding: '6px 8px', background: 'rgba(34,197,94,0.08)', borderRadius: 4, border: '1px solid rgba(34,197,94,0.2)' }}>{bSuccess}</div>}
+          {bError   && <div style={{ fontSize: 11, color: 'var(--shf)', padding: '6px 8px', background: 'var(--shb)', borderRadius: 5 }}>{bError}</div>}
+          {bSuccess && <div style={{ fontSize: 11, color: 'var(--slf)', padding: '6px 8px', background: 'var(--slb)', borderRadius: 5, border: '1px solid color-mix(in srgb, var(--slf) 25%, transparent)' }}>{bSuccess}</div>}
           <button className="btn sm" style={{ background: 'var(--hs)', color: 'var(--white)', borderColor: 'var(--hs)' }} onClick={submitBrand} disabled={bSaving}>
             {bSaving ? '등록 중…' : '브랜드 등록'}
           </button>
@@ -1017,7 +1017,7 @@ function MappingDesktopView() {
               <span style={{ fontSize: 9, opacity: 0.7 }}>{showFilters ? '▲' : '▼'}</span>
               필터
               {activeFilterCount > 0 && (
-                <span style={{ background: 'var(--hs)', color: 'var(--white)', borderRadius: 8, fontSize: 9, fontWeight: 700,
+                <span style={{ background: 'var(--hs)', color: 'var(--white)', borderRadius: 7, fontSize: 9, fontWeight: 700,
                   padding: '1px 5px', lineHeight: 1.4 }}>{activeFilterCount}</span>
               )}
             </button>
@@ -1028,7 +1028,7 @@ function MappingDesktopView() {
 
           {/* 필터 패널 */}
           {showFilters && (
-            <div className="col-flex gap-10" style={{ padding: '8px 10px', background: 'var(--snk)', borderRadius: 8, border: '1px solid var(--bd)' }}>
+            <div className="col-flex gap-10" style={{ padding: '8px 10px', background: 'var(--snk)', borderRadius: 7, border: '1px solid var(--bd)' }}>
               {/* DART 상태 */}
               <div className="col-flex gap-4">
                 <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--f4)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>DART</div>
@@ -1084,7 +1084,7 @@ function MappingDesktopView() {
               const isSel = selected?.id === c.id;
               const isChk = checkedIds.has(c.id);
               return (
-                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 6px 5px 8px', borderRadius: 6,
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 6px 5px 8px', borderRadius: 5,
                   background: isSel ? 'var(--hs-soft)' : isChk ? 'var(--snk)' : 'transparent', cursor: 'pointer' }}
                   onClick={() => setSelected(c)}>
                   <input type="checkbox" checked={isChk}

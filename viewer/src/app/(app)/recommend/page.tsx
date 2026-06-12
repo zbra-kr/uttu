@@ -66,7 +66,7 @@ const MODULE_TYPE_BADGE: Record<string, { label: string; hi: boolean }> = {
 
 const AXIS_TICK = { fontSize: 9, fill: 'var(--f4)', fontFamily: 'var(--mono)' } as const;
 const TOOLTIP_STYLE = {
-  contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 4, fontSize: 11, fontFamily: 'var(--mono)' },
+  contentStyle: { background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 11, fontFamily: 'var(--mono)' },
   labelStyle:   { color: 'var(--f3)' },
   itemStyle:    { color: 'var(--f1)' },
 };
@@ -460,10 +460,10 @@ function RecommendHub() {
         {dateMode === 'custom' && (
           <>
             <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-              style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--bd)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+              style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--bd)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
             <span style={{ fontSize: 11, color: 'var(--f4)' }}>~</span>
             <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-              style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--bd)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+              style={{ fontSize: 11, padding: '2px 6px', border: '1px solid var(--bd)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
           </>
         )}
         <div style={{ width: 1, height: 16, background: 'var(--bd)', flexShrink: 0 }} />
@@ -483,16 +483,16 @@ function RecommendHub() {
         <div style={{ width: 1, height: 16, background: 'var(--bd)', flexShrink: 0 }} />
 
         <input type="text" value={filterBrandKw} onChange={e => setFilterBrandKw(e.target.value)}
-          placeholder="브랜드 검색"
-          style={{ width: 100, fontSize: 11, padding: '3px 7px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+          placeholder="브랜드 검색…"
+          style={{ width: 100, fontSize: 11, padding: '3px 7px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
         <input type="text" value={filterProdKw} onChange={e => setFilterProdKw(e.target.value)}
-          placeholder="상품명 검색"
-          style={{ width: 110, fontSize: 11, padding: '3px 7px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+          placeholder="상품명 검색…"
+          style={{ width: 110, fontSize: 11, padding: '3px 7px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
 
         <label style={{ fontSize: 11, color: 'var(--f4)', flexShrink: 0 }}>할인</label>
         <input type="number" value={filterMinDiscount} onChange={e => setFilterMinDiscount(e.target.value)}
           placeholder="최소%" min={0} max={100}
-          style={{ width: 52, fontSize: 11, padding: '3px 6px', border: '0.5px solid var(--bs)', borderRadius: 4, background: 'var(--bg)', color: 'var(--f1)' }} />
+          style={{ width: 52, fontSize: 11, padding: '3px 6px', border: '0.5px solid var(--bs)', borderRadius: 5, background: 'var(--bg)', color: 'var(--f1)' }} />
         <span style={{ fontSize: 10, color: 'var(--f4)' }}>%+</span>
 
         <button className={`btn sm ${filterHideSoldOut ? 'active' : ''}`} onClick={() => setFilterHideSoldOut(v => !v)}>
@@ -1454,7 +1454,7 @@ function RecommendEffect() {
         </div>
         {newWithRank.length > 0 && (
           <span style={{
-            marginLeft: 'auto', fontSize: 11, padding: '2px 8px', borderRadius: 4,
+            marginLeft: 'auto', fontSize: 11, padding: '2px 8px', borderRadius: 5,
             background: 'color-mix(in srgb, var(--hs) 10%, transparent)',
             color: 'var(--hs)', fontWeight: 500,
           }}>

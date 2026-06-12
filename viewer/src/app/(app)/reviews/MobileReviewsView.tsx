@@ -100,7 +100,7 @@ export default function MobileReviewsView() {
                   <div style={{ display: 'flex', gap: 10 }}>
                     {/* 썸네일 */}
                     {thumb && (
-                      <div style={{ width: 60, height: 60, flexShrink: 0, borderRadius: 8, overflow: 'hidden', background: 'var(--snk)', border: '1px solid var(--bd)' }}>
+                      <div style={{ width: 60, height: 60, flexShrink: 0, borderRadius: 7, overflow: 'hidden', background: 'var(--snk)', border: '1px solid var(--bd)' }}>
                         <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.currentTarget as HTMLImageElement).parentElement!.style.display = 'none'; }} />
                       </div>
                     )}

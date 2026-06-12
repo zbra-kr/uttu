@@ -23,7 +23,7 @@ export default function NewsPickList({ picks }: Props) {
             gap: 4,
             padding: '10px 12px',
             border: '0.5px solid var(--bd)',
-            borderRadius: 8,
+            borderRadius: 7,
             textDecoration: 'none',
             color: 'inherit',
             background: 'var(--bg)',
@@ -42,7 +42,7 @@ export default function NewsPickList({ picks }: Props) {
               color: 'var(--f4)',
               background: 'var(--sur)',
               padding: '2px 6px',
-              borderRadius: 4,
+              borderRadius: 5,
               flexShrink: 0,
             }}>
               {pick.source_name}

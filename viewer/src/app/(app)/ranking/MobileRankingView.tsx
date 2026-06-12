@@ -118,7 +118,7 @@ export default function MobileRankingView() {
           style={{
             marginLeft: 'auto', fontSize: 11, fontFamily: 'var(--mono)',
             color: 'var(--f3)', background: 'var(--sur)',
-            border: '1px solid var(--bd)', borderRadius: 6,
+            border: '1px solid var(--bd)', borderRadius: 5,
             padding: '3px 8px', cursor: 'pointer',
           }}
         >
@@ -154,9 +154,9 @@ export default function MobileRankingView() {
 
               {/* 썸네일 */}
               {r.thumbnail_url ? (
-                <img src={r.thumbnail_url} alt="" width={40} height={40} style={{ borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                <img src={r.thumbnail_url} alt="" width={40} height={40} style={{ borderRadius: 5, objectFit: 'cover', flexShrink: 0 }} />
               ) : (
-                <div style={{ width: 40, height: 40, borderRadius: 6, background: 'var(--snk)', flexShrink: 0 }} />
+                <div style={{ width: 40, height: 40, borderRadius: 5, background: 'var(--snk)', flexShrink: 0 }} />
               )}
 
               {/* 텍스트 */}
@@ -203,7 +203,7 @@ export default function MobileRankingView() {
             <div style={{ display: 'flex', gap: 6 }}>
               {GENDER_OPTS.map(o => (
                 <button key={o.value} onClick={() => setPendingGf(o.value)} style={{
-                  flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  flex: 1, padding: '8px 0', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer',
                   background: pendingGf === o.value ? 'var(--hs-soft)' : 'var(--sur)',
                   color: pendingGf === o.value ? 'var(--hs)' : 'var(--f2)',
                   border: `1px solid ${pendingGf === o.value ? 'var(--hs)' : 'var(--bd)'}`,
@@ -216,7 +216,7 @@ export default function MobileRankingView() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {AGE_OPTS.map(o => (
                 <button key={o.value} onClick={() => setPendingAge(o.value)} style={{
-                  padding: '8px 12px', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', textAlign: 'left',
+                  padding: '8px 12px', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', textAlign: 'left',
                   background: pendingAge === o.value ? 'var(--hs-soft)' : 'var(--sur)',
                   color: pendingAge === o.value ? 'var(--hs)' : 'var(--f2)',
                   border: `1px solid ${pendingAge === o.value ? 'var(--hs)' : 'var(--bd)'}`,

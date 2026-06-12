@@ -105,7 +105,7 @@ export default function MobileRecommendView() {
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--f4)' }} />
               <YAxis tick={{ fontSize: 10, fill: 'var(--f4)' }} domain={[0, 'auto']} />
               <Tooltip
-                contentStyle={{ background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 6, fontSize: 11 }}
+                contentStyle={{ background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 11 }}
                 formatter={(v: unknown) => [`${v}개`, '노출 상품']}
               />
               <Line
@@ -132,7 +132,7 @@ export default function MobileRecommendView() {
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--f1)', flex: 1 }}>
                 {m.title ?? '(제목 없음)'}
               </span>
-              <span style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--f4)', background: 'var(--snk)', padding: '1px 5px', borderRadius: 4 }}>
+              <span style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--f4)', background: 'var(--snk)', padding: '1px 5px', borderRadius: 5 }}>
                 {m.module_type === 'CAROUSEL_TWOROW_DYNAMIC_TAB' ? 'TAB' : 'STD'}
               </span>
             </div>

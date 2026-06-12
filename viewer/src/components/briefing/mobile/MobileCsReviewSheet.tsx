@@ -79,7 +79,7 @@ export default function MobileCsReviewSheet({ filter, briefingDate, onClose }: P
 
       {/* scrim */}
       <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(28,25,23,.45)', zIndex: 80 }}
+        style={{ position: 'fixed', inset: 0, background: 'var(--img-overlay)', zIndex: 80 }}
         onClick={onClose}
       />
 
@@ -109,7 +109,7 @@ export default function MobileCsReviewSheet({ filter, briefingDate, onClose }: P
           <button
             onClick={onClose}
             style={{
-              width: 28, height: 28, border: '1px solid var(--bs)', borderRadius: 8,
+              width: 28, height: 28, border: '1px solid var(--bs)', borderRadius: 7,
               background: 'var(--snk)', display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', color: 'var(--f3)', padding: 0,
             }}

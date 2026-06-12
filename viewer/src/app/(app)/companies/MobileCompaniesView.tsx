@@ -74,7 +74,7 @@ export default function MobileCompaniesView() {
           value={inputVal}
           onChange={e => handleInput(e.target.value)}
           style={{
-            width: '100%', padding: '9px 12px', borderRadius: 8,
+            width: '100%', padding: '9px 12px', borderRadius: 7,
             border: '1px solid var(--bd)', background: 'var(--sur)',
             color: 'var(--f1)', fontSize: 13, outline: 'none', boxSizing: 'border-box',
             fontFamily: 'var(--sans)',
@@ -152,7 +152,7 @@ export default function MobileCompaniesView() {
             onClick={() => setPage(p => Math.max(0, p - 1))}
             disabled={page === 0}
             style={{
-              padding: '6px 14px', borderRadius: 8, fontSize: 12, fontFamily: 'var(--mono)',
+              padding: '6px 14px', borderRadius: 7, fontSize: 12, fontFamily: 'var(--mono)',
               border: '1px solid var(--bd)', background: 'var(--sur)',
               color: page === 0 ? 'var(--f4)' : 'var(--f1)',
               cursor: page === 0 ? 'default' : 'pointer',
@@ -167,7 +167,7 @@ export default function MobileCompaniesView() {
             onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
             disabled={page >= totalPages - 1}
             style={{
-              padding: '6px 14px', borderRadius: 8, fontSize: 12, fontFamily: 'var(--mono)',
+              padding: '6px 14px', borderRadius: 7, fontSize: 12, fontFamily: 'var(--mono)',
               border: '1px solid var(--bd)', background: 'var(--sur)',
               color: page >= totalPages - 1 ? 'var(--f4)' : 'var(--f1)',
               cursor: page >= totalPages - 1 ? 'default' : 'pointer',
