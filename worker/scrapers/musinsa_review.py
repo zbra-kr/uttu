@@ -571,8 +571,7 @@ class ReviewScraper(BaseScraper):
         from worker.tasks.schedule_notify import send_done as _notify_done
         from worker.tasks.schedule_notify import send_progress as _notify
 
-        daily_cutoff = None if (force_full or force_smart) else (datetime.now(KST) - timedelta(hours=18)).isoformat()
-        groups, standalones = self._get_groups_for_smart(daily_cutoff)
+        groups, standalones = self._get_groups_for_smart(None)
 
         if limit:
             groups = groups[:max(1, limit // 2)]
@@ -674,7 +673,8 @@ class ReviewScraper(BaseScraper):
     def _get_groups_for_smart(self, daily_cutoff: str | None) -> tuple[list[dict], list[dict]]:
         """
         스마트 수집 대상을 그룹 vs 단독 상품으로 분리.
-        daily_cutoff=None 이면 review_checked_at 필터 없이 전체 대상.
+        daily_cutoff 인자는 하위 호환을 위해 남겨두되 사용하지 않음.
+        is_own=True 전체 상품 대상 (review_count, review_checked_at 필터 없음).
         """
         all_products: list[dict] = []
         offset = 0
@@ -683,10 +683,7 @@ class ReviewScraper(BaseScraper):
                 self.client.table("products")
                 .select("id, musinsa_no, name, review_count, review_checked_at, color_group_id")
                 .eq("is_own", True)
-                .gt("review_count", 0)
             )
-            if daily_cutoff:
-                q = q.or_(f"review_checked_at.is.null,review_checked_at.lt.{daily_cutoff}")
             rows = q.range(offset, offset + 999).execute().data or []
             all_products.extend(rows)
             if len(rows) < 1000:

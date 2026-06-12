@@ -59,7 +59,7 @@ export const DB_SCHEMA = `
 - promotion_id→promotions.id, product_id→products.id
 - musinsa_no, discount_rate, final_price, snapshot_date
 
-### reviews — 자사 리뷰 (⚠️ 닉네임/사용자ID 없음, 절대 조회 금지)
+### reviews — 자사 리뷰 (닉네임·사용자ID 미수집, review_text·rating 조회 가능)
 - product_id→products.id, rating(1~5), review_text
 - review_date, helpful_count, has_image(boolean)
 
