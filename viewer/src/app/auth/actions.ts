@@ -56,9 +56,10 @@ export async function signUp(
     return { error: error.message };
   }
 
-  // Email Enumeration Protection ON: 이미 확인된 이메일 → user: null 반환
+  // Email Enumeration Protection ON: signUp은 신규/기존 이메일 모두 user: null 반환
+  // — 이 경우 성공으로 처리 (인증 메일 발송 또는 무응답, 사용자는 구분 불가)
   if (!data.user) {
-    return { error: '이미 가입된 이메일입니다. 로그인해 주세요.' };
+    return { success: '가입 완료! 이메일 인증 후 로그인해 주세요.' };
   }
 
   // Email Enumeration Protection OFF: 이미 확인된 이메일 → identities: [] 반환

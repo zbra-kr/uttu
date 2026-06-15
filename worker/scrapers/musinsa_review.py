@@ -421,7 +421,7 @@ class ReviewScraper(BaseScraper):
         product_idx / product_total: 진행 상황 추적용 (0이면 로그 생략).
         반환값: 실제 새로 삽입된 리뷰 수.
         """
-        cutoff_date: date = date.today() - timedelta(days=5)  # 5일치 윈도우
+        cutoff_date: date = date.today() - timedelta(days=30)  # 30일치 윈도우
         page = 1
         total_inserted = 0
         review_total_count = 0
@@ -741,7 +741,7 @@ class ReviewScraper(BaseScraper):
         """
         product_map = self._get_group_product_map(color_group_id)
 
-        cutoff_date: date = date.today() - timedelta(days=5)  # 5일치 윈도우
+        cutoff_date: date = date.today() - timedelta(days=30)  # 30일치 윈도우
         page = 1
         total_inserted = 0
         api_total = 0
@@ -760,7 +760,7 @@ class ReviewScraper(BaseScraper):
                 api_total = data.get("total") or (total_pages * PAGE_SIZE)
                 logger.info(
                     f"[그룹{group_idx}/{group_total}] cg={color_group_id} rep={rep_no} "
-                    f"api={api_total:,} mode={'전수' if force_full else '5일'}"
+                    f"api={api_total:,} mode={'전수' if force_full else '30일'}"
                 )
 
             if not items:
