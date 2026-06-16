@@ -1064,6 +1064,22 @@ export interface BrandTrendRow {
   counts: { brand: string; top100: number }[];
 }
 
+// ── 회사 상품 기본 정보 (products 테이블 기반, 랭킹 데이터 없어도 동작) ──────
+export interface CompanyProductsBasic {
+  total_count: number;
+  by_brand: { brand_name: string; product_count: number; avg_score: number | null; total_reviews: number }[];
+  by_category: { name: string; count: number }[];
+  top_products: { musinsa_no: string; name: string; brand_name: string; category_d2_name: string | null; review_count: number; satisfaction_score: number | null }[];
+}
+
+export async function fetchCompanyProductsBasic(brandNames: string[]): Promise<CompanyProductsBasic | null> {
+  if (!brandNames.length) return null;
+  const { data, error } = await supabase.rpc('get_company_products_basic', { p_brand_names: brandNames });
+  if (error || !data) return null;
+  const r = data as CompanyProductsBasic;
+  return r.total_count > 0 ? r : null;
+}
+
 export async function fetchCompanyBrandTrend(brandNames: string[], days = 30): Promise<BrandTrendRow[]> {
   if (brandNames.length <= 1) return [];
   const fromDate = kstDaysAgo(days);
@@ -1353,7 +1369,7 @@ async function fetchBrandSnapshot(opts: {
     p_gender_filter: opts.genderFilter,
     p_age_filter:    opts.ageFilter,
     p_before_date:   opts.beforeDate ?? '9999-12-31',
-  });
+  }).limit(3000);
   if (error || !data?.length) return null;
   const rows = data as (BrandSnapshotAgg & { snapshot_date: string; brand_name: string })[];
   const date = rows[0].snapshot_date;

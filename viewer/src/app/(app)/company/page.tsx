@@ -19,10 +19,12 @@ import {
   fetchCompanyFinancials, fetchCompanyDisclosures,
   fetchCompanyRankStats, fetchCompanyTop100Trend,
   fetchCompanyProductDist, fetchCompanyBrandTrend,
+  fetchCompanyProductsBasic,
   fetchChildCompanies, fetchParentCompany,
   CATEGORY_MAP,
   type CompanyInfo, type CompanyBrand, type DartFinancial, type DartDisclosure,
   type CompanyRankStats, type CompanyProductDist, type BrandTrendRow,
+  type CompanyProductsBasic,
   type CompanyChild,
 } from '@/lib/queries';
 import { getFundingRounds, type FundingRound } from '@/lib/queries-funding';
@@ -498,16 +500,86 @@ function GenderAgeHeatmap({ data }: { data: { gender: string; age: string; sku_c
   );
 }
 
-function TabRanking({ rankStats, top100Trend, brandTrend, productDist, rankLoading, brands }: {
+function TabRanking({ rankStats, top100Trend, brandTrend, productDist, productsBasic, rankLoading, brands }: {
   rankStats: CompanyRankStats | null;
   top100Trend: { date: string; top100_count: number }[];
   brandTrend: BrandTrendRow[];
   productDist: CompanyProductDist | null;
+  productsBasic: CompanyProductsBasic | null;
   rankLoading: boolean;
   brands: CompanyBrand[];
 }) {
   if (rankLoading) return <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>랭킹 데이터 로딩 중…</div>;
-  if (!rankStats || rankStats.sku_count === 0) return <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>무신사 랭킹 진입 데이터가 없습니다.</div>;
+
+  if (!rankStats || rankStats.sku_count === 0) {
+    return (
+      <div className="col-flex gap-14">
+        <div style={{ padding: '10px 14px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 11, color: 'var(--f4)' }}>
+          무신사 TOP100 랭킹 집계 없음 — 상품 마스터 기준으로 표시합니다.
+        </div>
+        {!productsBasic
+          ? <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+              {brands.length > 0 ? '상품 상세가 아직 수집되지 않았습니다.' : '등록된 브랜드·상품이 없습니다.'}
+            </div>
+          : (
+            <>
+              <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                {/* 브랜드별 보유 상품 (복수 브랜드일 때만 표시) */}
+                {productsBasic.by_brand.length > 1 && (
+                  <SecPanel title={`보유 상품 현황 (총 ${productsBasic.total_count.toLocaleString()}개)`}>
+                    <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
+                      <div className="row head" style={{ gridTemplateColumns: '1fr 44px 60px 50px' }}>
+                        <span>브랜드</span><span className="cell-r">상품</span><span className="cell-r">리뷰수</span><span className="cell-r">만족도</span>
+                      </div>
+                      {productsBasic.by_brand.map((b, i) => (
+                        <div key={b.brand_name} className={`row ${i % 2 ? 'alt' : ''}`} style={{ gridTemplateColumns: '1fr 44px 60px 50px' }}>
+                          <span style={{ fontSize: 12 }}>{b.brand_name}</span>
+                          <span className="cell-r mono" style={{ fontSize: 11 }}>{b.product_count.toLocaleString()}</span>
+                          <span className="cell-r mono dim" style={{ fontSize: 10 }}>{b.total_reviews > 0 ? b.total_reviews.toLocaleString() : '—'}</span>
+                          <span className="cell-r mono" style={{ fontSize: 11, color: b.avg_score != null ? 'var(--hs)' : 'var(--f4)' }}>
+                            {b.avg_score != null ? Number(b.avg_score).toFixed(1) : '—'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </SecPanel>
+                )}
+                <SecPanel title="카테고리 분포">
+                  {productsBasic.by_category.length > 0
+                    ? <HorizBars data={productsBasic.by_category.map(c => ({ name: c.name, value: c.count }))} labelWidth={80} rowH={22} />
+                    : <div style={{ padding: '40px 0', textAlign: 'center', fontSize: 11, color: 'var(--f4)' }}>—</div>}
+                </SecPanel>
+              </div>
+              {productsBasic.top_products.length > 0 && (
+                <SecPanel title="강점 상품 · 리뷰 상위">
+                  <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
+                    <div className="row head" style={{ gridTemplateColumns: '1fr 80px 80px 54px 46px' }}>
+                      <span>상품명</span><span>브랜드</span><span>카테고리</span><span className="cell-r">리뷰</span><span className="cell-r">만족도</span>
+                    </div>
+                    {productsBasic.top_products.map((p, i) => (
+                      <a key={p.musinsa_no}
+                        href={`https://www.musinsa.com/products/${p.musinsa_no}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className={`row hover ${i % 2 ? 'alt' : ''}`}
+                        style={{ gridTemplateColumns: '1fr 80px 80px 54px 46px', textDecoration: 'none', color: 'inherit' }}>
+                        <span style={{ fontSize: 12, color: 'var(--hs)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                        <span className="dim" style={{ fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.brand_name}</span>
+                        <span className="dim" style={{ fontSize: 10 }}>{p.category_d2_name ?? '—'}</span>
+                        <span className="cell-r mono" style={{ fontSize: 11 }}>{p.review_count.toLocaleString()}</span>
+                        <span className="cell-r mono" style={{ fontSize: 11, color: p.satisfaction_score != null ? 'var(--slf)' : 'var(--f4)' }}>
+                          {p.satisfaction_score != null ? Number(p.satisfaction_score).toFixed(1) : '—'}
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                </SecPanel>
+              )}
+            </>
+          )
+        }
+      </div>
+    );
+  }
 
   const catData = rankStats.by_category.slice(0, 8).map(c => ({ name: CATEGORY_MAP[c.category_code] ?? c.category_code, value: c.sku_count }));
   const hasMultiBrand = rankStats.by_brand.length > 1;
@@ -1013,6 +1085,7 @@ function CompanyPageInner() {
   const [top100Trend,   setTop100Trend]   = React.useState<{ date: string; top100_count: number }[]>([]);
   const [productDist,   setProductDist]   = React.useState<CompanyProductDist | null>(null);
   const [brandTrend,    setBrandTrend]    = React.useState<BrandTrendRow[]>([]);
+  const [productsBasic, setProductsBasic] = React.useState<CompanyProductsBasic | null>(null);
   const [fundingRounds, setFundingRounds] = React.useState<FundingRound[]>([]);
   const [childCompanies, setChildCompanies] = React.useState<CompanyChild[]>([]);
   const [parentCompany,  setParentCompany]  = React.useState<{ id: string; corp_name: string } | null>(null);
@@ -1030,7 +1103,7 @@ function CompanyPageInner() {
       return;
     }
     setLoading(true);
-    setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]);
+    setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]); setProductsBasic(null);
     setFundingRounds([]); setChildCompanies([]); setParentCompany(null);
     Promise.all([
       fetchCompanyInfo(idFromUrl),
@@ -1060,13 +1133,14 @@ function CompanyPageInner() {
       if (allBrands.length > 0) {
         setRankLoading(true);
         const brandNames = allBrands.map((b: { name: string }) => b.name);
-        const [rs, trend, pd, bt] = await Promise.all([
+        const [rs, trend, pd, bt, pb] = await Promise.all([
           fetchCompanyRankStats(brandNames),
           fetchCompanyTop100Trend(brandNames, 30),
           fetchCompanyProductDist(brandNames),
           allBrands.length > 1 ? fetchCompanyBrandTrend(brandNames, 30) : Promise.resolve([]),
+          fetchCompanyProductsBasic(brandNames),
         ]);
-        setRankStats(rs); setTop100Trend(trend); setProductDist(pd); setBrandTrend(bt);
+        setRankStats(rs); setTop100Trend(trend); setProductDist(pd); setBrandTrend(bt); setProductsBasic(pb);
         setRankLoading(false);
       }
     }).catch(() => setLoading(false));
@@ -1141,9 +1215,13 @@ function CompanyPageInner() {
       </div>
 
       {/* 상단 KPI 카드 */}
-      {!loading && (rankStats || rankLoading) && (
+      {!loading && (rankStats || rankLoading || productsBasic || totalBrandCount > 0) && (
         <div className="row-flex gap-8" style={{ alignItems: 'stretch' }}>
-          <KpiCard label="랭킹 진입 SKU" value={rankLoading ? '…' : rankStats?.sku_count.toLocaleString() ?? '—'} sub={rankStats?.snapshot_date} />
+          <KpiCard
+            label={rankStats ? '랭킹 진입 SKU' : '등록 상품'}
+            value={rankLoading ? '…' : rankStats ? rankStats.sku_count.toLocaleString() : (productsBasic?.total_count.toLocaleString() ?? '—')}
+            sub={rankStats?.snapshot_date ?? (productsBasic ? '마스터 기준' : undefined)}
+          />
           <KpiCard label="TOP 100" value={rankLoading ? '…' : rankStats?.top100_count.toLocaleString() ?? '—'} accent />
           <KpiCard label="평균 랭킹" value={rankLoading ? '…' : rankStats?.avg_rank ? `${rankStats.avg_rank}위` : '—'} />
           <KpiCard label="최고 순위 상품" value={rankLoading ? '…' : rankStats?.best_rank ? `#${rankStats.best_rank}` : '—'} sub={rankStats?.best_product_name} />
@@ -1155,7 +1233,7 @@ function CompanyPageInner() {
       <div className="tabs">
         {([
           ['overview',    '개요',     null],
-          ['ranking',     '랭킹·상품', rankStats?.sku_count ? `${rankStats.sku_count} SKU` : null],
+          ['ranking',     '랭킹·상품', rankStats?.sku_count ? `${rankStats.sku_count} SKU` : productsBasic?.total_count ? `${productsBasic.total_count}개` : null],
           ['financial',   '재무',     financials.length ? `${financials.length}개년` : null],
           ['disclosure',  '공시',     disclosures.length || null],
           ['funding',     '투자정보',  fundingRounds.length || null],
@@ -1174,7 +1252,7 @@ function CompanyPageInner() {
       ) : (
         <>
           {tab === 'overview'    && <TabOverview info={info} brands={brands} financials={financials} rankStats={rankStats} top100Trend={top100Trend} latestRceptNo={disclosures[0]?.rcept_no ?? null} childCompanies={childCompanies} onSelectCompany={handleSelectCompany} onSelectBrand={(id) => router.push(`/brand?id=${id}`)} />}
-          {tab === 'ranking'     && <TabRanking rankStats={rankStats} top100Trend={top100Trend} brandTrend={brandTrend} productDist={productDist} rankLoading={rankLoading} brands={brands} />}
+          {tab === 'ranking'     && <TabRanking rankStats={rankStats} top100Trend={top100Trend} brandTrend={brandTrend} productDist={productDist} productsBasic={productsBasic} rankLoading={rankLoading} brands={brands} />}
           {tab === 'financial'   && <TabFinancial financials={financials} top100Trend={top100Trend} rankStats={rankStats} />}
           {tab === 'disclosure'  && <TabDisclosure disclosures={disclosures} />}
           {tab === 'funding'     && <TabFunding companyId={idFromUrl} fundingLastCollectedAt={info.funding_last_collected_at ?? null} rounds={fundingRounds} briefMd={info.funding_brief_md ?? null} briefAt={info.funding_brief_at ?? null} onRefresh={handleFundingDone} />}

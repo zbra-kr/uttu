@@ -4,10 +4,12 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import {
   fetchCompanyInfo, fetchCompanyBrands, fetchCompanyFinancials, fetchCompanyDisclosures,
   fetchCompanyRankStats, fetchCompanyTop100Trend, fetchCompanyProductDist, fetchCompanyBrandTrend,
+  fetchCompanyProductsBasic,
   fetchChildCompanies,
   CATEGORY_MAP,
   type CompanyInfo, type CompanyBrand, type DartFinancial, type DartDisclosure,
   type CompanyRankStats, type CompanyProductDist, type BrandTrendRow, type CompanyChild,
+  type CompanyProductsBasic,
 } from '@/lib/queries';
 import { getFundingRounds, type FundingRound } from '@/lib/queries-funding';
 import { FundingCollectButton } from '@/components/uttu/funding-collect-button';
@@ -352,13 +354,76 @@ function TabOverview({
 }
 
 function TabRanking({
-  rankStats, top100Trend, brandTrend, productDist, rankLoading,
+  rankStats, top100Trend, brandTrend, productDist, productsBasic, rankLoading,
 }: {
   rankStats: CompanyRankStats | null; top100Trend: { date: string; top100_count: number }[];
-  brandTrend: BrandTrendRow[]; productDist: CompanyProductDist | null; rankLoading: boolean;
+  brandTrend: BrandTrendRow[]; productDist: CompanyProductDist | null;
+  productsBasic: CompanyProductsBasic | null; rankLoading: boolean;
 }) {
   if (rankLoading) return <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 13 }}>랭킹 데이터 로딩 중…</div>;
-  if (!rankStats || rankStats.sku_count === 0) return <MobileEmptyState icon="📊" title="무신사 랭킹 진입 데이터가 없습니다" />;
+
+  if (!rankStats || rankStats.sku_count === 0) {
+    if (!productsBasic) return <MobileEmptyState icon="📊" title="무신사 랭킹·상품 데이터가 없습니다" />;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ padding: '10px 14px', background: 'var(--snk)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 12, color: 'var(--f4)' }}>
+          무신사 TOP100 랭킹 집계 없음 — 상품 마스터 기준으로 표시합니다.
+        </div>
+        {/* 카테고리 분포 */}
+        {productsBasic.by_category.length > 0 && (
+          <Section title="카테고리 분포">
+            {(() => {
+              const max = productsBasic.by_category[0].count || 1;
+              return productsBasic.by_category.map(c => <HorizBar key={c.name} name={c.name} value={c.count} max={max} />);
+            })()}
+          </Section>
+        )}
+        {/* 강점 상품 */}
+        {productsBasic.top_products.length > 0 && (
+          <Section title="강점 상품 · 리뷰 상위">
+            {productsBasic.top_products.map((p, i) => (
+              <div key={p.musinsa_no} style={{
+                paddingTop: i > 0 ? 10 : 0, marginTop: i > 0 ? 10 : 0,
+                borderTop: i > 0 ? '1px solid var(--bd)' : 'none',
+              }}>
+                <a href={`https://www.musinsa.com/products/${p.musinsa_no}`}
+                  target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 13, color: 'var(--hs)', textDecoration: 'none', fontWeight: 500 }}>
+                  {p.name}
+                </a>
+                <div style={{ fontSize: 11, color: 'var(--f4)', marginTop: 2, display: 'flex', gap: 8 }}>
+                  <span>{p.brand_name}</span>
+                  {p.category_d2_name && <span>{p.category_d2_name}</span>}
+                  <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', color: 'var(--f3)' }}>
+                    리뷰 {p.review_count.toLocaleString()}
+                    {p.satisfaction_score != null && ` · ${Number(p.satisfaction_score).toFixed(1)}점`}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </Section>
+        )}
+        {/* 브랜드별 현황 (복수일 때만) */}
+        {productsBasic.by_brand.length > 1 && (
+          <Section title={`보유 상품 현황 (총 ${productsBasic.total_count.toLocaleString()}개)`}>
+            {productsBasic.by_brand.map((b, i) => (
+              <div key={b.brand_name} style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                paddingTop: i > 0 ? 8 : 0, marginTop: i > 0 ? 8 : 0,
+                borderTop: i > 0 ? '1px solid var(--bd)' : 'none',
+              }}>
+                <div style={{ flex: 1, fontSize: 13, color: 'var(--f1)' }}>{b.brand_name}</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--f3)' }}>{b.product_count}개</div>
+                {b.avg_score != null && (
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--hs)' }}>{Number(b.avg_score).toFixed(1)}점</div>
+                )}
+              </div>
+            ))}
+          </Section>
+        )}
+      </div>
+    );
+  }
 
   const catData = rankStats.by_category.slice(0, 8);
   const catMax = catData[0]?.sku_count || 1;
@@ -825,6 +890,7 @@ export default function MobileCompanyDetailView() {
   const [top100Trend,   setTop100Trend]   = useState<{ date: string; top100_count: number }[]>([]);
   const [productDist,   setProductDist]   = useState<CompanyProductDist | null>(null);
   const [brandTrend,    setBrandTrend]    = useState<BrandTrendRow[]>([]);
+  const [productsBasic, setProductsBasic] = useState<CompanyProductsBasic | null>(null);
   const [fundingRounds,  setFundingRounds]  = useState<FundingRound[]>([]);
   const [childCompanies, setChildCompanies] = useState<CompanyChild[]>([]);
   const [loading,       setLoading]       = useState(true);
@@ -834,7 +900,7 @@ export default function MobileCompanyDetailView() {
   useEffect(() => {
     if (!companyId) return;
     setLoading(true);
-    setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]);
+    setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]); setProductsBasic(null);
     setFundingRounds([]); setChildCompanies([]);
     Promise.all([
       fetchCompanyInfo(companyId),
@@ -853,13 +919,14 @@ export default function MobileCompanyDetailView() {
       if (allBrands.length > 0) {
         setRankLoading(true);
         const brandNames = allBrands.map((b: { name: string }) => b.name);
-        const [rs, trend, pd, bt] = await Promise.all([
+        const [rs, trend, pd, bt, pb] = await Promise.all([
           fetchCompanyRankStats(brandNames),
           fetchCompanyTop100Trend(brandNames, 30),
           fetchCompanyProductDist(brandNames),
           allBrands.length > 1 ? fetchCompanyBrandTrend(brandNames, 30) : Promise.resolve([]),
+          fetchCompanyProductsBasic(brandNames),
         ]);
-        setRankStats(rs); setTop100Trend(trend); setProductDist(pd); setBrandTrend(bt);
+        setRankStats(rs); setTop100Trend(trend); setProductDist(pd); setBrandTrend(bt); setProductsBasic(pb);
         setRankLoading(false);
       }
     }).catch(() => setLoading(false));
@@ -935,7 +1002,7 @@ export default function MobileCompanyDetailView() {
         <TabOverview info={info} brands={brands} financials={financials} rankStats={rankStats} top100Trend={top100Trend} router={router} />
       )}
       {tab === 'ranking' && (
-        <TabRanking rankStats={rankStats} top100Trend={top100Trend} brandTrend={brandTrend} productDist={productDist} rankLoading={rankLoading} />
+        <TabRanking rankStats={rankStats} top100Trend={top100Trend} brandTrend={brandTrend} productDist={productDist} productsBasic={productsBasic} rankLoading={rankLoading} />
       )}
       {tab === 'financial' && (
         <TabFinancial financials={financials} top100Trend={top100Trend} />
