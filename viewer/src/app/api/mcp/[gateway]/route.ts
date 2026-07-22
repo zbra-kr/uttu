@@ -11,31 +11,33 @@ const NOT_FOUND = new Response(null, { status: 404 });
 
 function verifyGatewaySecret(incoming: string): boolean {
   const expected = process.env.MCP_GATEWAY_SECRET ?? '';
-  if (!expected) return false;
-  // 길이가 다르면 timingSafeEqual이 throw하므로 먼저 체크
-  if (incoming.length !== expected.length) return false;
+  if (!expected || incoming.length !== expected.length) return false;
   return timingSafeEqual(
     Buffer.from(incoming, 'utf8'),
     Buffer.from(expected, 'utf8'),
   );
 }
 
-// ─── 거부 로깅 (IP·경로 8자리 해시만, 전체 값 로깅 금지) ──────────────────
+// ─── 경로 해시 (secret 유출 방지 — 8자리만) ────────────────────────────────
 
-function shortHash(value: string): string {
-  return createHash('sha256').update(value).digest('hex').slice(0, 8);
+function pathHash(gateway: string): string {
+  return createHash('sha256').update(`/api/mcp/${gateway}`).digest('hex').slice(0, 8);
 }
 
-function logRejection(reason: 'secret' | 'ip', req: NextRequest, gateway: string): void {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown';
-  console.warn(
-    `[mcp-gateway] reject reason=${reason}` +
-    ` ip_hash=${shortHash(ip)}` +
-    ` path_hash=${shortHash(`/api/mcp/${gateway}`)}`,
-  );
+// ─── MCP 요청에서 method 추출 (성공 로깅용) ────────────────────────────────
+
+async function peekMcpMethod(req: NextRequest): Promise<string> {
+  try {
+    const body = await req.clone().json();
+    const method: string = body?.method ?? 'unknown';
+    if (method === 'tools/call') return `tools/call:${body?.params?.name ?? '?'}`;
+    return method;
+  } catch {
+    return req.method === 'GET' ? 'sse-connect' : 'unknown';
+  }
 }
 
-// ─── MCP 핸들러 (lazy init — env var은 cold start 후 확정) ─────────────────
+// ─── MCP 핸들러 (lazy init) ────────────────────────────────────────────────
 
 let _handler: ReturnType<typeof createUttuMcpHandler> | null = null;
 
@@ -56,19 +58,28 @@ async function handler(
 ): Promise<Response> {
   const { gateway } = params;
 
-  // 1. secret 검증 — 불일치 시 404 (경로 존재 자체를 숨김)
+  // 1. secret 검증
   if (!verifyGatewaySecret(gateway)) {
-    logRejection('secret', req, gateway);
+    // path_hash만 로깅 — secret 값 자체는 절대 기록 금지
+    console.warn(`[mcp-gateway] reject reason=bad_secret path_hash=${pathHash(gateway)}`);
     return NOT_FOUND;
   }
 
-  // 2. IP 대역 검증 — 불일치 시 404
-  if (!isAnthropicEgress(req)) {
-    logRejection('ip', req, gateway);
+  // 2. IP 대역 검증
+  const egress = isAnthropicEgress(req);
+  if (!egress.allowed) {
+    // IP 전체 기록 (Vercel 로그는 내부용 인프라)
+    const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
+    console.warn(
+      `[mcp-gateway] reject reason=${egress.reason} ip=${ip} path_hash=${pathHash(gateway)}`,
+    );
     return NOT_FOUND;
   }
 
-  // 3. MCP 처리
+  // 3. 성공 — IP + 요청 메서드 로깅
+  const method = await peekMcpMethod(req);
+  console.info(`[mcp-gateway] allow ip=${egress.ip} method=${method}`);
+
   return getHandler()(req);
 }
 
