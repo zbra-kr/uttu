@@ -44,6 +44,7 @@ const ROUTES: RouteItem[] = [
   { id: 'admin-notifications', path: '/admin/notifications', label: '알림 모니터링',Icon: IcBell,      parent: 'admin', adminOnly: true },
   { id: 'admin-mapping',       path: '/admin/mapping',       label: 'DART 매핑',    Icon: IcMapping,   parent: 'admin', adminOnly: true },
   { id: 'admin-anomalies',     path: '/admin/anomalies',     label: '이상탐지 룰',  Icon: IcFlag,      parent: 'admin', adminOnly: true },
+  { id: 'admin-guides',        path: '/admin/guides',        label: '가이드 관리',  Icon: IcBook,      parent: 'admin', adminOnly: true },
   { id: 'admin-audit',         path: '/admin/audit',         label: '감사 로그',    Icon: IcBook,      parent: 'admin', adminOnly: true },
 ];
 

@@ -236,8 +236,8 @@ export default function ShellClient({ children }: { children: React.ReactNode })
             </footer>
           </div>
         </main>
-        <AiPanel open={aipOpen} onToggle={toggleAip} context={context} route={pathname} />
       </div>
+      <AiPanel open={aipOpen} onToggle={toggleAip} context={context} route={pathname} />
       <CmdK open={cmdkOpen} onClose={() => setCmdkOpen(false)} />
     </>
   );

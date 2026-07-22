@@ -4,7 +4,7 @@
 - 1시간마다 전체 현황 요약
 - 이상탐지·외부뉴스·브리핑: 의존성 기반 자동 실행
   ranking+brand_ranking → detect
-  detect+full_collection+reviews → news_collector → briefing_writer
+  detect+full_collection → news_collector → briefing_writer (리뷰 수집 완료 불필요)
 """
 import os, sys, re, time, subprocess
 from datetime import datetime
@@ -114,8 +114,9 @@ while True:
             tg("⏰ full_collection 타임아웃 (6h) — 강제 통과", f"경과 {fc_elapsed}분")
             notified.add("full_collection")
 
-    # ── detect + full_collection + reviews 완료 → 뉴스·브리핑 순차 실행 ────────
-    if {"detect", "full_collection", "reviews"} <= notified and "news" not in notified:
+    # ── detect + full_collection 완료 → 뉴스·브리핑 순차 실행 ─────────────────
+    # 브리핑은 review_date=어제 데이터를 쓰므로 오늘 리뷰 수집 완료를 기다릴 필요 없음
+    if {"detect", "full_collection"} <= notified and "news" not in notified:
 
         # [a] 외부 뉴스 수집
         if log_done("news"):

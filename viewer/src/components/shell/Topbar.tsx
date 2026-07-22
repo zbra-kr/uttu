@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { IcSearch, IcBell, IcSpark, IcChevL } from '../ui/icons';
 import { fetchUnreadCount } from '@/lib/queries-me';
 import InboxList from '../me/InboxList';
+import HelpButton from '../help/HelpButton';
 
 interface TopbarProps {
   breadcrumb: string[];
@@ -104,6 +105,7 @@ export default function Topbar({ breadcrumb, theme, onTheme, aipOpen, onToggleAi
           </div>
         )}
       </div>
+      <HelpButton />
       {!aipOpen && (
         <button className="icon-btn" onClick={onToggleAip} title="UTTU AI 열기"
           style={{ background: 'var(--hs-soft)', color: 'var(--hs)', borderColor: 'var(--hs)' }}>

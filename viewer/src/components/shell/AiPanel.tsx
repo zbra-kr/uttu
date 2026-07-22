@@ -387,39 +387,29 @@ export default function AiPanel({ open, onToggle, context, route, mobileMode }: 
     }
   };
 
-  // ── 닫힌 상태 ────────────────────────────────────────────────────────────────
-  if (!open) {
-    if (mobileMode) return null;
-    return (
-      <aside className="aip collapsed" onClick={onToggle} title="UTTU AI 열기" style={{ cursor: 'pointer' }}>
-        <div className="aip-head">
-          <button className="toggle" title="UTTU AI"><IcChevL /></button>
-        </div>
-        <div className="aip-rail">
-          <span className="badge">AI</span>
-          <span className="vlabel">UTTU · ASK</span>
-        </div>
-      </aside>
-    );
-  }
+  if (mobileMode && !open) return null;
 
   const quickPrompts = QUICK_PROMPTS_BY_ROUTE[route] ?? QUICK_PROMPTS_BY_ROUTE['/'];
 
   const fsStyle: React.CSSProperties = mobileMode ? {
-    position: 'fixed',
     top: 0, bottom: 0, left: 0, right: 0,
     zIndex: 100,
     width: '100%', maxWidth: 'none', borderLeft: 'none',
+    transform: 'translateX(0)',
   } : fullscreen ? {
-    position: 'fixed',
     top: 0, bottom: 0,
     left: 'var(--sb-w)', right: 0,
     zIndex: 100,
-    width: 'auto', maxWidth: 'none', borderLeft: '0.5px solid var(--bs)',
+    width: 'auto', maxWidth: 'none',
+    transform: 'translateX(0)',
   } : {};
 
   return (
-    <aside className={`aip${fullscreen || mobileMode ? ' fullscreen' : ''}`} style={fsStyle}>
+    <>
+      {open && !mobileMode && (
+        <div className="aip-scrim" onClick={() => { setFullscreen(false); onToggle(); }} />
+      )}
+    <aside className={`aip${open || mobileMode ? ' open' : ''}${fullscreen || mobileMode ? ' fullscreen' : ''}`} style={fsStyle}>
 
       {/* 헤더 */}
       <div className="aip-head">
@@ -692,5 +682,6 @@ export default function AiPanel({ open, onToggle, context, route, mobileMode }: 
       </div>
 
     </aside>
+    </>
   );
 }

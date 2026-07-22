@@ -6,6 +6,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { DB_SCHEMA } from '@/lib/ai-schema';
 import { NextRequest } from 'next/server';
+import { AI_QUERY_BLOCKED_TABLES, execQueryDb } from '@/lib/ai/pipeline';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -92,47 +93,6 @@ ai_messages, ai_sessions, ai_user_quotas, ai_usage_daily, profiles, user_notes, 
 - 중간 진행 상황을 알리려면 tool call label에 담고, 텍스트 응답은 최종 결과만 출력해
 
 ${DB_SCHEMA}`;
-}
-
-// 사용자 개인정보·운영 테이블 — AI 쿼리 완전 차단
-// DB 레벨: uttu_ai_readonly 역할(01408_ai_readonly_role.sql)이 1차 차단
-// TS 레벨: 에러 메시지 노출 전 조기 차단 (다층 방어)
-const AI_QUERY_BLOCKED_TABLES = [
-  // AI 시스템 테이블
-  'ai_messages', 'ai_sessions', 'ai_user_quotas', 'ai_usage_daily', 'ai_allowed_models',
-  // 사용자 개인정보 테이블
-  'profiles', 'user_notes', 'user_bookmarks', 'user_view_history', 'user_saved_filters',
-  'user_notification_subscriptions', 'user_notifications',
-  'user_subscriptions', 'user_mention_configs',
-  // 운영·설정 테이블
-  'anomaly_notes', 'detector_rules',
-  // auth 스키마
-  'auth\\.users', 'auth\\.sessions', 'auth\\.audit_log_entries',
-];
-
-async function execQueryDb(
-  supabase: any,
-  sql: string,
-): Promise<string> {
-  if (/\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|CREATE|ALTER|GRANT|REVOKE)\b/i.test(sql)) {
-    return 'Error: SELECT 쿼리만 허용됩니다.';
-  }
-  // 사용자 개인정보 테이블 접근 차단
-  const sqlLower = sql.toLowerCase().replace(/\s+/g, ' ');
-  for (const tbl of AI_QUERY_BLOCKED_TABLES) {
-    if (new RegExp(`\\b${tbl}\\b`).test(sqlLower)) {
-      return `Error: '${tbl}' 테이블은 AI 쿼리 접근이 금지되어 있습니다. 이 데이터는 조회할 수 없습니다.`;
-    }
-  }
-  try {
-    const { data, error } = await supabase.rpc('exec_ai_query', { query: sql });
-    if (error) return `DB 오류: ${error.message}`;
-    const rows = data as unknown[];
-    if (!rows || rows.length === 0) return '결과: 0행 (조건에 맞는 데이터 없음)';
-    return `${rows.length}행 반환:\n${JSON.stringify(rows, null, 2).slice(0, 10000)}`;
-  } catch (e) {
-    return `오류: ${e instanceof Error ? e.message : '알 수 없는 오류'}`;
-  }
 }
 
 async function execWebSearch(query: string): Promise<string> {

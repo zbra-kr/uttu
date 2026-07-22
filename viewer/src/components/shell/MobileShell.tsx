@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import AiPanel from './AiPanel';
+import HelpButton from '../help/HelpButton';
 import {
   IcHome, IcSpark, IcRanking, IcFlag, IcUser,
   IcReport, IcBrandRanking, IcCompany, IcReview, IcPromo,
@@ -166,7 +167,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
           <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--hs)', alignSelf: 'flex-end', marginBottom: 4, marginLeft: 2 }} />
         </Link>
 
-        {/* right: bell + avatar */}
+        {/* right: bell + help + avatar */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
             onClick={() => setBellOpen(o => !o)}
@@ -192,6 +193,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
               </span>
             )}
           </button>
+          <HelpButton />
           <Link href="/me" style={{ textDecoration: 'none' }}>
             <div style={{
               width: 30, height: 30, borderRadius: 7, background: 'var(--snk)',
