@@ -1,7 +1,7 @@
 import { createMcpHandler } from 'mcp-handler';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { runInferenceLoop } from '@/lib/ai/pipeline';
+import { runInferenceLoop, execQueryDb } from '@/lib/ai/pipeline';
 
 // ─── Supabase 클라이언트 팩토리 ────────────────────────────────────────────
 let _sb: ReturnType<typeof createClient> | null = null;
@@ -528,10 +528,21 @@ export function createUttuMcpHandler(endpoint: string) {
                 }],
               };
             }
+            const errMsg = e instanceof Error ? e.message : '알 수 없는 오류';
+            if (errMsg.includes('workspace API usage limits')) {
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: 'UTTU 분석 AI의 월별 API 한도가 초과되었습니다. ' +
+                        '**query_db 도구를 사용해 SQL을 직접 실행하면 동일한 분석이 가능합니다.** ' +
+                        '예: `SELECT brand_name, AVG(rank_position) FROM ranking_snapshots WHERE snapshot_date BETWEEN \'2026-06-01\' AND \'2026-06-30\' GROUP BY brand_name ORDER BY AVG(rank_position) LIMIT 20`',
+                }],
+              };
+            }
             return {
               content: [{
                 type: 'text' as const,
-                text: `분석 오류: ${e instanceof Error ? e.message : '알 수 없는 오류'}`,
+                text: `분석 오류: ${errMsg}`,
               }],
             };
           }
@@ -548,6 +559,46 @@ export function createUttuMcpHandler(endpoint: string) {
           };
         },
       );
+      // 12. query_db ────────────────────────────────────────────────────────
+      // ask_uttu 내부 AI를 거치지 않는 직접 SQL 실행 도구.
+      // Anthropic API 한도 초과 시에도 사용 가능하며,
+      // Claude.ai 자신이 SQL을 작성해 실행한다.
+      server.registerTool(
+        'query_db',
+        {
+          title: 'UTTU DB 직접 SQL 쿼리',
+          description:
+            '임의 기간 집계·복수 테이블 조인·통계가 필요한 분석에 사용하세요. ' +
+            'ask_uttu와 달리 내부 AI 호출이 없으므로 항상 사용 가능합니다.\n\n' +
+            '주요 테이블:\n' +
+            '- ranking_snapshots: snapshot_date(date), category_code(000=전체), gender_filter(A/M/F), rank_position(1~102), brand_name, product_name, musinsa_no, final_price\n' +
+            '- brand_ranking_snapshots: snapshot_date, category_code, gender_filter, rank_position(1~200), brand_name, musinsa_brand_slug\n' +
+            '- products: id, brand_id, musinsa_no, name, category_code, gender, is_own, review_count, review_score\n' +
+            '- brands: id, name, is_own, company_id\n' +
+            '- reviews: product_id, rating(1~5), review_date, review_text, helpful_count\n' +
+            '- dart_financials: company_id, fiscal_year, revenue, operating_income, net_income (단위: 원)\n' +
+            '- anomalies: detection_date, severity, entity_name, description\n' +
+            '- promotions + promotion_items: 무신사 프로모션·참여 상품\n' +
+            '- magazine_articles: title, view_count, published_at, brand_names(text[])\n\n' +
+            '규칙: SELECT만 허용, LIMIT 필수(최대 500행), WHERE/GROUP BY 권장.',
+          inputSchema: {
+            sql: z.string().min(1).max(2000)
+              .describe('PostgreSQL SELECT 쿼리. LIMIT 필수.'),
+            label: z.string().max(100)
+              .describe('쿼리 목적 한 줄 설명 (예: "6월 전체 랭킹 TOP20 집계")'),
+          },
+        },
+        async ({ sql, label }) => {
+          const result = await execQueryDb(sbSvc(), sql);
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `[${label}]\n${result}`,
+            }],
+          };
+        },
+      );
+
     },
     { serverInfo: { name: 'uttu', version: '1.0.0' } },
     { streamableHttpEndpoint: endpoint, maxDuration: 60 },

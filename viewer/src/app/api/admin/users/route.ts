@@ -28,7 +28,8 @@ export async function GET(req: NextRequest) {
   const offset = (page - 1) * limit;
 
   // 1. auth.users — email + last_sign_in_at (service_role only)
-  const { data: authList } = await adminClient.auth.admin.listUsers({ page, perPage: 1000 });
+  // page는 profiles 페이지네이션 전용 — auth.users는 항상 전체 1000명 조회
+  const { data: authList } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const authMap = new Map(
     (authList?.users ?? []).map(u => [u.id, { email: u.email ?? '', last_sign_in_at: u.last_sign_in_at ?? null }])
   );
