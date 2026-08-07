@@ -12,6 +12,22 @@ DATE="$(date +%Y%m%d)"
 cd "$ROOT"
 source .env 2>/dev/null || true
 
+# ── DNS 준비 대기 (Mac 슬립 해제 직후 DNS가 늦게 뜨는 경우 대비) ──────────
+# 최대 5분(30회 × 10초) 대기, 해소되면 즉시 진행
+_DNS_READY=0
+for _i in $(seq 1 30); do
+  if host api.anthropic.com >/dev/null 2>&1 || host www.musinsa.com >/dev/null 2>&1; then
+    _DNS_READY=1
+    echo "[run_daily] DNS ready after ${_i}×10s" >> "$LOG_DIR/cron_daily.log"
+    break
+  fi
+  sleep 10
+done
+if [ "$_DNS_READY" -eq 0 ]; then
+  echo "[run_daily] DNS not ready after 5min — aborting $(date)" >> "$LOG_DIR/cron_daily.log"
+  exit 1
+fi
+
 # ── 1단계: 랭킹·브랜드랭킹·이벤트·DART·추천판 동시 시작 ──────────────────
 bash "$ROOT/scripts/run_ranking.sh"       > "$LOG_DIR/ranking_${DATE}.log"       2>&1 &
 bash "$ROOT/scripts/run_brand_ranking.sh" > "$LOG_DIR/brand_ranking_${DATE}.log" 2>&1 &
