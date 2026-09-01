@@ -175,7 +175,12 @@ export default function AiPanel({ open, onToggle, context, route, mobileMode }: 
   const [input,        setInput]        = React.useState('');
   const [thinking,     setThinking]     = React.useState(false);
   const [fullscreen,   setFullscreen]   = React.useState(false);
-  const [sessionId,    setSessionId]    = React.useState<string>(() => crypto.randomUUID());
+  const [sessionId,    setSessionId]    = React.useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('uttu_ai_session') ?? crypto.randomUUID();
+    }
+    return crypto.randomUUID();
+  });
   const [showHistory,  setShowHistory]  = React.useState(false);
   const [sessions,     setSessions]     = React.useState<AiSession[]>([]);
   const [histLoading,  setHistLoading]  = React.useState(false);
@@ -207,6 +212,28 @@ export default function AiPanel({ open, onToggle, context, route, mobileMode }: 
       // quota 조회 실패는 무시 — AI 사용은 계속 허용
     }
   }, []);
+
+  // sessionId 변경 시 localStorage 저장
+  React.useEffect(() => {
+    localStorage.setItem('uttu_ai_session', sessionId);
+  }, [sessionId]);
+
+  // 마운트 시 이전 세션 메시지 자동 복원
+  React.useEffect(() => {
+    const saved = localStorage.getItem('uttu_ai_session');
+    if (!saved) return;
+    fetch(`/api/ai/messages?sessionId=${saved}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { messages?: Array<{ role: string; content: string; tool_calls?: ToolCall[] }> } | null) => {
+        const msgs: Message[] = (data?.messages ?? []).map(m => ({
+          role:      m.role === 'assistant' ? 'ai' : 'user',
+          text:      m.content ?? '',
+          toolCalls: m.tool_calls ?? undefined,
+        }));
+        if (msgs.length > 0) setMessages(msgs);
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
@@ -285,8 +312,10 @@ export default function AiPanel({ open, onToggle, context, route, mobileMode }: 
   };
 
   const newSession = () => {
+    const id = crypto.randomUUID();
     setMessages([]);
-    setSessionId(crypto.randomUUID());
+    setSessionId(id);
+    localStorage.setItem('uttu_ai_session', id);
     setShowHistory(false);
   };
 

@@ -69,28 +69,29 @@ async def resolve_corp_codes(client: Client, api_key: str, company_ids: list[str
     all_corps = parse_corp_codes(zip_bytes)
     logger.info("corp_code_list_size", count=len(all_corps))
 
-    # corp_name → corp_code 딕셔너리 (소문자 정규화)
-    name_index: dict[str, str] = {
-        c["corp_name"].strip().lower(): c["corp_code"]
-        for c in all_corps
-        if c["corp_code"]
-    }
+    # corp_name → corp_code 딕셔너리 (소문자 정규화, 동명 법인 모두 보관)
+    name_index: dict[str, list[str]] = {}
+    for c in all_corps:
+        if c["corp_code"]:
+            key = c["corp_name"].strip().lower()
+            name_index.setdefault(key, []).append(c["corp_code"])
 
     updated = 0
     for row in rows:
         raw_name: str = row["corp_name"] or ""
         biz_no: str = (row["business_number"] or "").replace("-", "")
 
-        # ① 정확한 이름 매칭
+        # ① 정확한 이름 매칭 + ② 괄호 변형 (동명 법인 전체 후보 수집)
         candidates: list[str] = []
-        key = raw_name.strip().lower()
-        if key in name_index:
-            candidates.append(name_index[key])
-
-        # ② 괄호 변형 (주)비케이브 ↔ 비케이브 등
-        stripped = raw_name.replace("(주)", "").replace("주식회사", "").strip().lower()
-        if stripped in name_index and name_index[stripped] not in candidates:
-            candidates.append(name_index[stripped])
+        seen: set[str] = set()
+        for lookup in [
+            raw_name.strip().lower(),
+            raw_name.replace("(주)", "").replace("주식회사", "").strip().lower(),
+        ]:
+            for code in name_index.get(lookup, []):
+                if code not in seen:
+                    candidates.append(code)
+                    seen.add(code)
 
         if not candidates:
             logger.warning("corp_code_name_not_found", corp_name=raw_name)
@@ -359,12 +360,20 @@ async def run(target: str = "bcave", disc_years: int = 10, fin_years: int = 3, i
         company_ids = [r["id"] for r in rows]
         logger.info("dart_target_bcave", ids=company_ids)
     else:
-        rows = (
-            client.table("companies")
-            .select("id")
-            .execute()
-            .data or []
-        )
+        rows = []
+        pg = 0
+        while True:
+            chunk = (
+                client.table("companies")
+                .select("id")
+                .range(pg * 1000, (pg + 1) * 1000 - 1)
+                .execute()
+                .data or []
+            )
+            rows += chunk
+            if len(chunk) < 1000:
+                break
+            pg += 1
         company_ids = [r["id"] for r in rows]
         logger.info("dart_target_all", count=len(company_ids))
 

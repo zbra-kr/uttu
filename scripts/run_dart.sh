@@ -9,7 +9,7 @@
 # 사용법:
 #   ./scripts/run_dart.sh              # 전체 companies
 #   ./scripts/run_dart.sh bcave        # B.CAVE만
-set -euo pipefail
+set -uo pipefail
 
 TARGET="${1:-all}"
 LOG_DIR="/Users/macmini/projects/uttu/logs"
@@ -25,5 +25,10 @@ worker/.venv/bin/python3 -m worker.scrapers.dart_scraper \
   --disc-years 10 \
   --fin-years 3 \
   >> "$LOG" 2>&1
+_EXIT=$?
 
-echo "=== done: $(date '+%Y-%m-%d %H:%M:%S KST') ===" | tee -a "$LOG"
+if [ $_EXIT -ne 0 ]; then
+  echo "=== skip: FAILED exit=$_EXIT $(date '+%Y-%m-%d %H:%M:%S KST') ===" | tee -a "$LOG"
+else
+  echo "=== done: $(date '+%Y-%m-%d %H:%M:%S KST') ===" | tee -a "$LOG"
+fi

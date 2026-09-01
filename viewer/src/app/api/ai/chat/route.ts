@@ -9,7 +9,7 @@ import { NextRequest } from 'next/server';
 import { AI_QUERY_BLOCKED_TABLES, execQueryDb } from '@/lib/ai/pipeline';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -336,7 +336,7 @@ export async function POST(req: NextRequest) {
           for (let iter = 0; iter < 15; iter++) {
             const stream = anthropic.messages.stream({
               model: aiModelId,
-              max_tokens: 8192,
+              max_tokens: 64000,
               system,
               tools: TOOLS,
               messages: msgs,
@@ -352,6 +352,16 @@ export async function POST(req: NextRequest) {
             totalOutputTokens += finalMsg.usage?.output_tokens ?? 0;
 
             if (finalMsg.stop_reason === 'end_turn') break;
+
+            // 토큰 한도 도달 시 자동 continuation
+            if (finalMsg.stop_reason === 'max_tokens') {
+              msgs = [
+                ...msgs,
+                { role: 'assistant', content: finalMsg.content },
+                { role: 'user',      content: [{ type: 'text', text: '계속 작성해줘.' }] },
+              ];
+              continue;
+            }
 
             const toolCalls = finalMsg.content.filter(
               (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
@@ -396,7 +406,7 @@ export async function POST(req: NextRequest) {
               model:       aiModelId,
               messages:    apiMsgs,
               tools:       openaiTools,
-              max_tokens:  8192,
+              max_tokens:  16384,
               tool_choice: 'auto',
             });
 
