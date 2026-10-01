@@ -32,6 +32,9 @@ def dispatch_pending() -> dict:
     teams_rows = (
         c.table("user_notifications")
         .select("id, user_id, event_type, title, body, link")
+        # Mentions are author-delegated Graph DMs only. Never use a webhook/bot
+        # fallback, including old queued mentions or disconnected authors.
+        .neq("event_type", "mention")
         .is_("sent_to_teams_at", "null")
         .order("created_at", desc=False)
         .limit(BATCH_SIZE)

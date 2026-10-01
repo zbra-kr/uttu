@@ -8,6 +8,8 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import MentionAutocomplete from './MentionAutocomplete';
 import { IcX } from '../ui/icons';
 import { fmtDateTime } from '@/lib/format';
+import { moveMentionRanges, selectedMentionIds, type SelectedMention } from '@/lib/teams/mentions';
+import type { TeamsConnectionState } from './TeamsConnection';
 
 function renderBody(text: string): React.ReactNode[] {
   const parts = text.split(/(@\S+|#\S+)/g);
@@ -62,7 +64,12 @@ export default function NoteDrawer({
   const [body, setBody] = React.useState('');
   const [tags, setTags] = React.useState<string[]>([]);
   const [tagInput, setTagInput] = React.useState('');
-  const [mentionedIds, setMentionedIds] = React.useState<string[]>([]);
+  const [selectedMentions, setSelectedMentions] = React.useState<SelectedMention[]>([]);
+  const mentionedIds = selectedMentionIds(selectedMentions, currentUserId);
+  const [teams, setTeams] = React.useState<TeamsConnectionState | null>(null);
+  const [sendTeams, setSendTeams] = React.useState(true);
+  const teamsReady = !!teams?.available && !!teams.connected;
+  const [sendStatus, setSendStatus] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
@@ -82,20 +89,28 @@ export default function NoteDrawer({
 
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const mentionJustSelectedRef = React.useRef(false);
+  const savingRef = React.useRef(false);
+  const submissionRef = React.useRef<{ id: string; snapshot: string } | null>(null);
 
   React.useEffect(() => {
     if (!open || !entity_id) return;
+    const controller = new AbortController();
+    fetch('/api/me/teams/connection', { cache: 'no-store', signal: controller.signal })
+      .then(response => response.ok ? response.json() : null).then(setTeams).catch(() => {});
     setLoading(true);
     fetchNotesForEntity(entity_type, entity_id).then(data => {
       setNotes(data);
       setLoading(false);
       onCountChange?.(data.length);
     });
+    return () => controller.abort();
   // onCountChange prop 함수 제외 — 부모 재렌더링 시 무한 루프 방지
   }, [open, entity_type, entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBodyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (savingRef.current) return;
     const val = e.target.value;
+    setSelectedMentions(previous => moveMentionRanges(body, val, previous));
     setBody(val);
     // 멘션 선택 직후 IME 커밋으로 인한 onChange는 드롭다운 재오픈 무시
     if (mentionJustSelectedRef.current) return;
@@ -115,6 +130,7 @@ export default function NoteDrawer({
   };
 
   const handleMentionSelect = (candidate: MentionCandidate) => {
+    if (savingRef.current) return;
     const ta = textareaRef.current;
     if (!ta || mentionAtIdx === null) return;
     const name = candidate.display_name ?? candidate.full_name ?? candidate.id;
@@ -125,11 +141,6 @@ export default function NoteDrawer({
     setShowMention(false);
     setMentionQuery('');
     setMentionAtIdx(null);
-    if (candidate.type === 'team') {
-      setMentionedIds(prev => [...new Set([...prev, ...(candidate.member_ids ?? [])])]);
-    } else {
-      setMentionedIds(prev => [...new Set([...prev, candidate.id])]);
-    }
 
     // IME 조합 커밋 이벤트(compositionend → input)가 모두 처리된 다음 턴에 치환
     setTimeout(() => {
@@ -139,6 +150,11 @@ export default function NoteDrawer({
       const tokenLen = (afterAt.match(/^([^@\s]*)/) ?? ['', ''])[1].length;
       const endIdx = atIdx + 1 + tokenLen;
       const newBody = currentVal.slice(0, atIdx) + `@${name} ` + currentVal.slice(endIdx);
+      setSelectedMentions(previous => [
+        ...moveMentionRanges(currentVal, newBody, previous),
+        { key: candidate.id, label: name, userIds: candidate.type === 'team' ? (candidate.member_ids ?? []) : [candidate.id],
+          start: atIdx, end: atIdx + name.length + 1 },
+      ]);
       ta.value = newBody;
       setBody(newBody);
       const newPos = atIdx + name.length + 2;
@@ -148,22 +164,42 @@ export default function NoteDrawer({
   };
 
   const handleSave = async () => {
-    if (!body.trim()) return;
+    if (!body.trim() || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setSaveError(null);
-    const { data, error } = await createNote({
+    setSendStatus(null);
+    const snapshot = JSON.stringify([body.trim(), tags, mentionedIds, entity_type, entity_id]);
+    if (!submissionRef.current || submissionRef.current.snapshot !== snapshot) {
+      submissionRef.current = { id: crypto.randomUUID(), snapshot };
+    }
+    let result: Awaited<ReturnType<typeof createNote>>;
+    try {
+      result = await createNote({
       body: body.trim(), entity_type, entity_id, tags, mentioned_user_ids: mentionedIds,
-    });
-    setSaving(false);
-    if (error) { setSaveError(error); return; }
+      send_teams: teamsReady && sendTeams && selectedMentions.every(mention => !mention.key.startsWith('team:')),
+      submission_id: submissionRef.current.id,
+      });
+    } catch {
+      result = { data: null, error: '저장 결과를 확인하지 못했습니다. 같은 메모로 다시 시도하면 중복 전송을 방지합니다.' };
+    }
+    const { data, error, notification_status } = result;
+    if (error) { setSaveError(error); setSaving(false); savingRef.current = false; return; }
     if (data) {
-      const { data: profiles } = await supabaseBrowser()
-        .from('profiles_public').select('id, display_name, full_name').eq('id', data.user_id).single();
-      const next = [{ ...data, author: profiles ?? null }, ...notes];
+      let profile = null;
+      try {
+        const { data: profiles } = await supabaseBrowser()
+          .from('profiles_public').select('id, display_name, full_name').eq('id', data.user_id).single();
+        profile = profiles;
+      } catch { /* A display-name read cannot undo a successful note save. */ }
+      const next = [{ ...data, author: profile }, ...notes.filter(note => note.id !== data.id)];
       setNotes(next);
       onCountChange?.(next.length);
     }
-    setBody(''); setTags([]); setTagInput(''); setMentionedIds([]);
+    if (notification_status) setSendStatus(notification_status);
+    submissionRef.current = null;
+    setBody(''); setTags([]); setTagInput(''); setSelectedMentions([]);
+    setSaving(false); savingRef.current = false;
   };
 
   const handleDelete = async (id: string) => {
@@ -363,6 +399,7 @@ export default function NoteDrawer({
           )}
           <textarea
             ref={textareaRef}
+            readOnly={saving}
             value={body}
             onChange={handleBodyChange}
             onKeyDown={e => {
@@ -389,12 +426,13 @@ export default function NoteDrawer({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, alignItems: 'center', minHeight: 24, marginTop: 6 }}>
             {tags.map((t, i) => (
               <span key={i} className="chip" style={{ cursor: 'pointer', fontSize: 10 }}
-                onClick={() => setTags(ts => ts.filter((_, j) => j !== i))}>
+                onClick={() => { if (!savingRef.current) setTags(ts => ts.filter((_, j) => j !== i)); }}>
                 {t} ×
               </span>
             ))}
             <input
               value={tagInput}
+              disabled={saving}
               onChange={e => setTagInput(e.target.value)}
               onKeyDown={e => {
                 if ((e.key === ' ' || e.key === 'Enter') && tagInput.trim()) {
@@ -410,6 +448,18 @@ export default function NoteDrawer({
               style={{ background: 'none', border: 'none', outline: 'none', fontSize: 11, minWidth: 80, color: 'var(--f2)' }}
             />
           </div>
+          {mentionedIds.length > 0 && <div style={{ fontSize: 11, color: 'var(--f3)', marginTop: 8 }}>
+            <div>받는 사람: {selectedMentions.map(mention => mention.label).join(', ')}</div>
+            {selectedMentions.some(mention => mention.key.startsWith('team:'))
+              ? <div>팀 전체 멘션은 UTTU 알림으로만 전달됩니다. Teams DM은 사람을 개별 선택해 주세요.</div>
+              : teamsReady
+                ? <label style={{ display: 'flex', gap: 6, alignItems: 'flex-start', marginTop: 6 }}>
+                    <input type="checkbox" checked={sendTeams} disabled={saving} onChange={event => setSendTeams(event.target.checked)} />
+                    <span>내 계정 명의로 Teams DM 보내기 (메모 내용과 링크)</span>
+                  </label>
+                : <div>Teams DM을 보내려면 <a href="/me">내 프로필</a>에서 Teams를 연결해 주세요.</div>}
+          </div>}
+          {sendStatus && <div role="status" style={{ fontSize: 11, marginTop: 8, color: 'var(--f3)' }}>{sendStatus}</div>}
           {/* Action row */}
           <div style={{ display: 'flex', alignItems: 'center', marginTop: 8, gap: 8 }}>
             <span style={{ flex: 1, fontSize: 11 }}>
@@ -421,7 +471,8 @@ export default function NoteDrawer({
             </span>
             <span className="mono" style={{ fontSize: 10, color: 'var(--f4)' }}>⌘↵ 저장</span>
             <button className="btn sm active" onClick={handleSave} disabled={saving || !body.trim()}>
-              {saving ? '저장 중…' : '저장'}
+              {saving ? '저장 중…' : teamsReady && sendTeams && mentionedIds.length > 0
+                && selectedMentions.every(mention => !mention.key.startsWith('team:')) ? '저장 및 Teams DM' : '저장'}
             </button>
           </div>
         </div>

@@ -259,12 +259,15 @@ export async function createNote(input: {
   entity_id?: string | null;
   tags?: string[];
   mentioned_user_ids?: string[];
-}): Promise<{ data: MyNote | null; error: string | null }> {
+  send_teams?: boolean;
+  submission_id?: string;
+}): Promise<{ data: MyNote | null; error: string | null; notification_status?: string }> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { data: null, error: '로그인 필요' };
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('user_notes')
     .insert({
+      ...(input.submission_id ? { id: input.submission_id } : {}),
       user_id: user.id,
       body: input.body,
       entity_type: input.entity_type ?? null,
@@ -274,15 +277,34 @@ export async function createNote(input: {
     })
     .select('*')
     .single();
-  if (error) return { data: null, error: error.message };
-  if ((input.mentioned_user_ids ?? []).length > 0) {
-    fetch('/api/me/notes/notify-mentions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ note_id: (data as MyNote).id }),
-    }).catch(e => console.error('[notify-mentions]', e));
+  if (error?.code === '23505' && input.submission_id) {
+    const previous = await supabase.from('user_notes').select('*').eq('id', input.submission_id).single();
+    const old = previous.data as MyNote | null;
+    const sameRecipients = old && JSON.stringify([...new Set(old.mentioned_user_ids)].sort())
+      === JSON.stringify([...new Set(input.mentioned_user_ids ?? [])].sort());
+    if (!previous.error && old?.user_id === user.id && old.body === input.body && sameRecipients
+      && old.entity_type === (input.entity_type ?? null) && old.entity_id === (input.entity_id ?? null)
+      && JSON.stringify(old.tags) === JSON.stringify(input.tags ?? [])) {
+      data = old; error = null;
+    }
   }
-  return { data: data as MyNote, error: null };
+  if (error) return { data: null, error: error.message };
+  let notification_status: string | undefined;
+  if ((input.mentioned_user_ids ?? []).length > 0) {
+    try {
+      const response = await fetch('/api/me/notes/notify-mentions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note_id: (data as MyNote).id, send_teams: input.send_teams === true,
+          expected_body: input.body, recipient_ids: [...new Set(input.mentioned_user_ids)] }),
+      });
+      const result = await response.json();
+      notification_status = response.ok && typeof result.message === 'string'
+        ? result.message : '메모는 저장했지만 알림 전달을 확인하지 못했습니다. 중복 방지를 위해 자동 재전송하지 않습니다.';
+    } catch {
+      notification_status = '메모는 저장했지만 알림 전달을 확인하지 못했습니다. 중복 방지를 위해 자동 재전송하지 않습니다.';
+    }
+  }
+  return { data: data as MyNote, error: null, notification_status };
 }
 
 export async function updateNote(

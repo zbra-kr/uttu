@@ -7,6 +7,7 @@ import { IcEdit, IcBell, IcShield } from '@/components/ui/icons';
 import Link from 'next/link';
 import { fetchMyProfile, uploadAvatar, MyProfile, fetchMyRecentNotes, fetchMentionsForMe, MyNote, fetchBookmarks, removeBookmark, Bookmark, EntityType, fetchViewHistory, ViewHistoryRow, fetchAllSavedFilters, deleteSavedFilter, SavedFilter, fetchMyStats, MyStats, fetchMyAiQuota, MyAiQuota } from '@/lib/queries-me';
 import ProfileEditModal from '@/components/me/ProfileEditModal';
+import TeamsConnection from '@/components/me/TeamsConnection';
 import SubscriptionMatrix from '@/components/me/SubscriptionMatrix';
 import InboxList from '@/components/me/InboxList';
 import { fmtTokens } from '@/lib/format';
@@ -74,8 +75,7 @@ const VIEWER_CHIPS = ['홈', '랭킹', '이상탐지', '회사', '브랜드', '�
 
 export default function MePage() {
   const isMobile = useIsMobile();
-  if (isMobile) return <MobileMeView />;
-  return <MeDesktopView />;
+  return <><TeamsConnection />{isMobile ? <MobileMeView /> : <MeDesktopView />}</>;
 }
 
 function MeDesktopView() {
