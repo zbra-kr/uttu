@@ -1,19 +1,28 @@
 import { supabaseServer } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { AUTH_ROUTES, safeAuthRedirect } from '@/lib/auth/oauth';
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
-  const next = searchParams.get('next') ?? '/';
+  const next = safeAuthRedirect(searchParams.get('next'));
+  const providerError = searchParams.get('error');
 
-  if (code) {
-    const supabase = await supabaseServer();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+  if (code && !providerError) {
+    try {
+      const supabase = await supabaseServer();
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (!error) {
+        return NextResponse.redirect(new URL(next, origin));
+      }
+    } catch {
+      // Do not expose provider errors, authorization codes or tokens in the UI/log.
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  const login = new URL(AUTH_ROUTES.login, origin);
+  login.searchParams.set('error', providerError === 'access_denied' ? 'cancelled' : 'auth');
+  if (next !== AUTH_ROUTES.home) login.searchParams.set('redirect', next);
+  return NextResponse.redirect(login);
 }

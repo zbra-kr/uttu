@@ -44,7 +44,7 @@ export async function middleware(request: NextRequest) {
   // 나머지 모든 경로: 로그인 필수
   if (!user) {
     const url = new URL('/login', request.url);
-    url.searchParams.set('redirect', pathname);
+    url.searchParams.set('redirect', `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(url);
   }
 

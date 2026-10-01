@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { signIn } from '../auth/actions';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileLoginView from './MobileLoginView';
+import MicrosoftLogin from './MicrosoftLogin';
+import { authErrorMessage, safeAuthRedirect } from '@/lib/auth/oauth';
 
 const BCAVE_LOGO_LIGHT = '/images/bcave/logo.png';
 const BCAVE_LOGO_DARK  = '/images/bcave/logo-white.png';
@@ -35,13 +37,17 @@ function SubmitBtn() {
   );
 }
 
-export default function LoginPage() {
+export default function LoginPage({ searchParams = {} }: {
+  searchParams?: { redirect?: string | string[]; error?: string | string[] };
+}) {
   const isMobile = useIsMobile();
-  if (isMobile) return <MobileLoginView />;
-  return <LoginDesktopView />;
+  const next = safeAuthRedirect(searchParams.redirect);
+  const authError = authErrorMessage(searchParams.error);
+  if (isMobile) return <MobileLoginView next={next} authError={authError} />;
+  return <LoginDesktopView next={next} authError={authError} />;
 }
 
-function LoginDesktopView() {
+function LoginDesktopView({ next, authError }: { next: string; authError?: string }) {
   const [state, action] = useFormState(signIn, null);
   const [stats, setStats] = React.useState<{ brands: number; products: number; reviews: number } | null>(null);
   const [isDark, setIsDark] = React.useState(false);
@@ -121,6 +127,13 @@ function LoginDesktopView() {
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--f1)', letterSpacing: '-0.02em' }}>로그인</div>
             <div style={{ fontSize: 12, color: 'var(--f4)', marginTop: 4 }}>B.CAVE 메일계정으로 접속하세요</div>
           </div>
+
+          {authError && (
+            <div role="alert" style={{ marginTop: 16, fontSize: 12, lineHeight: 1.6, color: 'var(--shf)' }}>
+              {authError}
+            </div>
+          )}
+          <MicrosoftLogin next={next} />
 
           <form action={action} style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 32 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>

@@ -3,6 +3,7 @@ import React from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
 import { signIn } from '../auth/actions';
+import MicrosoftLogin from './MicrosoftLogin';
 
 const WORDMARK_LIGHT = '/images/uttu/svg/uttu-wordmark.svg';
 const WORDMARK_DARK  = '/images/uttu/svg/uttu-wordmark-white.svg';
@@ -25,7 +26,7 @@ function SubmitBtn() {
   );
 }
 
-export default function MobileLoginView() {
+export default function MobileLoginView({ next, authError }: { next: string; authError?: string }) {
   const [state, action] = useFormState(signIn, null);
   const [isDark, setIsDark] = React.useState(false);
 
@@ -68,6 +69,15 @@ export default function MobileLoginView() {
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--f1)', letterSpacing: '-0.02em' }}>로그인</div>
             <div style={{ fontSize: 12, color: 'var(--f4)', marginTop: 4 }}>B.CAVE 메일계정으로 접속하세요</div>
+          </div>
+
+          {authError && (
+            <div role="alert" style={{ marginBottom: 16, fontSize: 12, lineHeight: 1.6, color: 'var(--shf)' }}>
+              {authError}
+            </div>
+          )}
+          <div style={{ marginBottom: process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED === 'true' ? 20 : 0 }}>
+            <MicrosoftLogin next={next} />
           </div>
 
           <form action={action} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
