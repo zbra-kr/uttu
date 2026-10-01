@@ -15,6 +15,7 @@ const json = (body: unknown, status = 200) => NextResponse.json(body, {
 interface Delivery {
   id: string; recipient_id: string; body_snapshot: string; link_snapshot: string;
   recipient_tenant_id: string; recipient_object_id: string; status: string;
+  connection_version: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -80,7 +81,9 @@ export async function POST(request: NextRequest) {
       if (delivery.body_snapshot !== input.expected_body) throw new Error();
       let result: MentionSendResult = { status: 'reconnect_required' };
       let boundaryRejected = false;
-      if (author && grant) {
+      const connectionChanged = !!grant && grant.connectionVersion !== delivery.connection_version;
+      if (connectionChanged) result = { status: 'not_sent', reason: 'not_authorized' };
+      if (author && grant && !connectionChanged) {
         const link = new URL(`/me/notes/${encodeURIComponent(note.id)}`, config.origin).toString();
         result = await sendAuthorMention({
           enabled: true, authorActionConfirmed: true, deliveryId: delivery.id,
@@ -103,7 +106,7 @@ export async function POST(request: NextRequest) {
       const status = result.status === 'not_sent' ? 'skipped' : result.status;
       const { data: finished, error: finishError } = await sb.rpc('uttu_teams_finish_delivery', {
         p_delivery_id: delivery.id, p_author_id: user.id, p_claim_id: claimId, p_status: status,
-        p_error_code: result.status === 'sent' ? null : result.status,
+        p_error_code: result.status === 'sent' ? null : connectionChanged ? 'connection_changed' : result.status,
         p_message_id: result.status === 'sent' ? result.messageId : null,
         p_chat_id: result.status === 'sent' ? result.chatId : null,
         p_retry_after: result.status === 'throttled'

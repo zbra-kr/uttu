@@ -7,20 +7,7 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
-// Compile actual source without a new runner, credentials, or live Auth calls.
-function loadSource(relativePath, mocks = {}) {
-  const filename = path.resolve(__dirname, '..', relativePath);
-  const { outputText } = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true }, fileName: filename,
-  });
-  const mod = new Module(filename, module);
-  mod.filename = filename;
-  mod.paths = Module._nodeModulePaths(path.dirname(filename));
-  const requireActual = mod.require.bind(mod);
-  mod.require = (name) => Object.hasOwn(mocks, name) ? mocks[name] : requireActual(name);
-  mod._compile(outputText, filename);
-  return mod.exports;
-}
+const loadSource = require('./helpers/load-source.cjs');
 const oauth = loadSource('src/lib/auth/oauth.ts');
 const redirect = (url) => { throw Object.assign(new Error('NEXT_REDIRECT'), { url }); };
 const privateError = { message: 'private-token-database-detail' };

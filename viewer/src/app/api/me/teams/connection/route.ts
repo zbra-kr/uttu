@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const sb = await supabaseServer();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return json({ error: '로그인 필요' }, 401);
-    const { action } = await request.json();
+    const { action, return_to: returnTo } = await request.json();
     if (action === 'disconnect') {
       const { error } = await sb.rpc('uttu_teams_disconnect', { p_author_id: user.id });
       if (error) throw new Error();
@@ -46,7 +46,8 @@ export async function POST(request: NextRequest) {
     }
     if (action !== 'connect') return json({ error: '잘못된 요청' }, 400);
     if (!config) return json({ error: 'Teams 연결이 아직 설정되지 않았습니다.' }, 503);
-    const attempt = await beginTeamsConnect(sb, user, config);
+    if (returnTo !== undefined && typeof returnTo !== 'string') return json({ error: '잘못된 요청' }, 400);
+    const attempt = await beginTeamsConnect(sb, user, config, returnTo);
     const response = json({ url: attempt.url });
     response.cookies.set(connectCookie(config.secure), attempt.cookie, {
       httpOnly: true, secure: config.secure, sameSite: 'lax', path: '/', maxAge: 600,

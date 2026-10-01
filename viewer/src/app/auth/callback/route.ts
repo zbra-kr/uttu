@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { AUTH_ROUTES, safeAuthRedirect } from '@/lib/auth/oauth';
 import { syncMicrosoftProfileName } from '@/lib/auth/microsoft-profile';
+import { teamsSetupRequired } from '@/lib/teams/setup-access';
+import { teamsSetupPath } from '@/lib/teams/setup-navigation';
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
@@ -18,7 +20,8 @@ export async function GET(request: NextRequest) {
         if (await syncMicrosoftProfileName(supabase, data?.user) === 'failed') {
           console.warn('[auth] Microsoft profile name sync failed');
         }
-        return NextResponse.redirect(new URL(next, origin));
+        const recovery = new URL(next, origin).pathname.startsWith('/reset-password');
+        return NextResponse.redirect(new URL(teamsSetupRequired() && !recovery ? teamsSetupPath(next) : next, origin));
       }
     } catch {
       // Do not expose provider errors, authorization codes or tokens in the UI/log.

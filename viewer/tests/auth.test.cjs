@@ -5,22 +5,7 @@ const path = require('node:path');
 const Module = require('node:module');
 const ts = require('typescript');
 
-// Compile the actual source with the repo's TypeScript dependency. This keeps
-// tests compatible with CI's Node 20 without adding a runner or changing deps.
-function loadSource(relativePath, mocks = {}) {
-  const filename = path.resolve(__dirname, '..', relativePath);
-  const { outputText } = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
-    fileName: filename,
-  });
-  const mod = new Module(filename, module);
-  mod.filename = filename;
-  mod.paths = Module._nodeModulePaths(path.dirname(filename));
-  const originalRequire = mod.require.bind(mod);
-  mod.require = (name) => Object.hasOwn(mocks, name) ? mocks[name] : originalRequire(name);
-  mod._compile(outputText, filename);
-  return mod.exports;
-}
+const loadSource = require('./helpers/load-source.cjs');
 
 const oauth = loadSource('src/lib/auth/oauth.ts');
 const microsoftProfile = loadSource('src/lib/auth/microsoft-profile.ts');
@@ -187,6 +172,22 @@ test('existing password-recovery callback destination is preserved', async () =>
   const get = callback(async () => ({ error: null }));
   const result = await get({ url: 'https://uttu.bcave.ai/auth/callback?code=recovery-code&next=/reset-password' });
   assert.equal(result.pathname, '/reset-password');
+});
+
+test('mandatory setup follows successful sign-in and preserves the safe query and fragment', async () => {
+  await withEnv({ TEAMS_CONNECTION_REQUIRED: 'true' }, async () => {
+    const get = callback(async () => ({ error: null }));
+    const result = await get({ url: 'https://uttu.bcave.ai/auth/callback?code=synthetic&next=%2Fmarket%3Fbrand%3Da%23chart' });
+    assert.equal(result.pathname, '/setup/teams');
+    assert.equal(result.searchParams.get('next'), '/market?brand=a#chart');
+  });
+});
+
+test('mandatory Teams setup does not interrupt password recovery', async () => {
+  await withEnv({ TEAMS_CONNECTION_REQUIRED: 'true' }, async () => {
+    const result = await callback(async () => ({ error: null }))({ url: 'https://uttu.bcave.ai/auth/callback?code=synthetic&next=/reset-password' });
+    assert.equal(result.pathname, '/reset-password');
+  });
 });
 
 for (const query of ['', '?error=access_denied&error_description=private-provider-detail&code=unused', '?error=server_error']) {

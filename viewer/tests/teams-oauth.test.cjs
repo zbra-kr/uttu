@@ -6,17 +6,7 @@ const Module = require('node:module');
 const ts = require('typescript');
 const jose = require('jose');
 
-function load(relativePath, mocks = {}) {
-  const filename = path.resolve(__dirname, '..', relativePath);
-  const { outputText } = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }, fileName: filename,
-  });
-  const mod = new Module(filename, module); mod.filename = filename;
-  mod.paths = Module._nodeModulePaths(path.dirname(filename));
-  const original = mod.require.bind(mod);
-  mod.require = name => name === 'server-only' ? {} : Object.hasOwn(mocks, name) ? mocks[name] : original(name);
-  mod._compile(outputText, filename); return mod.exports;
-}
+const load = require('./helpers/load-source.cjs');
 
 const identities = load('src/lib/teams/identity.ts');
 const configModule = load('src/lib/teams/config.ts', { './identity': identities });
@@ -86,6 +76,7 @@ test('connect uses fixed app/tenant/redirect, PKCE, state, nonce and minimum del
   assert.equal(parsed.searchParams.get('redirect_uri'), config.callback);
   assert.equal(parsed.searchParams.get('code_challenge_method'), 'S256');
   assert.equal(parsed.searchParams.get('client_id'), config.clientId);
+  assert.equal(parsed.searchParams.get('prompt'), null, 'Existing admin/user consent and SSO must be reused');
   assert.match(parsed.searchParams.get('scope'), /offline_access/);
   assert.doesNotMatch(parsed.searchParams.get('scope'), /Chat.ReadWrite|User.Read|\.All|client_credentials/);
   assert.doesNotMatch(url + cookie, /mock-client-secret/);
@@ -102,6 +93,20 @@ async function withFetch(fn, run) {
   global.fetch = fn;
   try { return await run(); } finally { global.fetch = old; }
 }
+
+test('encrypted Teams return destination is same-origin and bound to the exact user/state', async () => {
+  const api = oauth();
+  const sb = { rpc: async name => ({ data: name === 'uttu_teams_get_connection_epoch' ? 'epoch-1' : [] }) };
+  const start = await api.beginTeamsConnect(sb, user, config, '/ranking?brand=a#chart');
+  const attempt = vault.decryptTeamsValue(start.cookie, fakeKey, 'oauth-attempt');
+  assert.equal(api.teamsConnectReturnPath(user, config, start.cookie, attempt.state), '/ranking?brand=a#chart');
+  assert.equal(api.teamsConnectReturnPath(user, config, start.cookie, 'wrong'), '/me');
+  assert.equal(api.teamsConnectReturnPath({ ...user, id: oid }, config, start.cookie, attempt.state), '/me');
+  for (const unsafe of ['https://evil.example', '//evil.example', '/setup/teams', '/auth/callback', '/api/me/notes']) {
+    const other = await api.beginTeamsConnect(sb, user, config, unsafe);
+    assert.equal(vault.decryptTeamsValue(other.cookie, fakeKey, 'oauth-attempt').returnTo, '/');
+  }
+});
 
 test('OAuth callback validates real signature/issuer/audience/nonce and stores ciphertext only', async () => {
   const { publicKey, privateKey } = await jose.generateKeyPair('RS256');
@@ -189,6 +194,7 @@ test('refresh rotates encrypted bundle using CAS, without application permission
       expires_in: 3600, scope: 'Chat.Create ChatMessage.Send' });
   }, () => api.getTeamsAuthorGrant(sb, user, config));
   assert.equal(grant.accessToken, 'new-access');
+  assert.equal(grant.connectionVersion, '44444444-4444-4444-8444-444444444444');
   assert.equal(saved.p_expected_version, old.version);
   assert.doesNotMatch(JSON.stringify(saved), /new-access|new-refresh|old-refresh/);
 });

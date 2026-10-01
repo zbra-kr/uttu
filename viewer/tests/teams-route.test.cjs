@@ -19,6 +19,7 @@ function scenario(overrides = {}) {
   const note = { id: noteId, user_id: authorId, body: '@사람 메모', mentioned_user_ids: [recipientId], created_at: new Date().toISOString(), ...overrides.note };
   const calls = []; let sends = 0; let status = 'pending';
   const row = { id: deliveryId, recipient_id: recipientId, body_snapshot: note.body,
+    connection_version: '55555555-5555-4555-8555-555555555555',
     recipient_tenant_id: configModule.COMPANY_TENANT, recipient_object_id: recipientId };
   const sb = {
     auth: { getUser: async () => ({ data: { user: overrides.noUser ? null : user } }) },
@@ -44,7 +45,8 @@ function scenario(overrides = {}) {
     '@/lib/supabase/server': { supabaseServer: async () => sb },
     '@/lib/teams/config': { ...configModule, teamsConfig: () => overrides.disabled ? null : { origin, tenantId: configModule.COMPANY_TENANT } },
     '@/lib/teams/identity': identity,
-    '@/lib/teams/oauth': { getTeamsAuthorGrant: async () => overrides.noGrant ? null : ({ accessToken: 'fake' }) },
+    '@/lib/teams/oauth': { getTeamsAuthorGrant: async () => overrides.noGrant ? null : ({ accessToken: 'fake',
+      connectionVersion: overrides.changedGrant ? '66666666-6666-4666-8666-666666666666' : row.connection_version }) },
     '@/lib/teams/graph': { sendAuthorMention: async input => {
       sends++;
       assert.equal(input.authenticatedAuthor.userId, authorId);
@@ -74,6 +76,14 @@ test('route sends as authenticated author, persists confirmed result and replay 
   assert.equal(finish.p_status, 'sent'); assert.equal(finish.p_message_id, 'message');
   response = await s.route.POST(s.request());
   assert.equal(response.status, 200); assert.equal(s.sends(), 1);
+});
+
+test('a grant changed between load and claim cannot send or poison the newer grant', async () => {
+  const s = scenario({ changedGrant: true });
+  const response = await s.route.POST(s.request());
+  assert.equal(response.status, 200); assert.equal(s.sends(), 0);
+  const finish = s.calls.find(([name]) => name === 'uttu_teams_finish_delivery')[1];
+  assert.equal(finish.p_status, 'skipped'); assert.equal(finish.p_error_code, 'connection_changed');
 });
 
 for (const [kind, options, patch, headers, http] of [

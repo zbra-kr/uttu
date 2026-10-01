@@ -5,11 +5,22 @@ const ts = require('typescript');
 module.exports = function loadSource(relativePath, mocks = {}) {
   const filename = path.resolve(__dirname, '../..', relativePath);
   const { outputText } = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX }, fileName: filename,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true }, fileName: filename,
   });
   const mod = new Module(filename, module); mod.filename = filename;
   mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const original = mod.require.bind(mod);
-  mod.require = name => name === 'server-only' ? {} : Object.hasOwn(mocks, name) ? mocks[name] : original(name);
+  mod.require = name => {
+    if (name === 'server-only') return {};
+    if (Object.hasOwn(mocks, name)) return mocks[name];
+    const local = name.startsWith('@/') ? path.resolve(__dirname, '../../src', name.slice(2))
+      : name.startsWith('.') ? path.resolve(path.dirname(filename), name) : null;
+    if (local) {
+      const source = [local, local + '.ts', local + '.tsx'].find(candidate =>
+        /\.tsx?$/.test(candidate) && fs.existsSync(candidate));
+      if (source) return loadSource(path.relative(path.resolve(__dirname, '../..'), source), mocks);
+    }
+    return original(name);
+  };
   mod._compile(outputText, filename); return mod.exports;
 };

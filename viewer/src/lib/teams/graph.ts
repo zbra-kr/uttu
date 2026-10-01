@@ -13,6 +13,8 @@ export interface AuthorGrant {
   expiresAt: number;
   /** Explicit optional UTTU Teams connection, separately from normal sign-in. */
   consented: boolean;
+  /** Verified storage version used to prevent a different grant claiming a send. */
+  connectionVersion?: string;
 }
 
 export interface MentionSend {

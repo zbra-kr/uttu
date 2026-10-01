@@ -6,6 +6,7 @@ import { TEAMS_OAUTH_SCOPES, type TeamsConfig } from './config';
 import { microsoftIdentity, sameMicrosoftIdentity, type MicrosoftIdentity } from './identity';
 import { decryptTeamsValue, encryptTeamsValue } from './vault';
 import { TEAMS_DELEGATED_SCOPES, type AuthorGrant } from './graph';
+import { safeTeamsSetupNext } from './setup-navigation';
 
 interface Connection {
   user_id: string;
@@ -29,6 +30,7 @@ interface OAuthAttempt {
   expiresAt: number;
   previousVersion: string | null;
   connectionEpoch: string;
+  returnTo?: string;
 }
 
 export const connectCookie = (secure: boolean) => secure ? '__Host-uttu-teams-connect' : 'uttu-teams-connect';
@@ -47,7 +49,7 @@ export async function getTeamsConnection(sb: SupabaseClient, userId: string): Pr
   return Array.isArray(data) && data.length === 1 ? data[0] as Connection : null;
 }
 
-export async function beginTeamsConnect(sb: SupabaseClient, user: User, config: TeamsConfig) {
+export async function beginTeamsConnect(sb: SupabaseClient, user: User, config: TeamsConfig, returnTo?: unknown) {
   const identity = microsoftIdentity(user, config.tenantId);
   if (!identity) throw new Error('Microsoft identity required');
   const previous = await getTeamsConnection(sb, user.id);
@@ -58,15 +60,28 @@ export async function beginTeamsConnect(sb: SupabaseClient, user: User, config: 
     verifier: randomBytes(32).toString('base64url'), expiresAt: Date.now() + 10 * 60_000,
     previousVersion: previous?.version ?? null,
     connectionEpoch: epoch,
+    returnTo: returnTo === undefined ? '/me' : safeTeamsSetupNext(returnTo),
   };
   const url = new URL(`https://login.microsoftonline.com/${config.tenantId}/oauth2/v2.0/authorize`);
   url.search = new URLSearchParams({
     client_id: config.clientId, response_type: 'code', redirect_uri: config.callback,
     response_mode: 'query', scope: TEAMS_OAUTH_SCOPES, state: attempt.state, nonce: attempt.nonce,
     code_challenge: createHash('sha256').update(attempt.verifier).digest('base64url'),
-    code_challenge_method: 'S256', prompt: 'consent',
+    code_challenge_method: 'S256',
   }).toString();
   return { url: url.toString(), cookie: encryptTeamsValue(attempt, config.encryptionKey, 'oauth-attempt') };
+}
+
+/** A failed provider round trip may retain only a verified, encrypted app path. */
+export function teamsConnectReturnPath(user: User, config: TeamsConfig, cookie: string, state: string): string {
+  try {
+    const identity = microsoftIdentity(user, config.tenantId);
+    const attempt = decryptTeamsValue(cookie, config.encryptionKey, 'oauth-attempt') as OAuthAttempt;
+    if (!identity || !attempt?.identity || !sameMicrosoftIdentity(attempt.identity, identity)
+      || !exactEqual(attempt.state, state) || !Number.isFinite(attempt.expiresAt)
+      || attempt.expiresAt < Date.now()) return '/me';
+    return safeTeamsSetupNext(attempt.returnTo ?? '/me');
+  } catch { return '/me'; }
 }
 
 type TokenResponse = Record<string, unknown>;
@@ -111,13 +126,13 @@ async function saveBundle(sb: SupabaseClient, config: TeamsConfig, bundle: Token
     p_expected_epoch: epoch,
   });
   if (error) throw new Error('Teams connection unavailable');
-  return typeof data === 'string';
+  return typeof data === 'string' ? data : null;
 }
 
 export async function completeTeamsConnect(
   sb: SupabaseClient, user: User, config: TeamsConfig, encryptedAttempt: string,
   state: string, code: string,
-): Promise<void> {
+): Promise<string> {
   const identity = microsoftIdentity(user, config.tenantId);
   const attempt = decryptTeamsValue(encryptedAttempt, config.encryptionKey, 'oauth-attempt') as OAuthAttempt;
   if (!identity || !attempt?.identity || !sameMicrosoftIdentity(identity, attempt.identity)
@@ -146,6 +161,7 @@ export async function completeTeamsConnect(
   if (!await saveBundle(sb, config, bundle, attempt.previousVersion, attempt.connectionEpoch)) {
     throw new Error('Teams connection changed');
   }
+  return safeTeamsSetupNext(attempt.returnTo ?? '/me');
 }
 
 function readBundle(connection: Connection, config: TeamsConfig, identity: MicrosoftIdentity): TokenBundle {
@@ -168,13 +184,14 @@ export async function getTeamsAuthorGrant(sb: SupabaseClient, user: User, config
   const connection = await getTeamsConnection(sb, user.id);
   if (!connection) return null;
   let bundle = readBundle(connection, config, identity);
-  if (bundle.expiresAt > Date.now() + 90_000) return bundle;
+  if (bundle.expiresAt > Date.now() + 90_000) return { ...bundle, connectionVersion: connection.version };
   const response = await exchangeToken(config, { grant_type: 'refresh_token', refresh_token: bundle.refreshToken });
   bundle = tokenBundle(response, identity, bundle.consentEpoch, bundle.refreshToken);
-  if (await saveBundle(sb, config, bundle, connection.version)) return bundle;
+  const savedVersion = await saveBundle(sb, config, bundle, connection.version);
+  if (savedVersion) return { ...bundle, connectionVersion: savedVersion };
   // A concurrent refresh/disconnect won. Never resurrect a deleted connection.
   const latest = await getTeamsConnection(sb, user.id);
   if (!latest) return null;
   const winner = readBundle(latest, config, identity);
-  return winner.expiresAt > Date.now() + 30_000 ? winner : null;
+  return winner.expiresAt > Date.now() + 30_000 ? { ...winner, connectionVersion: latest.version } : null;
 }
