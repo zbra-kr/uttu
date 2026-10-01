@@ -2,6 +2,7 @@ import { supabaseServer } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { AUTH_ROUTES, safeAuthRedirect } from '@/lib/auth/oauth';
+import { syncMicrosoftProfileName } from '@/lib/auth/microsoft-profile';
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
@@ -12,8 +13,11 @@ export async function GET(request: NextRequest) {
   if (code && !providerError) {
     try {
       const supabase = await supabaseServer();
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error) {
+        if (await syncMicrosoftProfileName(supabase, data?.user) === 'failed') {
+          console.warn('[auth] Microsoft profile name sync failed');
+        }
         return NextResponse.redirect(new URL(next, origin));
       }
     } catch {

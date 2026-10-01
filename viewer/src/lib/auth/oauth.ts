@@ -49,7 +49,7 @@ export function microsoftOAuthCredentials(
   return {
     provider: 'azure',
     options: {
-      scopes: 'email',
+      scopes: 'email profile',
       redirectTo: callback.toString(),
       skipBrowserRedirect: true,
       // Do not force prompt=login: Entra controls SSO, MFA and Conditional Access.

@@ -23,6 +23,7 @@ function loadSource(relativePath, mocks = {}) {
 }
 
 const oauth = loadSource('src/lib/auth/oauth.ts');
+const microsoftProfile = loadSource('src/lib/auth/microsoft-profile.ts');
 
 for (const value of ['/', '/today', '/market?brand=a&date=2026-10-01', '/reset-password', '/me#settings']) {
   test(`same-origin redirect preserved: ${value}`, () => {
@@ -41,12 +42,12 @@ for (const value of [
   });
 }
 
-test('Azure requests email, PKCE callback and no forced prompt or Graph scopes', () => {
+test('Azure requests basic email/profile claims, PKCE callback and no forced prompt or Graph scopes', () => {
   const credentials = oauth.microsoftOAuthCredentials('https://uttu.bcave.ai', '/market?q=a&b=2', true);
   assert.deepEqual(credentials, {
     provider: 'azure',
     options: {
-      scopes: 'email',
+      scopes: 'email profile',
       redirectTo: 'https://uttu.bcave.ai/auth/callback?next=%2Fmarket%3Fq%3Da%26b%3D2',
       skipBrowserRedirect: true,
     },
@@ -162,6 +163,7 @@ for (const failure of ['error', 'missing-url', 'network']) {
 function callback(exchangeCodeForSession) {
   return loadSource('src/app/auth/callback/route.ts', {
     '@/lib/auth/oauth': oauth,
+    '@/lib/auth/microsoft-profile': microsoftProfile,
     '@/lib/supabase/server': { supabaseServer: async () => ({ auth: { exchangeCodeForSession } }) },
     'next/server': { NextResponse: { redirect: (url) => new URL(url) } },
   }).GET;
@@ -235,3 +237,108 @@ for (const [enabled, pending] of [[false, false], [true, false], [true, true]]) 
     });
   });
 }
+
+function azureUser(identityData = { full_name: '  Entra Display Name  ' }) {
+  return { id: 'verified-user-id', identities: [{ provider: 'azure', identity_data: identityData }] };
+}
+
+test('Microsoft name uses Azure identity display claims only', () => {
+  assert.equal(microsoftProfile.microsoftDisplayName(azureUser()), 'Entra Display Name');
+  assert.equal(microsoftProfile.microsoftDisplayName(azureUser({ full_name: '  ', name: 'Fallback Name' })), 'Fallback Name');
+  assert.equal(microsoftProfile.microsoftDisplayName(azureUser({ full_name: 123, name: null })), undefined);
+  assert.equal(microsoftProfile.microsoftDisplayName({ id: 'u', email: 'invented@example.com', user_metadata: { full_name: 'User supplied' }, identities: [{ provider: 'email', identity_data: { full_name: 'Other Provider' } }] }), undefined);
+  assert.equal(microsoftProfile.microsoftDisplayName(null), undefined);
+});
+
+function profileClient(previousName, options = {}) {
+  const calls = [];
+  const client = { from(table) {
+    assert.equal(table, 'profiles');
+    return {
+      select(columns) {
+        assert.equal(columns, 'full_name');
+        return { eq(column, id) {
+          calls.push(['read', column, id]);
+          return { async maybeSingle() {
+            if (options.throwRead) throw new Error('private database details');
+            return { data: options.missing ? null : { full_name: previousName }, error: options.readError ? { message: 'private details' } : null };
+          } };
+        } };
+      },
+      update(patch) {
+        calls.push(['update', patch]);
+        const query = {
+          eq(column, value) { calls.push(['eq', column, value]); return query; },
+          is(column, value) { calls.push(['is', column, value]); return query; },
+          then(resolve, reject) { return Promise.resolve({ error: options.writeError ? { message: 'private details' } : null }).then(resolve, reject); },
+        };
+        return query;
+      },
+    };
+  } };
+  return { client, calls };
+}
+
+for (const previousName of [null, '', '   ']) {
+  test(`Azure login fills blank name with exact-value race protection: ${JSON.stringify(previousName)}`, async () => {
+    const { client, calls } = profileClient(previousName);
+    assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, azureUser()), 'updated');
+    assert.deepEqual(calls, [
+      ['read', 'id', 'verified-user-id'],
+      ['update', { full_name: 'Entra Display Name' }],
+      ['eq', 'id', 'verified-user-id'],
+      [previousName === null ? 'is' : 'eq', 'full_name', previousName],
+    ]);
+  });
+}
+
+test('Azure name sync preserves existing custom names and unrelated fields', async () => {
+  const { client, calls } = profileClient('My chosen name');
+  assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, azureUser()), 'skipped');
+  assert.deepEqual(calls, [['read', 'id', 'verified-user-id']]);
+});
+
+test('Missing Azure name never guesses from email or mutates a profile', async () => {
+  const { client, calls } = profileClient('');
+  assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, azureUser({})), 'skipped');
+  assert.deepEqual(calls, []);
+});
+
+for (const options of [{ missing: true }, { readError: true }, { throwRead: true }, { writeError: true }]) {
+  test(`Name-sync errors are contained and cannot fail authentication: ${JSON.stringify(options)}`, async () => {
+    const { client } = profileClient('', options);
+    assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, azureUser()), options.missing ? 'skipped' : 'failed');
+  });
+}
+
+test('Successful callback syncs the authenticated user before redirect', async () => {
+  const user = azureUser();
+  let synced = false;
+  const client = { auth: { exchangeCodeForSession: async () => ({ data: { user }, error: null }) } };
+  const get = loadSource('src/app/auth/callback/route.ts', {
+    '@/lib/auth/oauth': oauth,
+    '@/lib/auth/microsoft-profile': { syncMicrosoftProfileName: async (receivedClient, receivedUser) => {
+      assert.equal(receivedClient, client); assert.equal(receivedUser, user); synced = true; return 'updated';
+    } },
+    '@/lib/supabase/server': { supabaseServer: async () => client },
+    'next/server': { NextResponse: { redirect: (url) => new URL(url) } },
+  }).GET;
+  assert.equal((await get({ url: 'https://uttu.bcave.ai/auth/callback?code=code&next=/today' })).href, 'https://uttu.bcave.ai/today');
+  assert(synced);
+});
+
+test('Failed name backfill does not turn a successful login into auth failure', async () => {
+  const previousWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    const get = loadSource('src/app/auth/callback/route.ts', {
+      '@/lib/auth/oauth': oauth,
+      '@/lib/auth/microsoft-profile': { syncMicrosoftProfileName: async () => 'failed' },
+      '@/lib/supabase/server': { supabaseServer: async () => ({ auth: { exchangeCodeForSession: async () => ({ data: { user: azureUser() }, error: null }) } }) },
+      'next/server': { NextResponse: { redirect: (url) => new URL(url) } },
+    }).GET;
+    assert.equal((await get({ url: 'https://uttu.bcave.ai/auth/callback?code=private-code' })).href, 'https://uttu.bcave.ai/');
+    assert.deepEqual(warnings, ['[auth] Microsoft profile name sync failed']);
+  } finally { console.warn = previousWarn; }
+});
