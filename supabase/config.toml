@@ -406,3 +406,9 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# Notification dispatcher has independent constant-time internal-secret auth.
+# Disabled by default in BOTH function environment and database control.
+# Deploy/credential/scheduler activation requires explicit reviewed approval.
+[functions.notification-dispatch]
+verify_jwt = false

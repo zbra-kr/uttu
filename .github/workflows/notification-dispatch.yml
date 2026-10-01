@@ -1,0 +1,32 @@
+name: Notification dispatcher checks
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/config.toml', 'supabase/functions/notification-dispatch/**', 'supabase/*/01506*', 'supabase/tests/*notification_dispatch*', 'supabase/tests/notification-dispatch.test.mjs', '.github/workflows/notification-dispatch.yml']
+  pull_request:
+    paths: ['supabase/config.toml', 'supabase/functions/notification-dispatch/**', 'supabase/*/01506*', 'supabase/tests/*notification_dispatch*', 'supabase/tests/notification-dispatch.test.mjs', '.github/workflows/notification-dispatch.yml']
+permissions:
+  contents: read
+jobs:
+  offline-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 'v2.x'
+      - name: Check Edge runtime types
+        run: |
+          deno check supabase/functions/notification-dispatch/index.ts
+          deno lint supabase/functions/notification-dispatch
+      - name: Mocked-network delivery tests
+        run: node --experimental-strip-types --test supabase/tests/notification-dispatch.test.mjs
+      - name: Install isolated local PostgreSQL test engine
+        run: npm install --prefix "$RUNNER_TEMP/uttu-dispatch-tests" --no-save @electric-sql/pglite@0.3.14
+      - name: PostgreSQL lease and ACL contracts
+        env:
+          UTTU_PGLITE_MODULE: ${{ runner.temp }}/uttu-dispatch-tests/node_modules/@electric-sql/pglite
+        run: node supabase/tests/run_notification_dispatch.cjs
