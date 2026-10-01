@@ -243,11 +243,30 @@ function azureUser(identityData = { full_name: '  Entra Display Name  ' }) {
 }
 
 test('Microsoft name uses Azure identity display claims only', () => {
-  assert.equal(microsoftProfile.microsoftDisplayName(azureUser()), 'Entra Display Name');
-  assert.equal(microsoftProfile.microsoftDisplayName(azureUser({ full_name: '  ', name: 'Fallback Name' })), 'Fallback Name');
+  assert.equal(microsoftProfile.microsoftDisplayName(azureUser()), 'EntraDisplayName');
+  assert.equal(microsoftProfile.microsoftDisplayName(azureUser({ full_name: '  ', name: 'Fallback Name' })), 'FallbackName');
   assert.equal(microsoftProfile.microsoftDisplayName(azureUser({ full_name: 123, name: null })), undefined);
   assert.equal(microsoftProfile.microsoftDisplayName({ id: 'u', email: 'invented@example.com', user_metadata: { full_name: 'User supplied' }, identities: [{ provider: 'email', identity_data: { full_name: 'Other Provider' } }] }), undefined);
   assert.equal(microsoftProfile.microsoftDisplayName(null), undefined);
+});
+
+// Unicode White_Space plus ECMAScript's BOM; all are removed everywhere.
+for (const whitespace of [
+  '\t', '\n', '\v', '\f', '\r', ' ', '\u0085', '\u00a0', '\u1680',
+  '\u2000', '\u2001', '\u2002', '\u2003', '\u2004', '\u2005', '\u2006',
+  '\u2007', '\u2008', '\u2009', '\u200a', '\u2028', '\u2029', '\u202f',
+  '\u205f', '\u3000', '\ufeff',
+]) {
+  test(`Azure imported names remove Unicode whitespace U+${whitespace.charCodeAt(0).toString(16)}`, () => {
+    assert.equal(microsoftProfile.microsoftDisplayName(azureUser({ full_name: `${whitespace}정${whitespace}호${whitespace}철${whitespace}` })), '정호철');
+    assert.equal(microsoftProfile.microsoftDisplayName(azureUser({ full_name: whitespace, name: '정 호철' })), '정호철');
+    assert.equal(microsoftProfile.microsoftDisplayName(azureUser({ full_name: whitespace, name: whitespace })), undefined);
+  });
+}
+
+test('Name normalization preserves spelling, punctuation and meaningful joiners', () => {
+  assert.equal(microsoftProfile.microsoftDisplayName(azureUser({ full_name: " Anne-Marie O’Neill " })), 'Anne-MarieO’Neill');
+  assert.equal(microsoftProfile.microsoftDisplayName(azureUser({ full_name: 'A\u200cB\u200dC' })), 'A\u200cB\u200dC');
 });
 
 function profileClient(previousName, options = {}) {
@@ -279,13 +298,13 @@ function profileClient(previousName, options = {}) {
   return { client, calls };
 }
 
-for (const previousName of [null, '', '   ']) {
-  test(`Azure login fills blank name with exact-value race protection: ${JSON.stringify(previousName)}`, async () => {
+for (const previousName of [null, '', '   ', '\u0085\u00a0\u3000\ufeff', ' Entra Display Name ', 'Entra\tDisplay\u3000Name']) {
+  test(`Azure login fills blank or normalizes imported name with exact-value race protection: ${JSON.stringify(previousName)}`, async () => {
     const { client, calls } = profileClient(previousName);
     assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, azureUser()), 'updated');
     assert.deepEqual(calls, [
       ['read', 'id', 'verified-user-id'],
-      ['update', { full_name: 'Entra Display Name' }],
+      ['update', { full_name: 'EntraDisplayName' }],
       ['eq', 'id', 'verified-user-id'],
       [previousName === null ? 'is' : 'eq', 'full_name', previousName],
     ]);
@@ -297,6 +316,144 @@ test('Azure name sync preserves existing custom names and unrelated fields', asy
   assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, azureUser()), 'skipped');
   assert.deepEqual(calls, [['read', 'id', 'verified-user-id']]);
 });
+
+test('Already-normalized imported name is idempotent', async () => {
+  const { client, calls } = profileClient('EntraDisplayName');
+  assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, azureUser()), 'skipped');
+  assert.deepEqual(calls, [['read', 'id', 'verified-user-id']]);
+});
+
+test('New-signup DB name is normalized before the callback redirects', async () => {
+  const user = azureUser({ full_name: '정 호철' });
+  const { client, calls } = profileClient('정 호철');
+  client.auth = { exchangeCodeForSession: async () => ({ data: { user }, error: null }) };
+  const get = loadSource('src/app/auth/callback/route.ts', {
+    '@/lib/auth/oauth': oauth,
+    '@/lib/auth/microsoft-profile': microsoftProfile,
+    '@/lib/supabase/server': { supabaseServer: async () => client },
+    'next/server': { NextResponse: { redirect: (url) => new URL(url) } },
+  }).GET;
+  assert.equal((await get({ url: 'https://uttu.bcave.ai/auth/callback?code=code&next=/today' })).href, 'https://uttu.bcave.ai/today');
+  assert.deepEqual(calls, [
+    ['read', 'id', 'verified-user-id'],
+    ['update', { full_name: '정호철' }],
+    ['eq', 'id', 'verified-user-id'],
+    ['eq', 'full_name', '정 호철'],
+  ]);
+});
+
+test('Auth display metadata normalizes only matching names, preserving provider identity and all unrelated keys', async () => {
+  const user = {
+    ...azureUser({ full_name: '정 호철', name: '정 호철' }),
+    user_metadata: { full_name: '정 호철', name: '정\u3000호철', role: 'admin', theme: 'dark' },
+    app_metadata: { provider: 'azure', providers: ['azure'] },
+  };
+  const before = structuredClone(user);
+  const { client, calls } = profileClient('정 호철');
+  const authCalls = [];
+  client.auth = { updateUser: async attributes => { authCalls.push(attributes); return { error: null }; } };
+  assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, user), 'updated');
+  assert.deepEqual(authCalls, [{ data: { full_name: '정호철', name: '정호철' } }]);
+  assert.deepEqual(calls.find(call => call[0] === 'update'), ['update', { full_name: '정호철' }]);
+  assert.deepEqual(user, before);
+});
+
+test('Auth metadata custom names, normalized names and non-name fields are never overwritten', async () => {
+  const user = { ...azureUser(), user_metadata: { full_name: 'My custom name', name: 'EntraDisplayName', preferred_username: 'keep name', role: 'admin' } };
+  const { client, calls } = profileClient('My chosen name');
+  client.auth = { updateUser: () => assert.fail('Must preserve Auth custom metadata') };
+  assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, user), 'skipped');
+  assert.deepEqual(calls, [['read', 'id', 'verified-user-id']]);
+});
+
+test('Auth names still normalize when the app has a distinct custom name', async () => {
+  const user = { ...azureUser(), user_metadata: { full_name: 'Entra Display Name' } };
+  const { client, calls } = profileClient('My chosen name');
+  client.auth = { updateUser: async attributes => {
+    assert.deepEqual(attributes, { data: { full_name: 'EntraDisplayName' } });
+    return { error: null };
+  } };
+  assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, user), 'updated');
+  assert.deepEqual(calls, [['read', 'id', 'verified-user-id']]);
+});
+
+for (const throws of [false, true]) {
+  test(`Auth metadata normalization failure still updates app profile (throws=${throws})`, async () => {
+    const user = { ...azureUser(), user_metadata: { full_name: 'Entra Display Name' } };
+    const { client, calls } = profileClient('Entra Display Name');
+    client.auth = { updateUser: async () => {
+      if (throws) throw new Error('private network details');
+      return { error: { message: 'private auth details' } };
+    } };
+    assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, user), 'failed');
+    assert.deepEqual(calls.find(call => call[0] === 'update'), ['update', { full_name: 'EntraDisplayName' }]);
+  });
+}
+
+test('App profile failure still attempts Auth name normalization', async () => {
+  const user = { ...azureUser(), user_metadata: { full_name: 'Entra Display Name' } };
+  const { client } = profileClient('Entra Display Name', { readError: true });
+  let authUpdated = false;
+  client.auth = { updateUser: async () => { authUpdated = true; return { error: null }; } };
+  assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, user), 'failed');
+  assert.equal(authUpdated, true);
+});
+
+for (const metadataError of [false, true]) {
+  test(`Installed Auth/SSR SDK normalizes callback display metadata without changing identity or session (metadataError=${metadataError})`, async () => {
+    const { createServerClient } = require('@supabase/ssr');
+    const expiry = Math.floor(Date.now() / 1000) + 3600;
+    const user = {
+      ...azureUser({ full_name: '정 호철' }), aud: 'authenticated', created_at: '2026-01-01T00:00:00Z',
+      email: 'existing@example.com', app_metadata: { provider: 'azure' },
+      user_metadata: { full_name: '정 호철', name: '정 호철', theme: 'dark' },
+    };
+    const session = { access_token: 'synthetic-access-token', refresh_token: 'synthetic-refresh-token', token_type: 'bearer', expires_at: expiry, expires_in: 3600, user };
+    const cookieKey = 'sb-whitespace-auth-token';
+    const jar = new Map([[cookieKey, 'base64-' + Buffer.from(JSON.stringify(session)).toString('base64url')], ['foreign-cookie', 'unchanged']]);
+    const calls = [];
+    let metadataWrites = 0;
+    const client = createServerClient('https://whitespace.supabase.co', 'public-placeholder-key', {
+      cookies: {
+        getAll: () => Array.from(jar, ([name, value]) => ({ name, value })),
+        setAll: values => { for (const { name, value, options } of values) { if (options.maxAge === 0) jar.delete(name); else jar.set(name, value); } },
+      },
+      global: { fetch: async (input, options = {}) => {
+        const url = new URL(typeof input === 'string' ? input : input.url || String(input));
+        const method = options.method || 'GET';
+        calls.push([method, url.pathname]);
+        const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
+        if (url.pathname === '/auth/v1/user' && method === 'PUT') {
+          metadataWrites += 1;
+          const body = JSON.parse(options.body);
+          assert.deepEqual(body, { data: { full_name: '정호철', name: '정호철' }, code_challenge: null, code_challenge_method: null });
+          if (metadataError) return json({ code: 'unexpected_failure', msg: 'offline failure' }, 400);
+          return json({ ...user, user_metadata: { ...user.user_metadata, ...body.data } });
+        }
+        if (url.pathname === '/rest/v1/profiles') {
+          assert.equal(url.searchParams.get('id'), 'eq.verified-user-id');
+          if (method === 'GET') { assert.equal(url.searchParams.get('select'), 'full_name'); return json({ full_name: '정 호철' }); }
+          assert.equal(method, 'PATCH');
+          assert.equal(url.searchParams.get('full_name'), 'eq.정 호철');
+          assert.deepEqual(JSON.parse(options.body), { full_name: '정호철' });
+          return new Response(null, { status: 204 });
+        }
+        assert.fail(`Unexpected offline SDK request: ${method} ${url.pathname}`);
+      } },
+    });
+    assert.equal(await microsoftProfile.syncMicrosoftProfileName(client, user), metadataError ? 'failed' : 'updated');
+    assert.equal(metadataWrites, 1);
+    assert(calls.some(([method, pathname]) => method === 'PATCH' && pathname === '/rest/v1/profiles'));
+    assert.equal(jar.get('foreign-cookie'), 'unchanged');
+    const saved = JSON.parse(Buffer.from(jar.get(cookieKey).slice(7), 'base64url').toString());
+    assert.equal(saved.access_token, session.access_token);
+    assert.equal(saved.refresh_token, session.refresh_token);
+    assert.equal(saved.user.id, user.id);
+    assert.deepEqual(saved.user.identities, user.identities);
+    assert.deepEqual(saved.user.app_metadata, user.app_metadata);
+    assert.deepEqual(saved.user.user_metadata, metadataError ? user.user_metadata : { full_name: '정호철', name: '정호철', theme: 'dark' });
+  });
+}
 
 test('Missing Azure name never guesses from email or mutates a profile', async () => {
   const { client, calls } = profileClient('');

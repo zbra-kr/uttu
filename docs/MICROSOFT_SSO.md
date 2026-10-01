@@ -55,13 +55,15 @@ NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED=true
 - 기존 `@bcave.co.kr` 사용자와 다른 `@barrelsco.onmicrosoft.com` 이메일은 자동 병합하지 않는다. 새 UUID에는 기존 프로필 트리거의 `viewer` 기본 역할이 적용된다.
 - 공급자 데이터 흐름 근거: [Supabase 외부 로그인 계정 생성](https://github.com/supabase/auth/blob/master/internal/api/external.go), [사용자 INSERT 전 app metadata 설정](https://github.com/supabase/auth/blob/master/internal/api/signup.go). 합성 DB 테스트만으로 실제 provider 발급·테넌트 검증이나 실계정 로그인을 증명하지 않는다.
 
-### 5. Entra 표시 이름 수신과 빈 프로필 보완
+### 5. Entra 표시 이름 수신과 공백 없는 앱 이름
 
 - Microsoft는 `name` 클레임에 기본 OIDC `profile` scope를 요구한다. 이메일만 요청한 기존 로그인에서는 이름이 비어 있을 수 있다. [Microsoft ID token 클레임](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference)
 - 새 Microsoft 로그인에서 Supabase가 Azure `name`을 Auth 사용자/identity의 `full_name`으로 가져온다. 새 사용자 프로필은 기존 `handle_new_user()`로 이름을 받는다.
-- 기존 사용자는 다음 Microsoft 인증 완료 시 콜백이 Azure identity의 `full_name`/`name`만 읽어 `profiles.full_name`의 NULL·빈 문자열·공백만 채운다. 수정 전 값을 UPDATE 조건에 포함하여 동시에 저장된 사용자 지정 이름을 덮어쓰지 않는다.
-- `display_name` 별칭과 다른 필드, 역할, 이메일, UUID는 바꾸지 않는다. 이름은 표시 전용이고 접근 권한 판단에 사용하지 않는다. 이름이 없을 때 이메일/UPN에서 추측하지 않는다.
-- 프로필 쓰기 실패는 로그에 고정된 진단 문구만 남기고 정상 인증을 실패로 바꾸지 않는다. 이름·토큰·provider 응답 원문은 로그에 남기지 않는다.
+- Microsoft 인증 완료 시 콜백은 Azure identity의 `full_name`/`name`만 읽고 모든 Unicode 공백과 BOM을 제거한다. 예: `정 호철` → `정호철`. 이름의 문자·구두점·zero-width joiner는 보존한다.
+- `profiles.full_name`이 NULL·빈 문자열·공백뿐이면 이름을 채우고, 공백을 뺀 기존 이름이 같은 Azure 이름이면 공백만 정리한다. 새 가입 DB 트리거가 먼저 저장한 이름도 이 경로로 정리된다. 다른 사용자 지정 이름은 보존하며 수정 전 값을 UPDATE 조건에 포함하여 동시에 저장된 이름을 덮어쓰지 않는다.
+- Auth `user_metadata.full_name`/`name`의 기존 값이 같은 Azure 이름인 경우에만 `auth.updateUser({ data })`로 공백을 정리한다. 제공자 로그인 때 다시 들어온 공백도 다음 콜백에서 정리된다. 다른 metadata는 보내지 않으며 Azure identity 원본, `app_metadata`, 인증 정보, 역할, 이메일, UUID는 바꾸지 않는다. [Supabase 사용자 metadata 수정](https://supabase.com/docs/reference/javascript/auth-updateuser)
+- `display_name` 별칭은 자동 변경하지 않는다. 멘션은 `display_name`을 우선 사용하고 없으면 `full_name`을 사용하며, 수신자는 선택한 프로필 UUID로 저장한다. 정규화한 이름만 보고 계정을 연결하거나 동명이인을 추측하지 않는다. 이름은 표시 전용이고 접근 권한 판단에 사용하지 않으며, 이름이 없을 때 이메일/UPN에서 추측하지 않는다.
+- Auth/프로필 쓰기는 각각 최선 노력으로 진행한다. 한쪽 실패가 다른 쪽 보완을 막지 않으며, 로그에 고정된 진단 문구만 남기고 정상 인증을 실패로 바꾸지 않는다. 이름·토큰·provider 응답 원문은 로그에 남기지 않는다.
 - 이미 로그인된 세션에는 새 claim이 자동 추가되지 않는다. 실제 Microsoft 재인증 후 Auth 대시보드와 프로필 이름을 확인한다. 테스트를 위해 다른 기기의 세션까지 로그아웃하지 않는다.
 
 ### 6. 최초 가입 AI 토큰 한도
