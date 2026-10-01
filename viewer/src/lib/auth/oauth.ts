@@ -3,6 +3,8 @@ import type { SignInWithOAuthCredentials } from '@supabase/supabase-js';
 export const AUTH_ROUTES = {
   home: '/',
   login: '/login',
+  adminLogin: '/admin-login',
+  signup: '/signup',
   callback: '/auth/callback',
 } as const;
 
@@ -21,7 +23,8 @@ export function safeAuthRedirect(value: unknown): string {
   if (
     url.origin !== base || url.pathname.startsWith('//')
     || /^\/(?:%2f|%5c)/i.test(url.pathname)
-    || url.pathname === AUTH_ROUTES.login || url.pathname === AUTH_ROUTES.callback
+    || url.pathname === AUTH_ROUTES.login || url.pathname === AUTH_ROUTES.adminLogin
+    || url.pathname === AUTH_ROUTES.signup || url.pathname === AUTH_ROUTES.callback
   ) {
     return AUTH_ROUTES.home;
   }

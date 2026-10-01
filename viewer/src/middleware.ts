@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = new Set(['/login', '/signup', '/forgot-password']);
+const PUBLIC_PATHS = new Set(['/login', '/admin-login', '/signup', '/forgot-password']);
 const PUBLIC_PREFIXES = ['/auth/callback', '/reset-password', '/api/stats', '/api/mcp'];
 
 export async function middleware(request: NextRequest) {
@@ -36,8 +36,8 @@ export async function middleware(request: NextRequest) {
 
   // 공개 완전일치 경로
   if (PUBLIC_PATHS.has(pathname)) {
-    // 이미 로그인됐으면 앱으로
-    if (user) return NextResponse.redirect(new URL('/', request.url));
+    // 관리자 계정 전환은 현재 세션을 유지한 채 시도할 수 있습니다.
+    if (user && pathname !== '/admin-login') return NextResponse.redirect(new URL('/', request.url));
     return response;
   }
 

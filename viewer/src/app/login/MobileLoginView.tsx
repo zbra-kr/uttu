@@ -1,33 +1,14 @@
 'use client';
 import React from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
 import Link from 'next/link';
-import { signIn } from '../auth/actions';
+import AdminPasswordForm from '../admin-login/AdminPasswordForm';
 import MicrosoftLogin from './MicrosoftLogin';
 
 const WORDMARK_LIGHT = '/images/uttu/svg/uttu-wordmark.svg';
 const WORDMARK_DARK  = '/images/uttu/svg/uttu-wordmark-white.svg';
 
-function SubmitBtn() {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      style={{
-        height: 44, width: '100%', fontSize: 14, fontWeight: 600,
-        background: 'var(--hs)', color: 'var(--rai)', border: 'none',
-        borderRadius: 10, cursor: pending ? 'not-allowed' : 'pointer',
-        opacity: pending ? 0.65 : 1, transition: 'opacity 150ms',
-      }}
-    >
-      {pending ? '로그인 중…' : '로그인'}
-    </button>
-  );
-}
-
-export default function MobileLoginView({ next, authError }: { next: string; authError?: string }) {
-  const [state, action] = useFormState(signIn, null);
+export default function MobileLoginView({ next, authError, admin = false }: { next: string; authError?: string; admin?: boolean }) {
+  const microsoftOnly = process.env.NEXT_PUBLIC_MICROSOFT_ONLY_LOGIN_ENABLED === 'true';
   const [isDark, setIsDark] = React.useState(false);
 
   React.useEffect(() => {
@@ -67,8 +48,8 @@ export default function MobileLoginView({ next, authError }: { next: string; aut
 
         <div style={{ background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 16, padding: '28px 24px' }}>
           <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--f1)', letterSpacing: '-0.02em' }}>로그인</div>
-            <div style={{ fontSize: 12, color: 'var(--f4)', marginTop: 4 }}>B.CAVE 메일계정으로 접속하세요</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--f1)', letterSpacing: '-0.02em' }}>{admin ? '관리자 로그인' : '로그인'}</div>
+            <div style={{ fontSize: 12, color: 'var(--f4)', marginTop: 4 }}>{admin ? '기존 관리자 계정만 이메일·비밀번호로 접속할 수 있습니다' : microsoftOnly ? '회사 Microsoft 계정으로 접속하세요' : 'B.CAVE 메일계정으로 접속하세요'}</div>
           </div>
 
           {authError && (
@@ -76,55 +57,39 @@ export default function MobileLoginView({ next, authError }: { next: string; aut
               {authError}
             </div>
           )}
-          <div style={{ marginBottom: process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED === 'true' ? 20 : 0 }}>
-            <MicrosoftLogin next={next} />
-          </div>
+          {admin ? <AdminPasswordForm next={next} mobile /> : (
+            <>
+              <MicrosoftLogin next={next} />
+              {microsoftOnly ? (
+                <p style={{ fontSize: 12, color: 'var(--f4)', lineHeight: 1.7, marginTop: 20 }}>
+                  {process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED === 'true'
+                    ? '처음 이용하는 분도 Microsoft 로그인으로 시작하세요.'
+                    : 'Microsoft 로그인을 준비 중입니다. IT팀에 문의해 주세요.'}
+                </p>
+              ) : <AdminPasswordForm next={next} admin={false} mobile /> }
+            </>
+          )}
 
-          <form action={action} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--f3)' }}>이메일</label>
-              <input
-                name="email" type="email" required autoFocus autoComplete="email"
-                placeholder="name@bcave.co.kr"
-                style={{
-                  height: 42, padding: '0 12px', borderRadius: 7, fontSize: 13,
-                  border: '1px solid var(--bd)', background: 'var(--snk)',
-                  color: 'var(--f1)', outline: 'none', width: '100%', boxSizing: 'border-box',
-                }}
-              />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--f3)' }}>비밀번호</label>
-              <input
-                name="password" type="password" required autoComplete="current-password"
-                placeholder="••••••••"
-                style={{
-                  height: 42, padding: '0 12px', borderRadius: 7, fontSize: 13,
-                  border: '1px solid var(--bd)', background: 'var(--snk)',
-                  color: 'var(--f1)', outline: 'none', width: '100%', boxSizing: 'border-box',
-                }}
-              />
-            </div>
-
-            {state?.error && (
-              <div style={{ background: 'var(--shb)', border: '1px solid var(--shf)', borderRadius: 7, padding: '10px 12px', fontSize: 12, color: 'var(--shf)' }}>
-                {state.error}
-              </div>
+          <div style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid var(--bd)', display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 16 }}>
+            {!admin && !microsoftOnly && (
+              <>
+                <Link href="/signup" style={{ fontSize: 12, fontWeight: 500, color: 'var(--hs)', textDecoration: 'none' }}>계정 만들기</Link>
+                <span style={{ color: 'var(--bd)', fontSize: 14 }}>·</span>
+                <Link href="/forgot-password" style={{ fontSize: 12, fontWeight: 500, color: 'var(--hs)', textDecoration: 'none' }}>비밀번호 찾기</Link>
+                <span style={{ color: 'var(--bd)', fontSize: 14 }}>·</span>
+              </>
             )}
-
-            <div style={{ marginTop: 4 }}>
-              <SubmitBtn />
-            </div>
-          </form>
-
-          <div style={{ marginTop: 20, paddingTop: 18, borderTop: '1px solid var(--bd)', display: 'flex', justifyContent: 'center', gap: 16 }}>
-            <Link href="/signup" style={{ fontSize: 13, fontWeight: 500, color: 'var(--hs)', textDecoration: 'none' }}>
-              계정 만들기
+            <Link href={admin ? (next === '/' ? '/login' : `/login?redirect=${encodeURIComponent(next)}`) : (next === '/' ? '/admin-login' : `/admin-login?redirect=${encodeURIComponent(next)}`)} style={{ fontSize: 13, fontWeight: 500, color: 'var(--hs)', textDecoration: 'none' }}>
+              {admin ? 'Microsoft 로그인' : '관리자 로그인'}
             </Link>
-            <span style={{ color: 'var(--bd)', fontSize: 14 }}>·</span>
-            <Link href="/forgot-password" style={{ fontSize: 13, fontWeight: 500, color: 'var(--hs)', textDecoration: 'none' }}>
-              비밀번호 찾기
-            </Link>
+            {admin && (
+              <>
+                <span style={{ color: 'var(--bd)', fontSize: 14 }}>·</span>
+                <Link href="/forgot-password" style={{ fontSize: 13, fontWeight: 500, color: 'var(--hs)', textDecoration: 'none' }}>
+                  비밀번호 찾기
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
