@@ -345,7 +345,7 @@ function MeDesktopView() {
         </div>
 
         <div className="col-flex gap-12">
-          <section className="panel">
+          <section className="panel" data-tour="saved-bookmarks">
             <div className="sec-head">
               <h3>북마크 <span className="sub">{bookmarks.length}개</span></h3>
             </div>

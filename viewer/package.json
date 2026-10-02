@@ -10,7 +10,8 @@
     "test:auth": "node --test tests/auth.test.cjs tests/auth-admin-password.test.cjs tests/auth-admin-ssr.test.cjs",
     "test:egress": "node --experimental-strip-types src/lib/mcp/anthropic-egress.test.mts",
     "test:auth:admin": "node --test tests/auth-admin-password.test.cjs tests/auth-admin-ssr.test.cjs",
-    "test:teams": "node --test tests/teams-*.test.cjs"
+    "test:teams": "node --test tests/teams-*.test.cjs",
+    "test:onboarding": "node --test tests/onboarding*.test.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",

@@ -86,7 +86,7 @@ export default function MobileMeView() {
       )}
 
       {/* 탭 */}
-      <MobileFilterChips items={TABS} activeValue={tab} onChange={setTab} />
+      <div data-tour="saved-bookmarks"><MobileFilterChips items={TABS} activeValue={tab} onChange={setTab} /></div>
 
       {/* 북마크 */}
       {tab === 'bookmarks' && (

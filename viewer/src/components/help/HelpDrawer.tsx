@@ -2,6 +2,7 @@
 import React from 'react';
 import { fetchHelpByPath, type HelpArticle } from '@/lib/queries-help';
 import TiptapRenderer from './TiptapRenderer';
+import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import { useIsMobile } from '@/hooks/useViewport';
 
 interface Props {
@@ -12,6 +13,7 @@ interface Props {
 
 export default function HelpDrawer({ pagePath, open, onClose }: Props) {
   const isMobile = useIsMobile();
+  const tour = useOnboarding();
   const [articles,  setArticles]  = React.useState<HelpArticle[]>([]);
   const [loading,   setLoading]   = React.useState(false);
   const [activeIdx, setActiveIdx] = React.useState(0);
@@ -106,6 +108,10 @@ export default function HelpDrawer({ pagePath, open, onClose }: Props) {
             ✕
           </button>
         </div>
+
+        <button type="button" className="btn sm" data-tour-replay onClick={() => { onClose(); tour.replay(); }} style={{ marginTop: 14 }}>
+          시작 가이드 다시 보기 · AI / 멘션 / 북마크
+        </button>
 
         {/* 탭 (아티클 2개 이상일 때) */}
         {articles.length > 1 && (

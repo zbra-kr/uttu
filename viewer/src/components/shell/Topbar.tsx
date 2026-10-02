@@ -107,7 +107,7 @@ export default function Topbar({ breadcrumb, theme, onTheme, aipOpen, onToggleAi
       </div>
       <HelpButton />
       {!aipOpen && (
-        <button className="icon-btn" onClick={onToggleAip} title="UTTU AI 열기"
+        <button data-tour="ai-entry" className="icon-btn" onClick={onToggleAip} title="UTTU AI 열기"
           style={{ background: 'var(--hs-soft)', color: 'var(--hs)', borderColor: 'var(--hs)' }}>
           <IcSpark />
         </button>

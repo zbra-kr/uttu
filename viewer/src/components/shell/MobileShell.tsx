@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import AiPanel from './AiPanel';
+import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import HelpButton from '../help/HelpButton';
 import {
   IcHome, IcSpark, IcRanking, IcFlag, IcUser,
@@ -58,9 +59,11 @@ const ROOT_PATHS = new Set(['/']);
 
 export default function MobileShell({ children, shellStats, context }: MobileShellProps) {
   const pathname = usePathname();
+  const tour = useOnboarding();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [aipOpen, setAipOpen] = React.useState(false);
+  const visibleAi = tour.active ? tour.step === 1 : aipOpen;
   const [bellOpen, setBellOpen] = React.useState(false);
   const [unreadCount, setUnreadCount] = React.useState(0);
   const [user, setUser] = React.useState<{
@@ -268,6 +271,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
 
       {/* ── FAB (AI) ── */}
       <button
+        data-tour="ai-entry"
         onClick={toggleAip}
         style={{
           position: 'fixed', right: 16, bottom: 20, zIndex: 50,
@@ -368,7 +372,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
 
       {/* ── AI Panel (reuses desktop component) ── */}
       <AiPanel
-        open={aipOpen}
+        open={visibleAi}
         onToggle={toggleAip}
         context={context}
         route={pathname}

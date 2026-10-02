@@ -17,6 +17,8 @@ export default function HelpButton() {
   return (
     <>
       <button
+        data-tour-help
+        aria-label="이 화면 가이드 열기"
         onClick={toggle}
         title={open ? '가이드 닫기 (ESC)' : '이 화면 가이드 열기'}
         style={{

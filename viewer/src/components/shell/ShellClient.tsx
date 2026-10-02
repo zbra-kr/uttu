@@ -8,6 +8,7 @@ import CmdK from './CmdK';
 import MobileShell from './MobileShell';
 import { fetchShellStats, ShellStats } from '@/lib/queries';
 import { useIsMobile } from '@/hooks/useViewport';
+import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import { kstToday } from '@/lib/format';
 
 const BREADCRUMBS: Record<string, string[]> = {
@@ -49,6 +50,8 @@ const CONTEXTS: Record<string, string[]> = {
 
 export default function ShellClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const tour = useOnboarding();
+  const tourAiOpen = tour.active ? tour.step === 1 : undefined;
   const isMobile = useIsMobile();
   const [theme, setTheme] = React.useState<string>('light');
   const [productCrumb, setProductCrumb] = React.useState<{ brand: string; name: string } | null>(null);
@@ -213,7 +216,7 @@ export default function ShellClient({ children }: { children: React.ReactNode })
             breadcrumb={breadcrumb}
             theme={theme}
             onTheme={handleTheme}
-            aipOpen={aipOpen}
+            aipOpen={tourAiOpen ?? aipOpen}
             onToggleAip={toggleAip}
             onOpenCmdk={() => setCmdkOpen(true)}
           />
@@ -237,7 +240,7 @@ export default function ShellClient({ children }: { children: React.ReactNode })
           </div>
         </main>
       </div>
-      <AiPanel open={aipOpen} onToggle={toggleAip} context={context} route={pathname} />
+      <AiPanel open={tourAiOpen ?? aipOpen} onToggle={toggleAip} context={context} route={pathname} />
       <CmdK open={cmdkOpen} onClose={() => setCmdkOpen(false)} />
     </>
   );

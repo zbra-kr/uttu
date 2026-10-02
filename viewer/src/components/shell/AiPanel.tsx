@@ -570,7 +570,7 @@ export default function AiPanel({ open, onToggle, context, route, mobileMode }: 
       </div>
 
       {/* 입력창 */}
-      <div className="aip-foot">
+      <div className="aip-foot" data-tour="ai-input">
         {thinking && <div className="aip-progress"><div className="aip-progress-bar" /></div>}
         <div className="aip-centered" style={{ paddingTop: 10 }}>
           {/* quota 바 */}

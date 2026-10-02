@@ -496,7 +496,7 @@ function RankingDesktopView({ sourceContext, sourceLink, compact }: {
         <span className="sub">전체 상품 랭킹 · 회사·브랜드·필터 적용</span>
         <div className="row-flex gap-6" style={{ marginLeft: 'auto' }}>
           <button className="btn sm" onClick={() => downloadCsv(sorted, multiDay)}><IcDownload /> CSV</button>
-<button className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
+<button data-tour="note-entry" className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
             <IcEdit /> 메모
             {noteCount > 0 && (
               <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 7, background: 'var(--hs)', color: 'var(--white)', fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
