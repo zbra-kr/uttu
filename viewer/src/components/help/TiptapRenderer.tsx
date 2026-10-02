@@ -37,7 +37,7 @@ export default function TiptapRenderer({ content, className }: Props) {
     content: content ?? {},
     editable: false,
     immediatelyRender: false,
-  });
+  }, [content]);
 
   return (
     <div

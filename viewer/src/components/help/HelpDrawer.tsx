@@ -14,10 +14,11 @@ interface Props {
 export default function HelpDrawer({ pagePath, open, onClose }: Props) {
   const isMobile = useIsMobile();
   const tour = useOnboarding();
-  const [articles,  setArticles]  = React.useState<HelpArticle[]>([]);
+  const [loaded, setLoaded] = React.useState<{ pagePath: string; articles: HelpArticle[] } | null>(null);
   const [loading,   setLoading]   = React.useState(false);
   const [activeIdx, setActiveIdx] = React.useState(0);
-  const fetchedRef = React.useRef<string | null>(null);
+  const loadedPath = loaded?.pagePath;
+  const articles = loaded?.pagePath === pagePath ? loaded.articles : [];
 
   // ESC로 닫기
   React.useEffect(() => {
@@ -34,20 +35,21 @@ export default function HelpDrawer({ pagePath, open, onClose }: Props) {
 
   // 드로어 열릴 때 데이터 fetch (캐시: 같은 pagePath 재요청 방지)
   React.useEffect(() => {
-    if (!open) return;
-    if (!pagePath) { setArticles([]); return; }
-    if (fetchedRef.current === pagePath) return;
+    if (!open || !pagePath || loadedPath === pagePath) {
+      setLoading(false);
+      return;
+    }
 
+    let cancelled = false;
     setLoading(true);
-    setArticles([]);
     fetchHelpByPath(pagePath)
       .then(a => {
-        setArticles(a);
-        fetchedRef.current = pagePath;
+        if (!cancelled) setLoaded({ pagePath, articles: a });
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [open, pagePath]);
+      .catch(error => { if (!cancelled) console.error(error); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, pagePath, loadedPath]);
 
   const active = articles[activeIdx] ?? null;
 

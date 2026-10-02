@@ -1,6 +1,7 @@
 'use client';
 import React from 'react';
 import { usePathname } from 'next/navigation';
+import { helpPagePath } from '@/lib/help-page-path';
 import { IcHelp } from '../ui/icons';
 import HelpDrawer from './HelpDrawer';
 
@@ -8,9 +9,7 @@ export default function HelpButton() {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
 
-  // 동적 세그먼트 제거: /admin/guides/abc123 → /admin/guides
-  // 단순 처리: 쿼리스트링은 usePathname에서 이미 제거됨
-  const pagePath = pathname ?? null;
+  const pagePath = helpPagePath(pathname);
 
   const toggle = () => setOpen(o => !o);
 
