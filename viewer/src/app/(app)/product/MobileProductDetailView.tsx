@@ -9,6 +9,7 @@ import {
   type ProductDetail, type ReviewRow, type CategoryRankRow, type BodyStats,
 } from '@/lib/queries';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
+import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
 import ReviewDetailSheet from '@/components/mobile/ReviewDetailSheet';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceDot } from 'recharts';
 
@@ -58,6 +59,7 @@ export default function MobileProductDetailView() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const no = searchParams.get('no') ?? '';
+  const { noteDrawerOpen, setNoteDrawerOpen } = useSourceNoteDrawer(no);
 
   const [detail,         setDetail]         = useState<ProductDetail | null>(null);
   const [priceHistory,   setPriceHistory]   = useState<{ date: string; price: number; discount_rate: number | null }[]>([]);
@@ -71,6 +73,8 @@ export default function MobileProductDetailView() {
 
   useEffect(() => {
     if (!no) return;
+    let active = true;
+    setDetail(null);
     setLoading(true);
     Promise.all([
       fetchProductDetail(no),
@@ -78,6 +82,7 @@ export default function MobileProductDetailView() {
       fetchProductRankHistory(no),
       fetchProductCategoryRanks(no),
     ]).then(async ([det, price, rank, cr]) => {
+      if (!active) return;
       setDetail(det);
       setPriceHistory(price);
       setRankHistory(rank);
@@ -88,18 +93,20 @@ export default function MobileProductDetailView() {
           fetchReviews({ productId: det.id, sort: 'recent', limit: 10 }),
           fetchBodyStats(det.id),
         ]);
+        if (!active) return;
         setReviews(rv.rows);
         setBodyStats(bs);
       } else if (det) {
-        fetchReviews({ productId: det.id, limit: 5 }).then(({ rows }) => setReviews(rows));
+        fetchReviews({ productId: det.id, limit: 5 }).then(({ rows }) => { if (active) setReviews(rows); }).catch(() => {});
       }
       setLoading(false);
-    });
+    }).catch(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [no]);
 
   if (!no) return <MobileEmptyState icon="🔍" title="상품 번호가 없습니다" />;
   if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>;
-  if (!detail) return <MobileEmptyState icon="📦" title="상품 정보를 찾을 수 없습니다" />;
+  if (!detail) return <><MobileEmptyState icon="📦" title="상품 정보를 찾을 수 없습니다" /><SourceNoteFallback /></>;
 
   // ── 랭킹 차트 계산 ─────────────────────────────
   const ranks = rankHistory.map(r => r.rank);
@@ -144,6 +151,10 @@ export default function MobileProductDetailView() {
   return (
     <>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 12px 20px', width: '100%', minWidth: 0 }}>
+      {!detail.id && <SourceNoteFallback />}
+      {detail.id && <NoteDrawer key={detail.id} entity_type="product" entity_id={detail.id}
+        entity_label={detail.name} open={noteDrawerOpen} onClose={() => setNoteDrawerOpen(false)} />}
+      {detail.id && <button type="button" className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ alignSelf: 'flex-end' }}>메모</button>}
 
       {/* ── 헤더 ── */}
       <div style={{ padding: '14px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>

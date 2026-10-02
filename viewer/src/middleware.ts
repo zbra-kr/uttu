@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 import { readTeamsSetupAccess, teamsSetupRequired } from '@/lib/teams/setup-access';
 import { teamsSetupPath } from '@/lib/teams/setup-navigation';
+import { compactNoteAuthReturn } from '@/lib/notes/auth-return';
 
 const PUBLIC_PATHS = new Set(['/login', '/admin-login', '/signup', '/forgot-password']);
 const PUBLIC_PREFIXES = ['/auth/callback', '/auth/teams/callback', '/reset-password', '/api/stats', '/api/mcp'];
@@ -50,7 +51,7 @@ export async function middleware(request: NextRequest) {
   // 나머지 모든 경로: 로그인 필수
   if (!user) {
     const url = new URL('/login', request.url);
-    url.searchParams.set('redirect', `${pathname}${request.nextUrl.search}`);
+    url.searchParams.set('redirect', compactNoteAuthReturn(`${pathname}${request.nextUrl.search}`));
     return NextResponse.redirect(url);
   }
 

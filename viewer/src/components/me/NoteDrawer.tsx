@@ -1,8 +1,10 @@
 'use client';
 import React from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import type { RankingSourceContext } from '@/lib/notes/ranking-context';
 import {
   EntityType, MyNote, MentionCandidate,
-  fetchNotesForEntity, createNote, updateNote, deleteNote,
+  fetchNotesForEntity, fetchNoteForEntity, createNote, updateNote, deleteNote,
 } from '@/lib/queries-me';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import MentionAutocomplete from './MentionAutocomplete';
@@ -40,6 +42,43 @@ function renderBody(text: string): React.ReactNode[] {
   });
 }
 
+/** Source URLs control the initial target and remain compatible with client navigation. */
+export function useSourceNoteDrawer(entityId: string) {
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const search = params.toString();
+  const [noteDrawerOpen, setOpen] = React.useState(() =>
+    !!entityId && (params.get('notes') === 'open' || !!params.get('note')));
+
+  React.useEffect(() => {
+    const source = new URLSearchParams(search);
+    setOpen(!!entityId && (source.get('notes') === 'open' || !!source.get('note')));
+  }, [entityId, search]);
+
+  const setNoteDrawerOpen = React.useCallback((value: boolean) => {
+    setOpen(value);
+    if (!value) {
+      const source = new URLSearchParams(search);
+      if (source.has('notes') || source.has('note')) {
+        source.delete('notes');
+        source.delete('note');
+        const query = source.toString();
+        router.replace(`${pathname}${query ? `?${query}` : ''}`, { scroll: false });
+      }
+    }
+  }, [search, pathname, router]);
+
+  return { noteDrawerOpen, setNoteDrawerOpen };
+}
+
+export function SourceNoteFallback() {
+  const params = useSearchParams();
+  const id = params.get('note');
+  if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+  return <a href={`/me/notes/${id}?view=memo`} style={{ display: 'block', padding: 16, textAlign: 'center', color: 'var(--hs)' }}>연결된 메모 보기</a>;
+}
+
 interface Props {
   entity_type: EntityType;
   entity_id: string;
@@ -47,11 +86,18 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onCountChange?: (n: number) => void;
+  sourceContext?: RankingSourceContext | null;
+  saveBlockedReason?: string;
 }
 
 export default function NoteDrawer({
-  entity_type, entity_id, entity_label, open, onClose, onCountChange,
+  entity_type, entity_id, entity_label, open, onClose, onCountChange, sourceContext, saveBlockedReason,
 }: Props) {
+  const params = useSearchParams();
+  const targetNoteId = params.get('note')?.toLowerCase() ?? null;
+  const [targetMessage, setTargetMessage] = React.useState<string | null>(null);
+  const targetElementRef = React.useRef<HTMLDivElement>(null);
+  const focusedTargetRef = React.useRef<string | null>(null);
   const [notes, setNotes] = React.useState<MyNote[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
@@ -93,19 +139,46 @@ export default function NoteDrawer({
   const submissionRef = React.useRef<{ id: string; snapshot: string } | null>(null);
 
   React.useEffect(() => {
+    focusedTargetRef.current = null;
     if (!open || !entity_id) return;
+    let active = true;
     const controller = new AbortController();
+    setTeams(null);
     fetch('/api/me/teams/connection', { cache: 'no-store', signal: controller.signal })
-      .then(response => response.ok ? response.json() : null).then(setTeams).catch(() => {});
+      .then(response => response.ok ? response.json() : null)
+      .then(value => { if (active) setTeams(value); }).catch(() => {});
     setLoading(true);
-    fetchNotesForEntity(entity_type, entity_id).then(data => {
+    setNotes([]);
+    setTargetMessage(null);
+    (async () => {
+      const latest = await fetchNotesForEntity(entity_type, entity_id);
+      if (!active) return;
+      const data = latest.filter(note => note.entity_type === entity_type && note.entity_id === entity_id);
+      if (targetNoteId && !data.some(note => note.id.toLowerCase() === targetNoteId)) {
+        const target = await fetchNoteForEntity(targetNoteId, entity_type, entity_id);
+        if (!active) return;
+        if (target) data.push(target);
+        else setTargetMessage('연결된 메모를 열 수 없습니다. 삭제되었거나 열람 권한이 없을 수 있습니다.');
+      }
       setNotes(data);
-      setLoading(false);
       onCountChange?.(data.length);
-    });
-    return () => controller.abort();
+    })().catch(() => {
+      if (active) setTargetMessage('메모를 불러오지 못했습니다. 잠시 후 다시 열어 주세요.');
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; controller.abort(); };
   // onCountChange prop 함수 제외 — 부모 재렌더링 시 무한 루프 방지
-  }, [open, entity_type, entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, entity_type, entity_id, targetNoteId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    if (!open || loading || !targetNoteId || !targetElementRef.current
+      || !notes.some(note => note.id.toLowerCase() === targetNoteId
+        && note.entity_type === entity_type && note.entity_id === entity_id)) return;
+    const key = `${entity_type}:${entity_id}:${targetNoteId}`;
+    if (focusedTargetRef.current === key) return;
+    focusedTargetRef.current = key;
+    targetElementRef.current.scrollIntoView({ block: 'center', behavior: 'auto' });
+    targetElementRef.current.focus({ preventScroll: true });
+  }, [open, loading, notes, entity_type, entity_id, targetNoteId]);
 
   const handleBodyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     if (savingRef.current) return;
@@ -164,12 +237,12 @@ export default function NoteDrawer({
   };
 
   const handleSave = async () => {
-    if (!body.trim() || savingRef.current) return;
+    if (!body.trim() || savingRef.current || saveBlockedReason) return;
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
     setSendStatus(null);
-    const snapshot = JSON.stringify([body.trim(), tags, mentionedIds, entity_type, entity_id]);
+    const snapshot = JSON.stringify([body.trim(), tags, mentionedIds, entity_type, entity_id, sourceContext ?? null]);
     if (!submissionRef.current || submissionRef.current.snapshot !== snapshot) {
       submissionRef.current = { id: crypto.randomUUID(), snapshot };
     }
@@ -179,6 +252,7 @@ export default function NoteDrawer({
       body: body.trim(), entity_type, entity_id, tags, mentioned_user_ids: mentionedIds,
       send_teams: teamsReady && sendTeams && selectedMentions.every(mention => !mention.key.startsWith('team:')),
       submission_id: submissionRef.current.id,
+      source_context: sourceContext ?? null,
       });
     } catch {
       result = { data: null, error: '저장 결과를 확인하지 못했습니다. 같은 메모로 다시 시도하면 중복 전송을 방지합니다.' };
@@ -238,10 +312,12 @@ export default function NoteDrawer({
           onClick={onClose}
         />
       )}
-      <div style={{
+      <div role="dialog" aria-modal={open ? true : undefined} aria-label={`${entity_label ?? entity_type} 메모`}
+        aria-hidden={!open} style={{
+        visibility: open ? 'visible' : 'hidden',
         position: 'fixed',
         top: 0, right: 0, bottom: 0,
-        width: 400,
+        width: 'min(400px, 100vw)',
         transform: open ? 'translateX(0)' : 'translateX(100%)',
         transition: 'transform 240ms ease',
         background: 'var(--sur)',
@@ -273,6 +349,7 @@ export default function NoteDrawer({
 
         {/* Note list */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
+          {targetMessage && <div role="status" style={{ padding: '12px 0', fontSize: 12, color: 'var(--f3)' }}>{targetMessage}</div>}
           {loading ? (
             <div style={{ fontSize: 12, color: 'var(--f4)', padding: '32px 0', textAlign: 'center' }}>불러오는 중…</div>
           ) : notes.length === 0 ? (
@@ -285,11 +362,17 @@ export default function NoteDrawer({
               {notes.map(note => (
                 <div
                   key={note.id}
+                  ref={note.id.toLowerCase() === targetNoteId ? targetElementRef : undefined}
+                  tabIndex={note.id.toLowerCase() === targetNoteId ? -1 : undefined}
+                  data-note-id={note.id}
+                  data-note-target={note.id.toLowerCase() === targetNoteId ? 'true' : undefined}
+                  aria-label={note.id.toLowerCase() === targetNoteId ? '연결된 메모' : undefined}
                   onMouseEnter={() => setHoveredId(note.id)}
                   onMouseLeave={() => setHoveredId(null)}
                   style={{
-                    background: hoveredId === note.id && editingId !== note.id ? 'var(--snk)' : 'var(--rai)',
-                    border: '0.5px solid var(--bs)',
+                    background: note.id.toLowerCase() === targetNoteId ? 'var(--hs-soft)' : hoveredId === note.id && editingId !== note.id ? 'var(--snk)' : 'var(--rai)',
+                    border: note.id.toLowerCase() === targetNoteId ? '2px solid var(--hs)' : '0.5px solid var(--bs)',
+                    scrollMarginBlock: 16,
                     borderRadius: 5,
                     padding: 12,
                     transition: 'background 100ms',
@@ -460,6 +543,7 @@ export default function NoteDrawer({
                 : <div>Teams DM을 보내려면 <a href="/me">내 프로필</a>에서 Teams를 연결해 주세요.</div>}
           </div>}
           {sendStatus && <div role="status" style={{ fontSize: 11, marginTop: 8, color: 'var(--f3)' }}>{sendStatus}</div>}
+          {saveBlockedReason && <div role="status" style={{ fontSize: 11, marginTop: 8, color: 'var(--f3)' }}>{saveBlockedReason}</div>}
           {/* Action row */}
           <div style={{ display: 'flex', alignItems: 'center', marginTop: 8, gap: 8 }}>
             <span style={{ flex: 1, fontSize: 11 }}>
@@ -470,7 +554,7 @@ export default function NoteDrawer({
                   : null}
             </span>
             <span className="mono" style={{ fontSize: 10, color: 'var(--f4)' }}>⌘↵ 저장</span>
-            <button className="btn sm active" onClick={handleSave} disabled={saving || !body.trim()}>
+            <button className="btn sm active" onClick={handleSave} disabled={saving || !body.trim() || !!saveBlockedReason}>
               {saving ? '저장 중…' : teamsReady && sendTeams && mentionedIds.length > 0
                 && selectedMentions.every(mention => !mention.key.startsWith('team:')) ? '저장 및 Teams DM' : '저장'}
             </button>

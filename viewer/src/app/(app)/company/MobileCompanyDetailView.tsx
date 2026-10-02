@@ -16,6 +16,7 @@ import { FundingCollectButton } from '@/components/uttu/funding-collect-button';
 import { FundingTimeline } from '@/components/uttu/funding-timeline';
 import { FundingBrief } from '@/components/uttu/funding-brief';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
+import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
 import {
   BarChart, Bar, LineChart, Line, Cell,
   XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine, Legend, CartesianGrid,
@@ -881,6 +882,7 @@ export default function MobileCompanyDetailView() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const companyId = searchParams.get('id') ?? '';
+  const { noteDrawerOpen, setNoteDrawerOpen } = useSourceNoteDrawer(companyId);
 
   const [info,          setInfo]          = useState<CompanyInfo | null>(null);
   const [brands,        setBrands]        = useState<CompanyBrand[]>([]);
@@ -899,6 +901,8 @@ export default function MobileCompanyDetailView() {
 
   useEffect(() => {
     if (!companyId) return;
+    let active = true;
+    setInfo(null);
     setLoading(true);
     setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]); setProductsBasic(null);
     setFundingRounds([]); setChildCompanies([]);
@@ -910,6 +914,7 @@ export default function MobileCompanyDetailView() {
       getFundingRounds(companyId, 50),
       fetchChildCompanies(companyId),
     ]).then(async ([ci, cb, cf, cd, fr, children]) => {
+      if (!active) return;
       setInfo(ci); setBrands(cb); setFinancials(cf); setDisclosures(cd);
       setFundingRounds(fr); setChildCompanies(children);
       setLoading(false);
@@ -926,15 +931,17 @@ export default function MobileCompanyDetailView() {
           allBrands.length > 1 ? fetchCompanyBrandTrend(brandNames, 30) : Promise.resolve([]),
           fetchCompanyProductsBasic(brandNames),
         ]);
+        if (!active) return;
         setRankStats(rs); setTop100Trend(trend); setProductDist(pd); setBrandTrend(bt); setProductsBasic(pb);
         setRankLoading(false);
       }
-    }).catch(() => setLoading(false));
+    }).catch(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [companyId]);
 
   if (!companyId) return <MobileEmptyState icon="🔍" title="회사 ID가 없습니다" />;
   if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>;
-  if (!info) return <MobileEmptyState icon="🏢" title="회사 정보를 찾을 수 없습니다" />;
+  if (!info) return <><MobileEmptyState icon="🏢" title="회사 정보를 찾을 수 없습니다" /><SourceNoteFallback /></>;
 
   const ownCount = brands.filter(b => b.is_own).length;
 
@@ -948,6 +955,9 @@ export default function MobileCompanyDetailView() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 12px 20px', width: '100%', minWidth: 0 }}>
+      <NoteDrawer key={companyId} entity_type="company" entity_id={companyId}
+        entity_label={info.corp_name} open={noteDrawerOpen} onClose={() => setNoteDrawerOpen(false)} />
+      <button type="button" className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ alignSelf: 'flex-end' }}>메모</button>
 
       {/* 헤더 */}
       <div style={{ padding: '14px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>

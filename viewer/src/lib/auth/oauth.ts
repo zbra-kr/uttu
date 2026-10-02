@@ -1,4 +1,5 @@
 import type { SignInWithOAuthCredentials } from '@supabase/supabase-js';
+import { compactNoteAuthReturn } from '@/lib/notes/auth-return';
 
 export const AUTH_ROUTES = {
   home: '/',
@@ -28,7 +29,7 @@ export function safeAuthRedirect(value: unknown): string {
   ) {
     return AUTH_ROUTES.home;
   }
-  return `${url.pathname}${url.search}${url.hash}`;
+  return compactNoteAuthReturn(`${url.pathname}${url.search}${url.hash}`);
 }
 
 /** Deployment-owned URL only: never derive the OAuth callback from form/Host input. */

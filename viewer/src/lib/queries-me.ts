@@ -1,5 +1,6 @@
 'use client';
 import { supabaseBrowser } from './supabase/client';
+import { validateRankingSourceContext, type RankingSourceContext } from './notes/ranking-context';
 
 const supabase = supabaseBrowser();
 
@@ -178,6 +179,7 @@ export interface MyNote {
   mentioned_user_ids: string[];
   created_at: string;
   updated_at: string;
+  source_context: RankingSourceContext | null;
   author?: { id: string; display_name: string | null; full_name: string | null } | null;
 }
 
@@ -253,6 +255,37 @@ export async function fetchNotesForEntity(
   return notes.map(n => ({ ...n, author: profileMap.get(n.user_id) ?? null }));
 }
 
+/** Fetch a linked memo without widening the existing user_notes RLS boundary. */
+export async function fetchNoteForEntity(
+  id: string,
+  entity_type: EntityType,
+  entity_id: string,
+): Promise<MyNote | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await supabase.from('user_notes').select('*')
+    .eq('id', id).eq('entity_type', entity_type).eq('entity_id', entity_id).maybeSingle();
+  const note = data as MyNote | null;
+  // Also check the returned row, including when the target was not among the latest 50.
+  if (error || !note || note.id.toLowerCase() !== id.toLowerCase()
+    || note.entity_type !== entity_type || note.entity_id !== entity_id) return null;
+  const { data: author } = await supabase.from('profiles_public')
+    .select('id, display_name, full_name').eq('id', note.user_id).maybeSingle();
+  return { ...note, author: author ?? null };
+}
+
+// PostgreSQL JSONB can reorder object keys. Replay equality must compare values,
+// not the insertion order of an otherwise identical saved source snapshot.
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 export async function createNote(input: {
   body: string;
   entity_type?: EntityType | null;
@@ -261,7 +294,14 @@ export async function createNote(input: {
   mentioned_user_ids?: string[];
   send_teams?: boolean;
   submission_id?: string;
+  source_context?: RankingSourceContext | null;
 }): Promise<{ data: MyNote | null; error: string | null; notification_status?: string }> {
+  const sourceContext = input.source_context == null ? null
+    : input.entity_type === 'ranking_filter' && input.entity_id
+      ? validateRankingSourceContext(input.source_context, input.entity_id) : null;
+  if (input.source_context != null && !sourceContext) {
+    return { data: null, error: '랭킹 화면 정보를 저장할 수 없습니다. 필터를 확인하거나 화면을 새로고침한 뒤 다시 시도해 주세요.' };
+  }
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { data: null, error: '로그인 필요' };
   let { data, error } = await supabase
@@ -274,6 +314,7 @@ export async function createNote(input: {
       entity_id: input.entity_id ?? null,
       tags: input.tags ?? [],
       mentioned_user_ids: input.mentioned_user_ids ?? [],
+      source_context: sourceContext,
     })
     .select('*')
     .single();
@@ -284,7 +325,8 @@ export async function createNote(input: {
       === JSON.stringify([...new Set(input.mentioned_user_ids ?? [])].sort());
     if (!previous.error && old?.user_id === user.id && old.body === input.body && sameRecipients
       && old.entity_type === (input.entity_type ?? null) && old.entity_id === (input.entity_id ?? null)
-      && JSON.stringify(old.tags) === JSON.stringify(input.tags ?? [])) {
+      && JSON.stringify(old.tags) === JSON.stringify(input.tags ?? [])
+      && canonicalJson(old.source_context ?? null) === canonicalJson(sourceContext)) {
       data = old; error = null;
     }
   }

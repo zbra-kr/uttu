@@ -18,7 +18,7 @@ function loadSource(relativePath, mocks = {}) {
   const requireActual = mod.require.bind(mod); mod.require = (name) => Object.hasOwn(mocks, name) ? mocks[name] : requireActual(name);
   mod._compile(outputText, filename); return mod.exports;
 }
-const oauth = loadSource('src/lib/auth/oauth.ts');
+const oauth = loadSource('src/lib/auth/oauth.ts', { '@/lib/notes/auth-return': loadSource('src/lib/notes/auth-return.ts') });
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://review.supabase.co';
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'public-placeholder-key';
 process.env.NEXT_PUBLIC_MICROSOFT_ONLY_LOGIN_ENABLED = 'true';

@@ -7,6 +7,7 @@ import {
   type BrandInfo, type BrandStats, type BrandProduct, type BrandRankDay, type BrandDistRow,
 } from '@/lib/queries';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
+import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -51,6 +52,7 @@ export default function MobileBrandDetailView() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const brandId = searchParams.get('id') ?? '';
+  const { noteDrawerOpen, setNoteDrawerOpen } = useSourceNoteDrawer(brandId);
 
   const [info, setInfo] = useState<BrandInfo | null>(null);
   const [stats, setStats] = useState<BrandStats | null>(null);
@@ -63,28 +65,33 @@ export default function MobileBrandDetailView() {
 
   useEffect(() => {
     if (!brandId) return;
+    let active = true;
+    setInfo(null);
     setLoading(true);
     fetchBrandInfo(brandId).then(inf => {
+      if (!active) return;
       setInfo(inf);
       if (!inf) { setLoading(false); return; }
-      Promise.all([
+      return Promise.all([
         fetchBrandStats(inf.name),
         fetchBrandProducts(inf.name, 100),
         fetchBrandRankHistory(inf.name),
         fetchBrandRankingDistribution(inf.name),
       ]).then(([st, prods, hist, dist]) => {
+        if (!active) return;
         setStats(st);
         setProducts(prods);
         setRankHistory(hist.map(h => ({ ...h, date: h.date.slice(5) })));
         setDistribution(dist);
         setLoading(false);
       });
-    });
+    }).catch(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [brandId]);
 
   if (!brandId) return <MobileEmptyState icon="🔍" title="브랜드 ID가 없습니다" />;
   if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>;
-  if (!info) return <MobileEmptyState icon="🏷️" title="브랜드 정보를 찾을 수 없습니다" />;
+  if (!info) return <><MobileEmptyState icon="🏷️" title="브랜드 정보를 찾을 수 없습니다" /><SourceNoteFallback /></>;
 
   const withDiscount = products.filter(p => p.discount_rate && p.discount_rate > 0);
   const avgDiscount = withDiscount.length > 0
@@ -130,6 +137,9 @@ export default function MobileBrandDetailView() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 12px 20px', width: '100%', minWidth: 0 }}>
+      <NoteDrawer key={brandId} entity_type="brand" entity_id={brandId}
+        entity_label={info.name} open={noteDrawerOpen} onClose={() => setNoteDrawerOpen(false)} />
+      <button type="button" className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ alignSelf: 'flex-end' }}>메모</button>
 
       {/* 헤더 */}
       <div style={{ padding: '14px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>

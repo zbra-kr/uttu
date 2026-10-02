@@ -26,12 +26,8 @@ const ENTITY_LABEL: Record<string, string> = {
   company: '회사', brand: '브랜드', product: '상품', ranking_filter: '랭킹', anomaly: '이상탐지', magazine: '매거진',
 };
 
-function noteLink(note: MyNote): string | null {
-  if (!note.entity_type || !note.entity_id) return null;
-  if (note.entity_type === 'ranking_filter') {
-    return `/ranking?${note.entity_id}&note=${note.id}`;
-  }
-  return `/${note.entity_type}?id=${encodeURIComponent(note.entity_id)}&note=${note.id}`;
+function noteLink(note: MyNote): string {
+  return `/me/notes/${encodeURIComponent(note.id)}`;
 }
 
 function bookmarkLink(bm: Bookmark): string {

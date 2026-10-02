@@ -5,6 +5,7 @@ import { isSameOriginPost, teamsConfig } from '@/lib/teams/config';
 import { isUuid, microsoftIdentity } from '@/lib/teams/identity';
 import { getTeamsAuthorGrant } from '@/lib/teams/oauth';
 import { sendAuthorMention, type MentionSendResult } from '@/lib/teams/graph';
+import { resolveNoteSource } from '@/lib/notes/source';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
     return json({ error: '잘못된 요청' }, 400);
   }
   const { data: note, error: noteError } = await sb.from('user_notes')
-    .select('id,user_id,body,mentioned_user_ids,created_at').eq('id', input.note_id).single();
+    .select('id,user_id,body,mentioned_user_ids,created_at,entity_type,entity_id,source_context').eq('id', input.note_id).single();
   if (noteError || !note || note.user_id !== user.id) return json({ error: '권한 없음' }, 403);
   const targets = [...new Set<string>((note.mentioned_user_ids ?? []).filter((id: string) => id !== user.id))].sort();
   const expectedBody = legacyInAppOnly ? note.body : input.expected_body;
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
         ? 'UTTU 멘션 알림을 만들었습니다. Teams 연결 상태·수신 인원·제출 시간을 확인할 수 없어 DM은 보내지 않았습니다.'
         : 'UTTU 멘션 알림을 만들었습니다.' });
     }
+    const source = await resolveNoteSource(sb, note);
     const author = microsoftIdentity(user, config.tenantId);
     let grant = null;
     try { grant = await getTeamsAuthorGrant(sb, user, config); } catch { /* Reconnect, never fall back to a bot. */ }
@@ -84,7 +86,6 @@ export async function POST(request: NextRequest) {
       const connectionChanged = !!grant && grant.connectionVersion !== delivery.connection_version;
       if (connectionChanged) result = { status: 'not_sent', reason: 'not_authorized' };
       if (author && grant && !connectionChanged) {
-        const link = new URL(`/me/notes/${encodeURIComponent(note.id)}`, config.origin).toString();
         result = await sendAuthorMention({
           enabled: true, authorActionConfirmed: true, deliveryId: delivery.id,
           authenticatedAuthor: author,
@@ -99,7 +100,8 @@ export async function POST(request: NextRequest) {
             boundaryRejected = !!startError || started !== true;
             return !boundaryRejected;
           },
-          text: `[UTTU] 메모에서 회원님을 멘션했습니다.\n\n${delivery.body_snapshot}\n\n${link}`,
+          text: delivery.body_snapshot, pageTitle: source.title,
+          origin: config.origin, sourcePath: source.path,
         });
       }
       if (boundaryRejected) continue;

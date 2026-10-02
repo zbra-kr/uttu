@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { IcSearch, IcEdit } from '@/components/ui/icons';
 import BookmarkToggle from '@/components/me/BookmarkToggle';
-import NoteDrawer from '@/components/me/NoteDrawer';
+import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
 import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
 import { searchProducts, fetchProductDetail, fetchProductPriceHistory, fetchProductRankHistory, fetchProductCategoryRanks, fetchReviews, fetchBodyStats, CATEGORY_MAP, AGE_MAP, type ProductDetail, type ReviewRow, type ProductSearchResult, type BodyStats, type CategoryRankRow } from '@/lib/queries';
 
@@ -297,7 +297,7 @@ function ProductPageInner() {
   const router = useRouter();
   const noFromUrl = params.get('no') ?? '';
 
-  const [selectedNo, setSelectedNo] = React.useState(noFromUrl);
+  const selectedNo = noFromUrl;
   const [detail, setDetail] = React.useState<ProductDetail | null>(null);
   const [priceHistory,   setPriceHistory]   = React.useState<{ date: string; price: number; discount_rate: number | null }[]>([]);
   const [rankHistory,    setRankHistory]    = React.useState<{ date: string; rank: number; category: string }[]>([]);
@@ -307,9 +307,7 @@ function ProductPageInner() {
   const [bodyStats, setBodyStats] = React.useState<BodyStats | null>(null);
   const [loading, setLoading] = React.useState(!!noFromUrl);
   const [noteCount, setNoteCount] = React.useState(0);
-  const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(
-    () => (params.get('notes') === 'open' || !!params.get('note')) && !!noFromUrl,
-  );
+  const { noteDrawerOpen, setNoteDrawerOpen } = useSourceNoteDrawer(noFromUrl);
 
   React.useEffect(() => {
     if (!noFromUrl) {
@@ -318,11 +316,8 @@ function ProductPageInner() {
   }, [noFromUrl]);
 
   React.useEffect(() => {
-    if (noFromUrl) setSelectedNo(noFromUrl);
-  }, [noFromUrl]);
-
-  React.useEffect(() => {
     if (!selectedNo) return;
+    let active = true;
     setLoading(true);
     setDetail(null);
     setReviews([]);
@@ -335,6 +330,7 @@ function ProductPageInner() {
       fetchProductRankHistory(selectedNo),
       fetchProductCategoryRanks(selectedNo),
     ]).then(async ([d, ph, rh, cr]) => {
+      if (!active) return;
       setDetail(d);
       if (d) {
         window.dispatchEvent(new CustomEvent('uttu:crumb', { detail: { brand: d.brand_name, name: d.name } }));
@@ -354,15 +350,20 @@ function ProductPageInner() {
           fetchReviews({ productId: d.id, sort: 'recent', limit: 10, offset: 0 }),
           fetchBodyStats(d.id),
         ]);
+        if (!active) return;
         setReviews(rv.rows);
         setBodyStats(bs);
       }
       setLoading(false);
-    }).catch(e => { console.error(e); setLoading(false); });
+    }).catch(e => { if (active) { console.error(e); setLoading(false); } });
+    return () => { active = false; };
   }, [selectedNo]);
 
   React.useEffect(() => {
-    if (detail?.id) fetchNoteCountForEntity('product', detail.id).then(setNoteCount);
+    let active = true;
+    setNoteCount(0);
+    if (detail?.id) fetchNoteCountForEntity('product', detail.id).then(count => { if (active) setNoteCount(count); });
+    return () => { active = false; };
   }, [detail?.id]);
 
   React.useEffect(() => {
@@ -430,7 +431,8 @@ function ProductPageInner() {
 
   return (
     <div className="col-flex gap-14">
-      {detail?.id && (
+      {!loading && !detail?.id && <div role="status">상품 정보를 찾을 수 없습니다.<SourceNoteFallback /></div>}
+      {detail?.id && String(detail.musinsa_no) === selectedNo && (
         <NoteDrawer
           key={detail.id}
           entity_type="product"

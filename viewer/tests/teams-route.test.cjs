@@ -17,7 +17,7 @@ process.env.NEXT_PUBLIC_APP_URL = origin;
 
 function scenario(overrides = {}) {
   const note = { id: noteId, user_id: authorId, body: '@사람 메모', mentioned_user_ids: [recipientId], created_at: new Date().toISOString(), ...overrides.note };
-  const calls = []; let sends = 0; let status = 'pending';
+  const calls = []; const messages = []; let sends = 0; let status = 'pending';
   const row = { id: deliveryId, recipient_id: recipientId, body_snapshot: note.body,
     connection_version: '55555555-5555-4555-8555-555555555555',
     recipient_tenant_id: configModule.COMPANY_TENANT, recipient_object_id: recipientId };
@@ -48,11 +48,14 @@ function scenario(overrides = {}) {
     '@/lib/teams/oauth': { getTeamsAuthorGrant: async () => overrides.noGrant ? null : ({ accessToken: 'fake',
       connectionVersion: overrides.changedGrant ? '66666666-6666-4666-8666-666666666666' : row.connection_version }) },
     '@/lib/teams/graph': { sendAuthorMention: async input => {
-      sends++;
+      sends++; messages.push(input);
       assert.equal(input.authenticatedAuthor.userId, authorId);
       assert.equal(input.recipient.userId, recipientId);
       assert.equal(input.authorActionConfirmed, true);
-      assert.match(input.text, new RegExp(`/me/notes/${noteId}`));
+      assert.equal(input.text, note.body);
+      assert.match(input.sourcePath, new RegExp(`/me/notes/${noteId}`));
+      assert.equal(input.origin, origin);
+      assert.equal(input.pageTitle, '메모');
       if (!await input.authorizeMessage()) return { status: 'not_sent', reason: 'not_authorized' };
       return overrides.outcome || { status: 'sent', messageId: 'message', chatId: 'chat' };
     } },
@@ -61,7 +64,7 @@ function scenario(overrides = {}) {
     method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ note_id: noteId, expected_body: note.body, recipient_ids: [recipientId], send_teams: true, ...patch }),
   });
-  return { route, request, calls, sends: () => sends };
+  return { route, request, calls, messages, sends: () => sends };
 }
 
 test('route sends as authenticated author, persists confirmed result and replay sends once', async () => {
@@ -200,3 +203,15 @@ for (const [kind, id, requestOrigin, expected] of [
     assert.equal(s.calls.length, 0);
   });
 }
+
+test('browser-supplied page labels and destinations never become a Teams message', async () => {
+  const s = scenario();
+  const response = await s.route.POST(s.request({ page_title: 'spoofed title', source_path: '//evil.test',
+    origin: 'https://evil.test', html: '<script>bad</script>' }));
+  assert.equal(response.status, 200);
+  assert.equal(s.messages.length, 1);
+  assert.equal(s.messages[0].pageTitle, '메모');
+  assert.equal(s.messages[0].sourcePath, `/me/notes/${noteId}`);
+  assert.equal(s.messages[0].origin, origin);
+  assert.doesNotMatch(JSON.stringify(s.messages[0]), /evil\.test|spoofed|<script>/);
+});

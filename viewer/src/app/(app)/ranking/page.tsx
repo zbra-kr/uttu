@@ -1,11 +1,12 @@
 'use client';
 import React from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileRankingView from './MobileRankingView';
 import { PeriodFilter, FilterBlock, PillGroup, CheckRow, DismissChip, SearchSelect } from '@/components/ui/filters';
 import { IcDownload, IcChevL, IcChevR, IcEdit } from '@/components/ui/icons';
-import NoteDrawer from '@/components/me/NoteDrawer';
+import NoteDrawer, { useSourceNoteDrawer } from '@/components/me/NoteDrawer';
+import { rankingContextFromSearchParams, rankingSourceFromEntity, validateRankingSourceContext, type RankingSourceContext } from '@/lib/notes/ranking-context';
 import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
 import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
 import {
@@ -212,16 +213,41 @@ function RangeSlider({ min, max, value, onChange }: {
 }
 
 export default function RankingPage() {
-  const isMobile = useIsMobile();
-  if (isMobile) return <MobileRankingView />;
-  return <RankingDesktopView />;
+  return <React.Suspense fallback={<div style={{ padding: 24 }}>랭킹을 불러오는 중…</div>}><RankingPageRoot /></React.Suspense>;
 }
 
-function RankingDesktopView() {
+function RankingPageRoot() {
+  const isMobile = useIsMobile();
+  const params = useSearchParams();
+  const query = params.toString();
+  const sourceContext = React.useMemo(() => {
+    const modern = rankingContextFromSearchParams(new URLSearchParams(query));
+    if (modern) return modern;
+    const old = new URLSearchParams(query);
+    if (old.has('context')) return null;
+    old.delete('note'); old.delete('notes');
+    return rankingSourceFromEntity(old.toString());
+  }, [query]);
+  const hasSourceLink = params.has('context') || params.has('note') || params.get('notes') === 'open'
+    || ['age', 'category', 'gender', 'period'].some(key => params.has(key));
+  // Reinitialize filters for a different source URL. Closing the memo removes only
+  // note/notes and must not reset edits or reopen the drawer.
+  const filterQuery = new URLSearchParams(query);
+  filterQuery.delete('note'); filterQuery.delete('notes');
+  if (isMobile && !hasSourceLink) return <MobileRankingView />;
+  return <RankingDesktopView key={filterQuery.toString()} sourceContext={sourceContext}
+    sourceLink={hasSourceLink} compact={isMobile} />;
+}
+
+function RankingDesktopView({ sourceContext, sourceLink, compact }: {
+  sourceContext: RankingSourceContext | null; sourceLink: boolean; compact: boolean;
+}) {
   const router = useRouter();
 
-  // localStorage에서 초기값 로드 (컴포넌트 마운트 시 1회)
-  const [saved] = React.useState(() => loadSavedFilters());
+  // A source link must never mix the sender's context with this user's saved filters.
+  const [saved] = React.useState(() => sourceContext ? {
+    ...sourceContext, companies: new Set(sourceContext.companies), brands: new Set(sourceContext.brands),
+  } : sourceLink ? null : loadSavedFilters());
 
   // ── 서버 데이터 ──────────────────────────────────────────
   const [allRows,      setAllRows]      = React.useState<RankingRow[]>([]);
@@ -234,9 +260,14 @@ function RankingDesktopView() {
   const [companyOpts, setCompanyOpts] = React.useState<string[]>([]);
 
   // ── 필터 상태 (localStorage에서 복원) ────────────────────
-  const [period,           setPeriod]          = React.useState(saved?.period           ?? 'today');
-  const [fromDate,         setFromDate]         = React.useState(saved?.fromDate         ?? '');
-  const [toDate,           setToDate]           = React.useState(saved?.toDate           ?? '');
+  const [period,           setPeriodState]     = React.useState(saved?.period           ?? 'today');
+  const [fromDate,         setFromDateState]   = React.useState(saved?.fromDate         ?? '');
+  const [toDate,           setToDateState]     = React.useState(saved?.toDate           ?? '');
+  const [pinnedRange, setPinnedRange] = React.useState(() => sourceContext?.resolvedFromDate && sourceContext.resolvedToDate
+    ? { from: sourceContext.resolvedFromDate, to: sourceContext.resolvedToDate } : null);
+  const setPeriod = (value: string) => { setPinnedRange(null); setPeriodState(value); };
+  const setFromDate = (value: string) => { setPinnedRange(null); setFromDateState(value); };
+  const setToDate = (value: string) => { setPinnedRange(null); setToDateState(value); };
   const [selectedCategory, setSelectedCategory] = React.useState(saved?.selectedCategory ?? '000');
   const [gender,           setGender]           = React.useState(saved?.gender           ?? 'A');
   const [age,              setAge]              = React.useState(saved?.age              ?? 'AGE_BAND_ALL');
@@ -249,11 +280,13 @@ function RankingDesktopView() {
   const [sortDir,     setSortDir]   = React.useState<'asc'|'desc'>(saved?.sortDir ?? 'asc');
   const [page,        setPage]      = React.useState<number>(saved?.page ?? 1);
   const [noteCount, setNoteCount] = React.useState(0);
-  const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(false);
+  const rankingEntityId = new URLSearchParams({ age, category: selectedCategory, gender, period }).toString();
+  const { noteDrawerOpen, setNoteDrawerOpen } = useSourceNoteDrawer(rankingEntityId);
   const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
 
   // ── 필터 상태 → localStorage 자동 저장 ───────────────────
   React.useEffect(() => {
+    if (sourceLink) return; // Reading a shared context must not overwrite personal defaults.
     try {
       localStorage.setItem(FILTER_KEY, JSON.stringify({
         userId: getCurrentUserIdSync(),
@@ -262,7 +295,7 @@ function RankingDesktopView() {
         ownOnly, moverOnly, sort, sortDir, page,
       }));
     } catch {}
-  }, [period, fromDate, toDate, selectedCategory, gender, age, price, companies, brands, ownOnly, moverOnly, sort, sortDir, page]);
+  }, [sourceLink, period, fromDate, toDate, selectedCategory, gender, age, price, companies, brands, ownOnly, moverOnly, sort, sortDir, page]);
 
   // ── 초기 로드 ─────────────────────────────────────────────
   React.useEffect(() => {
@@ -275,29 +308,38 @@ function RankingDesktopView() {
 
   // period → fromDate/toDate 변환 (KST 기준)
   const { queryFrom, queryTo } = React.useMemo(() => {
+    if (pinnedRange) return { queryFrom: pinnedRange.from, queryTo: pinnedRange.to };
     const todayKST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
     if (period === 'today') return { queryFrom: undefined, queryTo: undefined };
     if (period === 'custom') return { queryFrom: fromDate || undefined, queryTo: toDate || todayKST };
     const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
-    const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-    d.setDate(d.getDate() - (days - 1)); // 오늘 포함 N일
-    const fromKST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(d);
+    // Operate on the already-resolved KST calendar date. Parsing a KST locale
+    // string as local time and formatting it in KST again shifts some days twice.
+    const d = new Date(`${todayKST}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - (days - 1)); // 오늘 포함 N일
+    const fromKST = d.toISOString().slice(0, 10);
     return { queryFrom: fromKST, queryTo: todayKST };
-  }, [period, fromDate, toDate]);
+  }, [period, fromDate, toDate, pinnedRange]);
 
   const multiDay = period !== 'today';
+  const initialPageRef = React.useRef(sourceContext?.page ?? null);
 
   // ── 랭킹 데이터 로드 — category/gender/age/기간 변경 시 재쿼리 ─
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setSnapshotDate('');
     fetchLatestRanking({ categoryCode: selectedCategory, genderFilter: gender, ageFilter: age, limit: 300, fromDate: queryFrom, toDate: queryTo })
       .then(data => {
         if (cancelled) return;
         setAllRows(data);
         if (data.length > 0) setSnapshotDate(data[0].snapshot_date);
-        setPage(1);
+        if (initialPageRef.current !== null) {
+          // State already has the source page. Do not overwrite a user's newer
+          // filter/page choice made while this first request was in flight.
+          initialPageRef.current = null;
+        } else setPage(1);
       })
       .catch(e => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -313,9 +355,10 @@ function RankingDesktopView() {
       if (fp < price[0]) return false;
       if (price[1] < PRICE_MAX && fp > price[1]) return false;
       if (ownOnly && !r.is_own) return false;
+      if (moverOnly && (r.rank_change === null || r.rank_change === 0)) return false;
       return true;
     });
-  }, [allRows, brands, companies, price, ownOnly]);
+  }, [allRows, brands, companies, price, ownOnly, moverOnly]);
 
   const sorted = React.useMemo(() => {
     const c = [...filtered];
@@ -377,15 +420,19 @@ function RankingDesktopView() {
 
   const catLabel = CATEGORY_DISPLAY.find(c => c.code === selectedCategory)?.label ?? '전체';
 
-  // ranking_filter entity_id: 알파벳순 정렬된 key=value 직렬화
-  const rankingEntityId = [
-    ['age', age],
-    ['category', selectedCategory],
-    ['gender', gender],
-    ['period', period],
-  ].sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([k, v]) => `${k}=${v}`)
-    .join('&');
+  const resolvedSourceDates = queryFrom && queryTo ? { resolvedFromDate: queryFrom, resolvedToDate: queryTo }
+    : !loading && snapshotDate ? { resolvedFromDate: snapshotDate, resolvedToDate: snapshotDate } : null;
+  const noteSourceContext = resolvedSourceDates ? validateRankingSourceContext({
+    version: 1, kind: 'ranking', period, fromDate, toDate, selectedCategory, gender, age,
+    price, companies: [...companies], brands: [...brands], ownOnly, moverOnly, sort, sortDir, page,
+    ...resolvedSourceDates,
+  }, rankingEntityId) ?? undefined : undefined;
+  const noteSaveBlockedReason = !resolvedSourceDates
+    ? loading ? '랭킹 기준 날짜를 확인하는 중입니다. 조회가 끝나면 메모를 저장할 수 있습니다.'
+      : '랭킹 기준 날짜를 확인할 수 없어 메모를 저장할 수 없습니다. 데이터가 있는 기간을 선택해 주세요.'
+    : !noteSourceContext
+      ? '이 화면의 조건을 안전하게 저장할 수 없습니다. 기간은 366일 이내, 회사·브랜드는 각각 20개 이하로 선택하고 선택 내용의 길이를 줄여 주세요.'
+      : undefined;
 
   const rankingEntityLabel = [
     gender === 'M' ? '남성' : gender === 'F' ? '여성' : null,
@@ -417,11 +464,33 @@ function RankingDesktopView() {
         entity_type="ranking_filter"
         entity_id={rankingEntityId}
         entity_label={rankingEntityLabel}
+        sourceContext={noteSourceContext}
+        saveBlockedReason={noteSaveBlockedReason}
         open={noteDrawerOpen}
         onClose={() => setNoteDrawerOpen(false)}
         onCountChange={setNoteCount}
       />
-      <div className="page-title">
+      {sourceContext?.legacy && (
+        <p role="status" style={{ padding: 12, margin: '0 0 12px', background: 'var(--snk)', color: 'var(--f3)', fontSize: 12 }}>
+          이전 메모에 저장된 카테고리·성별·연령·기간만 복원했습니다. 당시의 상세 필터와 기준 날짜는 저장되지 않아 나머지는 기본값이며, 기간은 현재 기준입니다.
+        </p>
+      )}
+      {sourceLink && !sourceContext && (
+        <p role="status" style={{ padding: 12, margin: '0 0 12px', color: 'var(--shf)', fontSize: 12 }}>
+          저장된 랭킹 조건을 복원할 수 없어 기본 조건을 표시합니다. 메모의 원래 화면과 다를 수 있습니다.
+        </p>
+      )}
+      {sourceContext && !sourceContext.legacy && !sourceContext.resolvedFromDate && (
+        <p role="status" style={{ padding: 12, margin: '0 0 12px', color: 'var(--f3)', fontSize: 12 }}>
+          저장된 상세 조건을 복원했습니다. 조회 기준 날짜가 저장되지 않아 기간은 현재 기준입니다.
+        </p>
+      )}
+      {pinnedRange && (
+        <p style={{ margin: '0 0 12px', color: 'var(--f3)', fontSize: 12 }}>
+          메모 작성 시 조회 범위: {pinnedRange.from}{pinnedRange.from !== pinnedRange.to ? ` ~ ${pinnedRange.to}` : ''} · 기간을 변경하면 현재 기준으로 조회합니다.
+        </p>
+      )}
+      <div className="page-title" style={compact ? { flexWrap: 'wrap', padding: '0 4px' } : undefined}>
         <h1>상품 랭킹</h1>
         {snapshotDate && <span className="chip mono">{periodLabel} · {snapshotDate} 수집</span>}
         <span className="sub">전체 상품 랭킹 · 회사·브랜드·필터 적용</span>
@@ -438,7 +507,7 @@ function RankingDesktopView() {
         </div>
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns: '300px 1fr', gap: 14 }}>
+      <div className="grid" style={{ gridTemplateColumns: compact ? 'minmax(0, 1fr)' : '300px minmax(0, 1fr)', gap: 14 }}>
         {/* ===== 필터 레일 ===== */}
         <aside className="filter-rail">
           <div className="frh">
@@ -546,7 +615,7 @@ function RankingDesktopView() {
         </aside>
 
         {/* ===== 결과 영역 ===== */}
-        <div className="col-flex gap-10">
+        <div className="col-flex gap-10" style={{ minWidth: 0 }}>
           {/* 적용된 필터 칩 + 정렬 */}
           <div className="row-flex center gap-6 wrap">
             <span className="sec-tag">applied</span>
@@ -597,8 +666,8 @@ function RankingDesktopView() {
             </div>
           )}
 
-          <section className="panel" style={{ padding: 0 }}>
-            <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
+          <section className="panel" style={{ padding: 0, overflowX: compact ? 'auto' : undefined }}>
+            <div className="tbl" style={{ border: 'none', borderRadius: 0, minWidth: compact ? 1000 : undefined }}>
               {(() => {
                 const cols = multiDay
                   ? '54px 36px 44px 1fr 116px 60px 60px 88px 54px 46px 56px 56px'

@@ -20,7 +20,8 @@ function loadSource(relativePath, mocks = {}) {
 }
 
 const identity = loadSource('src/lib/teams/identity.ts');
-const graph = loadSource('src/lib/teams/graph.ts', { './identity': identity, 'server-only': {} });
+const message = loadSource('src/lib/teams/message.ts');
+const graph = loadSource('src/lib/teams/graph.ts', { './identity': identity, './message': message, 'server-only': {} });
 const tenant = '11111111-1111-4111-8111-111111111111';
 const userId = '22222222-2222-4222-8222-222222222222';
 const authorOid = '33333333-3333-4333-8333-333333333333';
@@ -81,7 +82,8 @@ function input() {
     recipient: { userId: recipientId, tenantId: tenant, objectId: recipientOid },
     grant: { identity: author, accessToken: 'mock-opaque-access-token',
       scopes: ['Chat.Create', 'ChatMessage.Send'], expiresAt: now + 3600_000, consented: true },
-    text: '[UTTU] 메모에서 멘션했습니다.\nhttps://uttu.example.test/me',
+    text: '@사람 확인 부탁드립니다.', pageTitle: '상품 랭킹',
+    origin: 'https://uttu.example.test', sourcePath: `/me/notes/${deliveryId}`,
   };
 }
 
@@ -115,7 +117,7 @@ for (const [label, mutate, status] of [
   });
 }
 
-test('only two delegated POSTs, exact IDs, plaintext and no spoofed from field', async () => {
+test('only two delegated POSTs, exact IDs, escaped HTML and no spoofed from field', async () => {
   const calls = [];
   const value = input();
   value.grant.scopes = ['https://graph.microsoft.com/Chat.Create', 'https://graph.microsoft.com/ChatMessage.Send'];
@@ -135,8 +137,10 @@ test('only two delegated POSTs, exact IDs, plaintext and no spoofed from field',
     `https://graph.microsoft.com/v1.0/users('${recipientOid}')`,
   ]);
   assert.deepEqual(JSON.parse(calls[1][1].body), {
-    body: { contentType: 'text', content: value.text },
+    body: { contentType: 'html', content: message.renderMentionMessage(value) },
   });
+  assert.doesNotMatch(JSON.parse(calls[1][1].body).body.content, /<script>/);
+  assert.match(JSON.parse(calls[1][1].body).body.content, /&lt;script&gt;/);
   for (const [, init] of calls) {
     assert.equal(init.headers.Authorization, 'Bearer mock-opaque-access-token');
     assert.equal(init.headers['client-request-id'], deliveryId);

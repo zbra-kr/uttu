@@ -219,3 +219,24 @@ test('invalid-grant response is sanitized and does not leak tokens or overwrite 
       assert.equal(error.message, 'Teams reconnect required'); return true;
     }));
 });
+
+test('largest supported ranking note context fits the encrypted OAuth cookie using its secure permalink', async () => {
+  const { validateRankingSourceContext: validate, rankingContextToSearchParams: serialize } = load('src/lib/notes/ranking-context.ts');
+  const ctx = validate({ version: 1, kind: 'ranking', period: 'today', fromDate: '', toDate: '',
+    selectedCategory: '000', gender: 'A', age: 'AGE_BAND_ALL', price: [0, 50],
+    companies: Array.from({ length: 20 }, (_, i) => String(i).padEnd(100, 'c')),
+    brands: Array.from({ length: 20 }, (_, i) => String(i).padEnd(100, 'b')),
+    ownOnly: false, moverOnly: false, sort: 'rank', sortDir: 'asc', page: 1,
+    resolvedFromDate: '2026-10-01', resolvedToDate: '2026-10-01' });
+  assert.ok(ctx);
+  const noteId = '33333333-3333-4333-8333-333333333333';
+  const query = serialize(ctx); query.set('note', noteId); query.set('notes', 'open');
+  const source = `/ranking?${query}`;
+  assert.ok(source.length > 4000);
+  const sb = { rpc: async name => ({ data: name === 'uttu_teams_get_connection_epoch' ? uid : [] }) };
+  const api = oauth(); const start = await api.beginTeamsConnect(sb, user, config, source);
+  assert.ok(Buffer.byteLength(start.cookie) < 3800);
+  const attempt = vault.decryptTeamsValue(start.cookie, fakeKey, 'oauth-attempt');
+  assert.equal(attempt.returnTo, `/me/notes/${noteId}`);
+  assert.equal(api.teamsConnectReturnPath(user, config, start.cookie, attempt.state), `/me/notes/${noteId}`);
+});

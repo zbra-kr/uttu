@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { isUuid, sameMicrosoftIdentity, type MicrosoftIdentity } from './identity';
+import { renderMentionMessage, type MentionMessage } from './message';
 
 export const TEAMS_DELEGATED_SCOPES = ['Chat.Create', 'ChatMessage.Send'] as const;
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -17,15 +18,13 @@ export interface AuthorGrant {
   connectionVersion?: string;
 }
 
-export interface MentionSend {
+export interface MentionSend extends MentionMessage {
   enabled: boolean;
   authenticatedAuthor: MicrosoftIdentity;
   recipient: MicrosoftIdentity;
   grant: AuthorGrant | null;
   /** The durable, unique delivery ID claimed atomically by the backend. */
   deliveryId: string;
-  /** Rendered from a persisted note snapshot approved in the save/send action. */
-  text: string;
   /** Backend-confirmed author action, not an unchecked browser assertion. */
   authorActionConfirmed: boolean;
   /** Atomic DB authorization immediately before the irreversible message POST. */
@@ -84,7 +83,8 @@ export async function sendAuthorMention(
     || !grant.accessToken || /[\r\n]/.test(grant.accessToken)) {
     return { status: 'reconnect_required' };
   }
-  if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 6000) {
+  const html = renderMentionMessage(input);
+  if (!html) {
     return { status: 'not_sent', reason: 'invalid_message' };
   }
 
@@ -153,7 +153,7 @@ export async function sendAuthorMention(
 
   const message = await post(`/chats/${encodeURIComponent(chat.id!)}/messages`, {
     // Do not supply from: Graph derives the actual sender from the user token.
-    body: { contentType: 'text', content: input.text },
+    body: { contentType: 'html', content: html },
   }, 'message');
   if ('result' in message) return message.result!;
   return { status: 'sent', chatId: chat.id!, messageId: message.id! };

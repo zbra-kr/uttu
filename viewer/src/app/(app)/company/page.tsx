@@ -10,7 +10,7 @@ import {
   ResponsiveContainer, CartesianGrid,
 } from 'recharts';
 import { IcCompany, IcArrowUR, IcEdit } from '@/components/ui/icons';
-import NoteDrawer from '@/components/me/NoteDrawer';
+import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
 import BookmarkToggle from '@/components/me/BookmarkToggle';
 import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
 import { Line as ChartLine, HorizBars } from '@/components/ui/charts';
@@ -1093,15 +1093,15 @@ function CompanyPageInner() {
   const [rankLoading,    setRankLoading]    = React.useState(false);
   const [tab, setTab] = React.useState<'overview' | 'ranking' | 'financial' | 'disclosure' | 'funding'>('overview');
   const [noteCount, setNoteCount] = React.useState(0);
-  const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(
-    () => (params.get('notes') === 'open' || !!params.get('note')) && !!idFromUrl,
-  );
+  const { noteDrawerOpen, setNoteDrawerOpen } = useSourceNoteDrawer(idFromUrl);
 
   React.useEffect(() => {
     if (!idFromUrl) {
       window.dispatchEvent(new CustomEvent('uttu:crumb', { detail: { brand: '', name: '' } }));
       return;
     }
+    let active = true;
+    setInfo(null);
     setLoading(true);
     setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]); setProductsBasic(null);
     setFundingRounds([]); setChildCompanies([]); setParentCompany(null);
@@ -1113,10 +1113,11 @@ function CompanyPageInner() {
       getFundingRounds(idFromUrl, 50),
       fetchChildCompanies(idFromUrl),
     ]).then(async ([ci, cb, cf, cd, fr, children]) => {
+      if (!active) return;
       setInfo(ci); setBrands(cb); setFinancials(cf); setDisclosures(cd);
       setFundingRounds(fr); setChildCompanies(children);
       if (ci?.parent_company_id) {
-        fetchParentCompany(ci.parent_company_id).then(setParentCompany).catch(() => {});
+        fetchParentCompany(ci.parent_company_id).then(value => { if (active) setParentCompany(value); }).catch(() => {});
       }
       if (ci) {
         window.dispatchEvent(new CustomEvent('uttu:crumb', { detail: { brand: ci.corp_name, name: '' } }));
@@ -1140,14 +1141,19 @@ function CompanyPageInner() {
           allBrands.length > 1 ? fetchCompanyBrandTrend(brandNames, 30) : Promise.resolve([]),
           fetchCompanyProductsBasic(brandNames),
         ]);
+        if (!active) return;
         setRankStats(rs); setTop100Trend(trend); setProductDist(pd); setBrandTrend(bt); setProductsBasic(pb);
         setRankLoading(false);
       }
-    }).catch(() => setLoading(false));
+    }).catch(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [idFromUrl]);
 
   React.useEffect(() => {
-    if (idFromUrl) fetchNoteCountForEntity('company', idFromUrl).then(setNoteCount);
+    let active = true;
+    setNoteCount(0);
+    if (idFromUrl) fetchNoteCountForEntity('company', idFromUrl).then(count => { if (active) setNoteCount(count); });
+    return () => { active = false; };
   }, [idFromUrl]);
 
   React.useEffect(() => {
@@ -1174,7 +1180,9 @@ function CompanyPageInner() {
 
   return (
     <div className="col-flex gap-14">
+      {!loading && !info && <div role="status">회사 정보를 찾을 수 없습니다.<SourceNoteFallback /></div>}
       <NoteDrawer
+        key={idFromUrl}
         entity_type="company"
         entity_id={idFromUrl}
         entity_label={corpName}

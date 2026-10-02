@@ -8,7 +8,7 @@ import { Line, HorizBars, VertBars } from '@/components/ui/charts';
 import { IcBrand, IcEdit } from '@/components/ui/icons';
 import Link from 'next/link';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import NoteDrawer from '@/components/me/NoteDrawer';
+import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
 import BookmarkToggle from '@/components/me/BookmarkToggle';
 import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
 import {
@@ -221,7 +221,7 @@ function BrandPageInner() {
   const idFromUrl  = params.get('id')   ?? '';
   const slugFromUrl = params.get('slug') ?? '';
 
-  const [selectedId, setSelectedId] = React.useState(idFromUrl);
+  const selectedId = idFromUrl;
   const [info, setInfo] = React.useState<BrandInfo | null>(null);
   const [stats, setStats] = React.useState<BrandStats | null>(null);
   const [products, setProducts] = React.useState<BrandProduct[]>([]);
@@ -229,9 +229,7 @@ function BrandPageInner() {
   const [distribution, setDistribution] = React.useState<BrandDistRow[]>([]);
   const [loading, setLoading] = React.useState(!!idFromUrl);
   const [noteCount, setNoteCount] = React.useState(0);
-  const [noteDrawerOpen, setNoteDrawerOpen] = React.useState(
-    () => params.get('notes') === 'open' && !!idFromUrl,
-  );
+  const { noteDrawerOpen, setNoteDrawerOpen } = useSourceNoteDrawer(idFromUrl);
 
   // 분포 필터
   const [distGender, setDistGender] = React.useState('');
@@ -243,20 +241,27 @@ function BrandPageInner() {
     }
   }, [idFromUrl]);
 
-  React.useEffect(() => { if (idFromUrl) setSelectedId(idFromUrl); }, [idFromUrl]);
-
   React.useEffect(() => {
     if (!slugFromUrl || idFromUrl) return;
+    let active = true;
     supabaseBrowser().from('brands').select('id').eq('slug', slugFromUrl).single()
       .then(({ data }) => {
-        if (data?.id) router.replace(`/brand?id=${data.id}`);
+        if (active && data?.id) {
+          const next = new URLSearchParams(params.toString());
+          next.delete('slug'); next.set('id', data.id);
+          router.replace(`/brand?${next.toString()}`);
+        }
       });
-  }, [slugFromUrl, idFromUrl]);
+    return () => { active = false; };
+  }, [slugFromUrl, idFromUrl, params, router]);
 
   React.useEffect(() => {
     if (!selectedId) return;
+    let active = true;
+    setInfo(null);
     setLoading(true);
     fetchBrandInfo(selectedId).then(async bi => {
+      if (!active) return;
       setInfo(bi);
       if (!bi) { setLoading(false); return; }
       window.dispatchEvent(new CustomEvent('uttu:brand-crumb', { detail: { company: bi.company_name ?? '', name: bi.name } }));
@@ -266,6 +271,7 @@ function BrandPageInner() {
         fetchBrandRankHistory(bi.name),
         fetchBrandRankingDistribution(bi.name),
       ]);
+      if (!active) return;
       setStats(st); setProducts(prods); setRankHistory(rh); setDistribution(dist);
       window.dispatchEvent(new CustomEvent('uttu:ai-context', { detail: [
         `브랜드 · ${bi.name}`,
@@ -274,19 +280,22 @@ function BrandPageInner() {
         ...(st.avgRank > 0 ? [`평균 ${st.avgRank}위`] : []),
       ] }));
       setLoading(false);
-    }).catch(e => { console.error(e); setLoading(false); });
+    }).catch(e => { if (active) { console.error(e); setLoading(false); } });
+    return () => { active = false; };
   }, [selectedId]);
 
   React.useEffect(() => {
-    if (selectedId) fetchNoteCountForEntity('brand', selectedId).then(setNoteCount);
-    else setNoteCount(0);
+    let active = true;
+    setNoteCount(0);
+    if (selectedId) fetchNoteCountForEntity('brand', selectedId).then(count => { if (active) setNoteCount(count); });
+    return () => { active = false; };
   }, [selectedId]);
 
   React.useEffect(() => {
     if (selectedId && info?.name) logView('brand', selectedId, info.name).catch(() => {});
   }, [selectedId, info?.name]);
 
-  const handleBrandSelect = (id: string) => { setSelectedId(id); router.push(`/brand?id=${id}`); };
+  const handleBrandSelect = (id: string) => { router.push(`/brand?id=${id}`); };
   const brandName = info?.name ?? '—';
 
   // ── KPI 계산 ────────────────────────────────────────────────
@@ -338,7 +347,9 @@ function BrandPageInner() {
 
   return (
     <>
+      {!loading && !info && <div role="status">브랜드 정보를 찾을 수 없습니다.<SourceNoteFallback /></div>}
       <NoteDrawer
+        key={selectedId}
         entity_type="brand"
         entity_id={selectedId}
         entity_label={brandName !== '—' ? brandName : undefined}
