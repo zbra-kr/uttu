@@ -38,7 +38,7 @@ test('callout fits desktop, mobile, lower FAB and absent targets', () => {
       const position = positionCallout(target,viewport,card);
       assert.ok(position.left >= 16 && position.top >= 16);
       assert.ok(position.left+card.width <= viewport.width-16+0.1);
-      assert.ok(position.top+card.height <= viewport.height-16+0.1);
+      assert.ok(position.top+Math.min(card.height, position.maxHeight) <= viewport.height-16+0.1);
     }
   }
 });

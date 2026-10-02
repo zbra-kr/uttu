@@ -39,6 +39,7 @@ export default function TourOverlay({ step, saveWarning, onNext, onBack, onSkip 
     let raf = 0;
     let scrolled: Element | null = null;
     let disposed = false;
+    let graceElapsed = false;
     setRect(null);
     setMissing(false);
     const measure = () => {
@@ -50,18 +51,22 @@ export default function TourOverlay({ step, saveWarning, onNext, onBack, onSkip 
         const bounds = el.getBoundingClientRect();
         return bounds.width > 0 && bounds.height > 0 && getComputedStyle(el).visibility !== 'hidden';
       }) : null;
+      let visibleTarget: Rect | null = null;
       if (element) {
         if (scrolled !== element) {
           element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
           scrolled = element;
         }
         const bounds = element.getBoundingClientRect();
-        setRect(clampSpotlight(bounds, window.innerWidth, window.innerHeight));
-        setMissing(false);
-      } else setRect(null);
+        visibleTarget = clampSpotlight(bounds, window.innerWidth, window.innerHeight);
+      }
+      if (!visibleTarget) scrolled = null;
+      setRect(visibleTarget);
+      setMissing(!!current.target && graceElapsed && !visibleTarget);
       if (card.current) {
         const bounds = card.current.getBoundingClientRect();
-        setCardSize(previous => Math.abs(previous.width - bounds.width) > 1 || Math.abs(previous.height - bounds.height) > 1 ? { width: bounds.width, height: bounds.height } : previous);
+        const naturalHeight = Math.max(bounds.height, card.current.scrollHeight + Math.max(0, bounds.height - card.current.clientHeight));
+        setCardSize(previous => Math.abs(previous.width - bounds.width) > 1 || Math.abs(previous.height - naturalHeight) > 1 ? { width: bounds.width, height: naturalHeight } : previous);
       }
     };
     const schedule = () => { if (!raf) raf = requestAnimationFrame(measure); };
@@ -78,7 +83,7 @@ export default function TourOverlay({ step, saveWarning, onNext, onBack, onSkip 
     window.visualViewport?.addEventListener('scroll', schedule);
     // Follow shell panel animations, including restored AI panel preferences.
     const intervals = [0, 100, 300, 600, 1200].map(delay => window.setTimeout(schedule, delay));
-    const timeout = window.setTimeout(() => { if (current.target && !scrolled) setMissing(true); }, 1800);
+    const timeout = window.setTimeout(() => { graceElapsed = true; schedule(); }, 1800);
     schedule();
     return () => {
       disposed = true; cancelAnimationFrame(raf); observer.disconnect(); resize.disconnect();
@@ -88,7 +93,8 @@ export default function TourOverlay({ step, saveWarning, onNext, onBack, onSkip 
     };
   }, [current]);
 
-  const position = positionCallout(rect, viewport, cardSize);
+  const position = positionCallout(rect ? { ...rect, top: rect.top - viewport.offsetTop } : null, viewport, cardSize);
+  const spotlight = position.anchored ? rect : null;
   const focusables = () => Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex="0"]') ?? []).filter(el => el.getClientRects().length > 0);
   const onKeyDown = (e: React.KeyboardEvent) => {
     // Stop application-wide shortcuts (including Cmd/Ctrl+K) behind the modal.
@@ -101,19 +107,19 @@ export default function TourOverlay({ step, saveWarning, onNext, onBack, onSkip 
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
   };
 
-  const mask = rect ? [
-    { top: 0, left: 0, right: 0, height: rect.top },
-    { top: rect.top + rect.height, left: 0, right: 0, bottom: 0 },
-    { top: rect.top, left: 0, width: rect.left, height: rect.height },
-    { top: rect.top, left: rect.left + rect.width, right: 0, height: rect.height },
+  const mask = spotlight ? [
+    { top: 0, left: 0, right: 0, height: spotlight.top },
+    { top: spotlight.top + spotlight.height, left: 0, right: 0, bottom: 0 },
+    { top: spotlight.top, left: 0, width: spotlight.left, height: spotlight.height },
+    { top: spotlight.top, left: spotlight.left + spotlight.width, right: 0, height: spotlight.height },
   ] : [{ inset: 0 }];
 
   return createPortal(
     <dialog ref={dialog} className={styles.overlay} aria-modal="true" aria-labelledby="uttu-tour-title" aria-describedby="uttu-tour-description" onCancel={e => { e.preventDefault(); onSkip(); }} onKeyDown={onKeyDown}>
       {mask.map((style, index) => <div key={index} className={styles.shade} style={style} aria-hidden="true" />)}
-      {rect && <div className={styles.spotlight} style={rect} aria-hidden="true" />}
-      {rect && step === 0 && <button className={styles.targetAction} style={rect} aria-label="UTTU AI 연습 열기" onClick={onNext} />}
-      <div ref={card} className={styles.card} style={{ left: position.left, top: position.top + viewport.offsetTop, maxHeight: Math.max(180, viewport.height - 32), maxWidth: Math.max(200, viewport.width - 32) }}>
+      {spotlight && <div className={styles.spotlight} style={spotlight} aria-hidden="true" />}
+      {spotlight && step === 0 && <button className={styles.targetAction} style={spotlight} aria-label="UTTU AI 연습 열기" onClick={onNext} />}
+      <div ref={card} className={styles.card} style={{ left: position.left, top: position.top + viewport.offsetTop, maxHeight: position.maxHeight, maxWidth: Math.max(1, viewport.width - 32) }}>
         <header className={styles.header}>
           <span className={styles.eyebrow}>UTTU 시작 가이드 · {step + 1} / {TOUR_STEPS.length}</span>
           <button className={styles.skip} onClick={onSkip} aria-label="가이드 건너뛰기">건너뛰기 <span aria-hidden="true">×</span></button>
@@ -144,6 +150,7 @@ export default function TourOverlay({ step, saveWarning, onNext, onBack, onSkip 
           <div className={styles.sampleItem}><div><small>샘플 상품</small><strong>UTTU 연습용 티셔츠</strong></div><button className={styles.outlineButton} aria-pressed={bookmarked} onClick={() => setBookmarked(value => !value)}><IcBookmark fill={bookmarked ? 'currentColor' : 'none'} />{bookmarked ? '저장됨' : '북마크'}</button></div>
           {bookmarked && <p className={styles.success} role="status">✓ 북마크 연습 완료! 한 번 더 누르면 해제돼요</p>}
         </section>}
+        {rect && !position.anchored && <p className={styles.hint}>화면 공간이 좁아 설명을 중앙에 표시해요. 다음 단계로 계속할 수 있어요.</p>}
         {missing && <p className={styles.hint}>이 화면에서는 버튼이 보이지 않아 설명으로 안내해요. 다음 단계로 계속할 수 있어요.</p>}
         {saveWarning && <p className={styles.hint} role="status">진행 상태를 저장하지 못했어요. 연습은 계속할 수 있으며, 다음 로그인 때 다시 안내될 수 있어요.</p>}
         <footer className={styles.footer}>

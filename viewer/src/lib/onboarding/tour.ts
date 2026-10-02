@@ -29,11 +29,33 @@ export function clampSpotlight(rect: Rect, width: number, height: number): Rect 
 }
 export function positionCallout(rect: Rect | null, viewport: { width: number; height: number }, card: { width: number; height: number }) {
   const margin = 16;
-  const maxLeft = Math.max(margin, viewport.width - card.width - margin);
-  const maxTop = Math.max(margin, viewport.height - card.height - margin);
-  if (!rect) return { left: Math.max(margin, (viewport.width - card.width) / 2), top: Math.max(margin, (viewport.height - card.height) / 2) };
-  const left = Math.min(maxLeft, Math.max(margin, rect.left + rect.width / 2 - card.width / 2));
-  const below = rect.top + rect.height + 16;
-  const above = rect.top - card.height - 16;
-  return { left, top: below <= maxTop ? below : above >= margin ? above : Math.min(maxTop, Math.max(margin, below)) };
+  const gap = 16;
+  const maxHeight = Math.max(1, viewport.height - margin * 2);
+  const width = Math.min(card.width, Math.max(1, viewport.width - margin * 2));
+  const height = Math.min(card.height, maxHeight);
+  const maxLeft = Math.max(margin, viewport.width - width - margin);
+  const maxTop = Math.max(margin, viewport.height - height - margin);
+  const centered = { left: Math.max(margin, (viewport.width - width) / 2), top: Math.max(margin, (viewport.height - height) / 2), maxHeight, anchored: false };
+  if (!rect || rect.top >= viewport.height || rect.top + rect.height <= 0) return centered;
+  const left = Math.min(maxLeft, Math.max(margin, rect.left + rect.width / 2 - width / 2));
+  const bottom = rect.top + rect.height;
+  const below = bottom + gap;
+  const above = rect.top - height - gap;
+  const clampTop = (top: number) => Math.min(maxTop, Math.max(margin, top));
+  // A slightly short preferred gap is better than covering the target. Check
+  // the clamped rectangles, not just whether the full 16px gap fits exactly.
+  for (const top of [clampTop(below), clampTop(above)]) {
+    if (top >= bottom || top + height <= rect.top) return { left, top, maxHeight, anchored: true };
+  }
+  const aboveSpace = Math.max(0, rect.top - gap - margin);
+  const belowSpace = Math.max(0, viewport.height - margin - bottom - gap);
+  const clearHeight = Math.max(aboveSpace, belowSpace);
+  if (clearHeight >= Math.min(180, maxHeight)) {
+    // Keep the target clear and scroll the existing callout internally. The
+    // caller measures natural scroll height so this cap cannot oscillate.
+    return { left, top: aboveSpace >= belowSpace ? margin : below, maxHeight: Math.min(maxHeight, clearHeight), anchored: true };
+  }
+  // An almost full-screen target leaves no usable clear band. Present a
+  // centered explanation with no spotlight rather than a covered spotlight.
+  return centered;
 }
