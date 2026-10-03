@@ -7,11 +7,11 @@ const adminClient = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY!,
 );
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { error, user } = await requireAdmin();
   if (error) return error;
 
-  const targetId = params.id;
+  const targetId = (await params).id;
   const body: {
     profile?: { role?: string; display_name?: string | null; team?: string | null };
     quota?: { monthly_token_limit?: number | null; daily_token_limit?: number | null; is_blocked?: boolean; note?: string | null };
