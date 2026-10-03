@@ -287,6 +287,8 @@ function canonicalJson(value: unknown): string {
 }
 
 export async function createNote(input: {
+  /** Refuse a delayed UI submission if the signed-in account changed. */
+  expected_user_id?: string;
   body: string;
   entity_type?: EntityType | null;
   entity_id?: string | null;
@@ -304,6 +306,9 @@ export async function createNote(input: {
   }
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { data: null, error: '로그인 필요' };
+  if (input.expected_user_id && user.id !== input.expected_user_id) {
+    return { data: null, error: '로그인 계정이 변경되었습니다. 원래 계정의 검토 내용을 확인해 주세요.' };
+  }
   let { data, error } = await supabase
     .from('user_notes')
     .insert({
