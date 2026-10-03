@@ -1,6 +1,7 @@
 'use client';
 import { formatFiveStarRating, isLowFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
+import Link from 'next/link';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileReviewsView from './MobileReviewsView';
 import NoteDrawer from '@/components/me/NoteDrawer';
@@ -184,8 +185,13 @@ function ReviewCard({
 // ── 페이지 ────────────────────────────────────────────────────────────────────
 export default function ReviewsPage() {
   const isMobile = useIsMobile();
-  if (isMobile) return <MobileReviewsView />;
-  return <ReviewsDesktopView />;
+  return <>
+    <section className="panel" style={{ margin: '16px 0', padding: 18 }}>
+      <Link href="/reviews/weekly" style={{ fontSize: 17, fontWeight: 600 }}>이번 주 상품 개선 검토 →</Link>
+      <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--f3)' }}>브랜드의 리뷰 원문을 읽고, 다음 상품 회의에서 확인할 질문을 근거와 함께 남기세요.</p>
+    </section>
+    {isMobile ? <MobileReviewsView /> : <ReviewsDesktopView />}
+  </>;
 }
 
 function ReviewsDesktopView() {
