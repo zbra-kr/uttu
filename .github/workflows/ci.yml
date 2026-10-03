@@ -21,7 +21,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
-        working-directory: worker
 
       - name: Lint (ruff)
         run: ruff check worker
@@ -66,6 +65,10 @@ jobs:
 
       - name: AI session isolation regression tests
         run: npm run test:ai-session
+        working-directory: viewer
+
+      - name: Rating unit regression tests
+        run: npm run test:ratings
         working-directory: viewer
 
       - name: Build
