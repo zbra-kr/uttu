@@ -116,7 +116,8 @@ function renderRanking(query, mobile, savedFilters) {
   let drawer;
   const Page = load('src/app/(app)/ranking/page.tsx', {
     'next/navigation': { useRouter: () => ({ push() {}, replace() {} }), useSearchParams: () => new URLSearchParams(query) },
-    '@/hooks/useViewport': { useIsMobile: () => mobile },
+    // These assertions inspect the resolved view; performance mount tests cover the pending SSR/client gate.
+    '@/hooks/useResolvedViewport': { useResolvedViewport: () => mobile ? 'mobile' : 'desktop' },
     '@/lib/queries': { CATEGORY_MAP: { '000': '전체', '001': '상의' }, AGE_MAP: { AGE_BAND_25: '25~30세' } },
     '@/lib/queries-me': { fetchNoteCountForEntity: async () => 0, logView: async () => {} },
     '@/components/me/SavedFiltersDropdown': { __esModule: true, default: () => null },
