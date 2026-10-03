@@ -1,4 +1,5 @@
 'use client';
+import BriefingEvidenceNote from '@/components/briefing/BriefingEvidenceNote';
 import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -71,6 +72,7 @@ function InsightPageContent({ page, audience, date }: { page: InsightPage; audie
             #{String(page.idx + 1).padStart(2, '0')}
           </span>
         </div>
+        <div style={{ marginBottom: 14 }}><BriefingEvidenceNote audience={audience} /></div>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--f1)', lineHeight: 1.35, letterSpacing: '-0.02em' }}>
           {page.title}
         </h1>
@@ -133,7 +135,7 @@ function InsightPageContent({ page, audience, date }: { page: InsightPage; audie
               fontSize: 14, fontWeight: 600, color: 'var(--f1)', textDecoration: 'none',
             }}
           >
-            전체 데이터 보기 →
+            관련 데이터 페이지 →
           </Link>
         </div>
       )}

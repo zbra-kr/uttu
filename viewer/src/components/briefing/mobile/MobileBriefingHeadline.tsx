@@ -1,4 +1,5 @@
 'use client';
+import BriefingEvidenceNote from '../BriefingEvidenceNote';
 import { Briefing } from '@/lib/queries-briefing';
 
 interface Props {
@@ -25,6 +26,7 @@ export default function MobileBriefingHeadline({ briefing }: Props) {
       padding: 14,
       background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10,
     }}>
+      <BriefingEvidenceNote audience={briefing.audience} />
       <p style={{
         fontSize: 22, fontWeight: 600,
         color: 'var(--f1)', lineHeight: 1.35, margin: 0,

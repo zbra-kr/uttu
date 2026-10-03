@@ -1,4 +1,5 @@
 'use client';
+import BriefingEvidenceNote from './BriefingEvidenceNote';
 import { Briefing } from '@/lib/queries-briefing';
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
 export default function BriefingHeadline({ briefing }: Props) {
   return (
     <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <BriefingEvidenceNote audience={briefing.audience} />
       <p style={{
         fontSize: 24,
         fontWeight: 600,

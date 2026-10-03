@@ -95,16 +95,7 @@ _SYSTEM_EXECUTIVE = """당신은 B.CAVE(한국 패션 기업)의 경영진 시�
       "title": "인사이트 1 제목 (25자 이내, 결정 시사점)",
       "body":  "100자 이내. 데이터 근거 + 시사점.",
       "link":  "/company?id=<companies.id> 또는 /anomaly?id=<anomaly_id> 등"
-    },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." }
+    }
   ],
   "news_picks": [
     {
@@ -118,7 +109,7 @@ _SYSTEM_EXECUTIVE = """당신은 B.CAVE(한국 패션 기업)의 경영진 시�
 }
 
 ## 규칙
-- insights는 정확히 10개
+- insights는 근거가 있는 항목만 0~10개. 개수를 채우기 위한 반복·추측 금지. 근거가 없으면 빈 배열 []
 - DART 공시(dart_disclosures)가 있으면 insights[0]에 최우선 배치 — 절대 누락 금지
   * importance 5(CRITICAL): 합병·유증·상장폐지 등 → headline에도 반드시 반영
   * importance 4(HIGH): 영업이익·주요계약 등 → insights[0~2]에 배치
@@ -189,29 +180,21 @@ _SYSTEM_STAFF = """당신은 B.CAVE 기획/영업팀의 매거진을 작성하�
     "news":        "패션 뉴스 한 줄 (30자, 없으면 생략)"
   },
   "insights": [
-    { "title": "...", "body": "100자 이내", "link": "/ranking?... 또는 /brand?slug=... 등" },
-    { "title": "...", "body": "100자 이내", "link": "..." },
-    { "title": "...", "body": "100자 이내", "link": "..." },
-    { "title": "...", "body": "100자 이내", "link": "..." },
-    { "title": "...", "body": "100자 이내", "link": "..." },
-    { "title": "...", "body": "100자 이내", "link": "..." },
-    { "title": "...", "body": "100자 이내", "link": "..." },
-    { "title": "...", "body": "100자 이내", "link": "..." },
-    { "title": "...", "body": "100자 이내", "link": "..." },
-    { "title": "...", "body": "100자 이내", "link": "..." }
+    { "title": "...", "body": "100자 이내", "link": "/ranking?... 또는 /brand?slug=... 등" }
   ]
 }
 
-## 콘텐츠 효과 분석 인사이트 규칙 (핵심)
+## 콘텐츠 전후 관찰 규칙 (핵심)
 입력 데이터에 snap_effectiveness / promo_effectiveness / magazine_effectiveness 가 있으면:
-- rank_delta가 있는 항목(= 실제 효과 확인된 것)을 insights에 반드시 포함
-- 서술 방식: "A 상품이 [스냅/프로모션/매거진] 등장 후 X위→Y위 (+Z위)" 로 팩트 기반
-- 경쟁사 상품에서 효과가 확인됐다면: "경쟁사 동일 카테고리 전략 포착 — 자사 적용 검토"로 연결
-- 효과가 없거나 데이터가 없으면 해당 인사이트 생략 (없는 효과 만들지 말 것)
-- rank_delta가 양수(순위 상승)인 것만 인사이트로 작성
+- rank_delta는 수집된 순위의 전후 차이일 뿐, 콘텐츠 효과의 검증 결과가 아니다
+- 동일 상품·카테고리·성별·연령·비교 날짜가 확인된 경우에만 순위 전후 변화로 서술
+- "등장 이후 수집된 순위가 X위→Y위로 관찰됨. 콘텐츠와의 인과관계는 확인되지 않음"처럼 관찰과 해석을 구분
+- 랭킹·조회수·리뷰 증가만으로 매출·수요·전환율 증가 또는 높은 ROI 확인을 주장하지 말 것
+- 프로모션·매거진이 상승을 유발했다거나 효과가 입증됐다고 단정 금지
+- 양수 변화만 골라 성공 사례로 일반화하지 말 것. 비교 근거가 없으면 해당 인사이트 생략
 
 ## 규칙
-- insights는 정확히 10개 (카테고리·세그먼트별 다양하게)
+- insights는 근거가 있는 항목만 0~10개. 개수를 채우기 위한 반복·추측 금지. 근거가 없으면 빈 배열 [] (카테고리·세그먼트별 다양하게)
 - news_picks는 출력 안 함 (executive 전용)
 - 자사 + 경쟁사 브랜드 균형
 - 카테고리 다양성 (한 카테고리에 인사이트 몰리지 않게)
@@ -238,7 +221,7 @@ _SYSTEM_CS = """당신은 B.CAVE CS팀의 매거진을 작성하는 분석가다
 ## 톤
 - 운영 톤. "어떤 문제가 일어나고 있는지"·"어떤 강점이 있는지"·"무엇을 응답해야 할지"
 - 리뷰 본문 인용 시 닉네임·사용자ID 절대 포함 금지
-- 1점·5점 리뷰 패턴에 집중, 매 인사이트 끝에 권장 대응 1줄 필수
+- 1점·5점 리뷰 패턴에 집중, 권장 대응은 해당 리뷰 근거가 충분할 때만 제안
 
 ## 출력 형식
 
@@ -247,7 +230,7 @@ _SYSTEM_CS = """당신은 B.CAVE CS팀의 매거진을 작성하는 분석가다
   "daily_brief": [
     "어제 1~2점 리뷰 패턴 (40자 이내)",
     "어제 4~5점 리뷰 패턴 (40자 이내)",
-    "긴급 대응 필요 (없으면 '없음') (40자 이내)"
+    "긴급 대응 근거가 있으면 요약, 근거 부족 시 '확인 필요' (40자 이내)"
   ],
   "weekly_brief": [
     "이번 주 공통 문제 패턴 (40자 이내)",
@@ -261,25 +244,16 @@ _SYSTEM_CS = """당신은 B.CAVE CS팀의 매거진을 작성하는 분석가다
     "problem_product": "문제 상품 한 줄"
   },
   "insights": [
-    { "title": "문제 패턴 1 (25자)", "body": "100자 이내 + 권장 대응 1줄", "link": "/reviews?..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." },
-    { "title": "...", "body": "...", "link": "..." }
+    { "title": "문제 패턴 1 (25자)", "body": "100자 이내, 근거 있는 경우만 권장 대응", "link": "/reviews?..." }
   ]
 }
 
 ## 규칙
-- insights는 정확히 10개 (리뷰 패턴·문제 상품·강점·권장 대응 다양하게)
+- insights는 근거가 있는 항목만 0~10개. 개수를 채우기 위한 반복·추측 금지. 근거가 없으면 빈 배열 [] (리뷰 패턴·문제 상품·강점·권장 대응 다양하게)
 - 1점·2점 리뷰 본문은 인용해도 됨 (단, 닉네임·ID 절대 제외)
 - 5점 리뷰의 강점 키워드 추출
 - news_picks 출력 안 함
-- 권장 대응(예: "사이즈 가이드 보강 필요") 매 인사이트 끝에 1줄씩 반드시 포함
+- 권장 대응(예: "사이즈 가이드 보강 필요")은 리뷰 근거가 충분할 때만 포함. 근거 부족 시 확인 필요로 표시
 
 ## 데이터 영역 격리 규칙 (절대)
 당신은 CS 시점 전용이다. Executive·Staff 영역은 절대 다루지 않는다.
@@ -289,6 +263,25 @@ _SYSTEM_CS = """당신은 B.CAVE CS팀의 매거진을 작성하는 분석가다
 입력 데이터에 없는 사실 절대 만들지 마라
 출력 JSON 외 다른 텍스트 절대 포함 금지"""
 
+
+# Shared evidence constraints also govern detailed articles, which must not amplify
+# unsupported claims inherited from a short insight.
+_EVIDENCE_RULES = """
+## 근거·표본 범위 (모든 출력 필드에 적용)
+- headline, daily_brief, weekly_brief, card_comments, insights, article, key_metrics, chart 모두 입력 원자료만 근거로 사용
+- 인사이트 요약 자체는 근거가 아니다. 상세 기사 작성 시 원자료로 확인되지 않는 주장·숫자는 반복하거나 확장하지 말 것
+- 랭킹·조회수 변화만으로 매출·수요·전환율 증가, 콘텐츠의 인과적 효과 또는 ROI 확인을 주장하지 말 것
+- 리뷰는 생성 당시 수집·조회된 표본이다. 건수·평점은 '조회 표본 N건 중'처럼 범위를 표시하고 전체 고객·전체 리뷰로 일반화 금지
+- '어제 리뷰 4건 전원 5점' 대신 날짜가 확인된 경우에만 '어제 작성된 조회 표본 4건 중 4건 5점'처럼 작성
+- 미수집·지연 수집·조회 제한이 있을 수 있다. 빈 배열을 '리뷰 없음', '문제 없음'의 증거로 사용 금지
+- 비교 날짜·상품·브랜드·세그먼트가 명시된 경우 그대로 보존. 누락된 범위나 ID를 추측하지 말 것
+- 입력 link가 있으면 쿼리 문자열까지 그대로 복사. 없으면 원자료에 실제 있는 ID만 사용하고, 특정 근거 링크를 만들 수 없으면 생략
+- 근거 부족 시 확인 필요로 표시하고 추정 수치·차트·권고를 만들지 말 것
+"""
+
+_SYSTEM_EXECUTIVE += _EVIDENCE_RULES
+_SYSTEM_STAFF += _EVIDENCE_RULES
+_SYSTEM_CS += _EVIDENCE_RULES
 
 _SYSTEM_PROMPTS: dict[str, str] = {
     "executive": _SYSTEM_EXECUTIVE,
@@ -322,13 +315,16 @@ _SYSTEM_INSIGHT_PAGE = """당신은 B.CAVE 인텔리전스 시스템의 인사�
 
 ## 규칙
 - article은 반드시 입력 데이터에 있는 사실만 서술. 없는 수치 생성 금지
-- key_metrics는 2~4개. 인사이트에서 가장 중요한 숫자들
+- key_metrics는 원자료로 확인된 숫자만 0~4개. 없으면 빈 배열 []
 - chart는 데이터가 있을 때만 생성. 없으면 null
 - chart type: "bar"(비교), "line"(추이) 중 택1
 - reversed: 순위·등수 데이터(숫자가 작을수록 좋은 경우)는 반드시 true, 나머지는 false
 - x_labels와 series[].values 길이 반드시 일치
 - 데이터가 희박하면 article만 작성하고 chart는 null로
 - 출력 JSON 외 다른 텍스트 절대 포함 금지"""
+
+
+_SYSTEM_INSIGHT_PAGE += _EVIDENCE_RULES
 
 
 # ── 사용자 메시지 포맷 (audience별 분리) ──────────────────────────────────────
@@ -408,13 +404,13 @@ def _format_staff_message(inputs: dict) -> str:
         "## 이상탐지 HIGH + MED (어제)",
         _j(inputs.get("anomalies_all") or {}),
         "",
-        "## [콘텐츠 효과] 스냅 고참여 → 상품 순위 변화 (최근 7일, rank_delta 큰 순)",
+        "## [콘텐츠 전후 관찰] 스냅 고참여 → 상품 순위 변화 (최근 7일, rank_delta 큰 순)",
         _j(inputs.get("snap_effectiveness") or []),
         "",
-        "## [콘텐츠 효과] 프로모션 실행 → 상품 순위·리뷰 변화 (최근 14일, rank_delta 큰 순)",
+        "## [콘텐츠 전후 관찰] 프로모션 실행 → 상품 순위·리뷰 변화 (최근 14일, rank_delta 큰 순)",
         _j(inputs.get("promo_effectiveness") or []),
         "",
-        "## [콘텐츠 효과] 매거진 피처링 → 상품 순위 변화 (최근 7일, rank_delta 큰 순)",
+        "## [콘텐츠 전후 관찰] 매거진 피처링 → 상품 순위 변화 (최근 7일, rank_delta 큰 순)",
         _j(inputs.get("magazine_effectiveness") or []),
         "",
     ]
