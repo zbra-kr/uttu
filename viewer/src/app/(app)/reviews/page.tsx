@@ -2,7 +2,7 @@
 import { formatFiveStarRating, isLowFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
 import Link from 'next/link';
-import { useIsMobile } from '@/hooks/useViewport';
+import { useResolvedViewport } from '@/hooks/useResolvedViewport';
 import MobileReviewsView from './MobileReviewsView';
 import NoteDrawer from '@/components/me/NoteDrawer';
 import { IcArrowUR, IcX } from '@/components/ui/icons';
@@ -184,13 +184,15 @@ function ReviewCard({
 
 // ── 페이지 ────────────────────────────────────────────────────────────────────
 export default function ReviewsPage() {
-  const isMobile = useIsMobile();
+  const viewport = useResolvedViewport();
   return <>
     <section className="panel" style={{ padding: 16 }}>
       <Link href="/reviews/weekly" style={{ fontSize: 14, fontWeight: 500, color: 'var(--f1)', textUnderlineOffset: 3 }}>이번 주 상품 개선 검토 →</Link>
       <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--f3)' }}>브랜드의 리뷰 원문을 읽고, 다음 상품 회의에서 확인할 질문을 근거와 함께 남기세요.</p>
     </section>
-    {isMobile ? <MobileReviewsView /> : <ReviewsDesktopView />}
+    {viewport === null
+      ? <div role="status" aria-live="polite" style={{ padding: 24, minHeight: 160 }}>리뷰를 불러오는 중…</div>
+      : viewport === 'mobile' ? <MobileReviewsView /> : <ReviewsDesktopView />}
   </>;
 }
 
