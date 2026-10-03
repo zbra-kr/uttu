@@ -21,14 +21,14 @@ function page(denied = false) {
 
 test('existing memo permalink resolves to its canonical product source after RLS read', async () => {
   const p = page();
-  await assert.rejects(p.render({ params: { id } }), error => error instanceof Redirect
+  await assert.rejects(p.render({ params: Promise.resolve({ id }) }), error => error instanceof Redirect
     && error.message.includes('/product?') && error.message.includes(`note=${id}`) && error.message.includes('no=12345'));
   assert.deepEqual(p.calls, ['user_notes', 'products']);
 });
 
 test('forced memo fallback is a real escape from a failed source detail and does not redirect again', async () => {
   const p = page();
-  const output = await p.render({ params: { id }, searchParams: { view: 'memo' } });
+  const output = await p.render({ params: Promise.resolve({ id }), searchParams: Promise.resolve({ view: 'memo' }) });
   assert.equal(output.type, 'section');
   assert.ok(output.props.children.some(child => child?.type === 'div' && child.props.children === '@수신자 메모'));
   assert.deepEqual(p.calls, ['user_notes', 'products', 'profiles_public']);
@@ -37,7 +37,7 @@ test('forced memo fallback is a real escape from a failed source detail and does
 test('unrelated or deleted memo stays unavailable even through forced memo mode', async () => {
   for (const searchParams of [undefined, { view: 'memo' }]) {
     const p = page(true);
-    await assert.rejects(p.render({ params: { id }, searchParams }), NotFound);
+    await assert.rejects(p.render({ params: Promise.resolve({ id }), searchParams: Promise.resolve(searchParams) }), NotFound);
     assert.deepEqual(p.calls, ['user_notes']);
   }
 });

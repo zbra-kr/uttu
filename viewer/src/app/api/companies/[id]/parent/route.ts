@@ -11,11 +11,11 @@ function adminClient() {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { error: authErr } = await requireAdmin();
   if (authErr) return authErr;
-  const { id } = params;
+  const { id } = await params;
   let body: { parent_company_id: string | null };
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: 'JSON 파싱 오류' }, { status: 400 });

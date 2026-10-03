@@ -50,7 +50,7 @@ function scenario(opts = {}) {
         '@supabase/supabase-js': { createClient() { serviceClients++; return sb; } },
         '@supabase/ssr': { createServerClient: () => ({ auth: { async getUser() { if (opts.authThrows)
                         throw Error('auth unavailable'); return { data: { user: opts.noUser ? null : { id: userId } }, error: opts.authError ? { message: 'invalid' } : null }; } } }) },
-        'next/headers': { cookies: () => ({ get: () => undefined }) }, '@/lib/ai/pipeline': { AI_QUERY_BLOCKED_TABLES: [], execQueryDb() { throw Error('unexpected tool'); } } };
+        'next/headers': { cookies: async () => ({ get: () => undefined }) }, '@/lib/ai/pipeline': { AI_QUERY_BLOCKED_TABLES: [], execQueryDb() { throw Error('unexpected tool'); } } };
     const chat = load('src/app/api/ai/chat/route.ts', mocks), messages = load('src/app/api/ai/messages/route.ts', mocks);
     const request = (patch = {}) => new NextRequest('https://uttu.example/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', text: 'hello' }], context: [], route: '/', sessionId, ...patch }) });
     return { chat, messages, request, calls, providerCalls: () => providerCalls, serviceClients: () => serviceClients };

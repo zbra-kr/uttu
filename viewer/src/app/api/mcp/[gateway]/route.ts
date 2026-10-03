@@ -54,9 +54,9 @@ function getHandler(): ReturnType<typeof createUttuMcpHandler> {
 
 async function handler(
   req: NextRequest,
-  { params }: { params: { gateway: string } },
+  { params }: { params: Promise<{ gateway: string }> },
 ): Promise<Response> {
-  const { gateway } = params;
+  const { gateway } = await params;
 
   // 1. secret 검증
   if (!verifyGatewaySecret(gateway)) {

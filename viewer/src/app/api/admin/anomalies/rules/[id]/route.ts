@@ -7,7 +7,7 @@ const admin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY!,
 );
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { error, user } = await requireAdmin();
   if (error) return error;
 
@@ -31,7 +31,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { data, error: dbErr } = await admin
     .from('detector_rules')
     .update(allowed)
-    .eq('id', params.id)
+    .eq('id', (await params).id)
     .select()
     .single();
 
@@ -39,7 +39,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json({ rule: data });
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { error } = await requireAdmin();
   if (error) return error;
 
@@ -47,7 +47,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const { data: existing } = await admin
     .from('detector_rules')
     .select('module')
-    .eq('id', params.id)
+    .eq('id', (await params).id)
     .single();
 
   if (!existing) return NextResponse.json({ error: '룰을 찾을 수 없음' }, { status: 404 });
@@ -58,7 +58,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const { error: dbErr } = await admin
     .from('detector_rules')
     .delete()
-    .eq('id', params.id);
+    .eq('id', (await params).id);
 
   if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 });
   return new NextResponse(null, { status: 204 });

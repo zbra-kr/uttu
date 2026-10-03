@@ -91,6 +91,10 @@ jobs:
         run: npm run test:briefing-navigation
         working-directory: viewer
 
+      - name: Framework migration regression tests
+        run: npm run test:framework
+        working-directory: viewer
+
       - name: Build
         # 빌드에 필요한 공개 환경변수만 주입 (service_role 키 불필요)
         env:
