@@ -47,6 +47,7 @@ export interface RankingRow {
 }
 
 export async function fetchLatestRanking(opts: {
+  signal?: AbortSignal;
   categoryCode?: string;
   genderFilter?: string;
   ageFilter?: string;
@@ -58,7 +59,7 @@ export async function fetchLatestRanking(opts: {
 
   // 날짜 하나에 대한 쿼리 함수
   const queryDate = async (date: string) => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('ranking_snapshots')
       .select(`rank_position, musinsa_no, product_name, brand_name,
         category_code, gender_filter, age_filter,
@@ -71,6 +72,8 @@ export async function fetchLatestRanking(opts: {
       .eq('snapshot_date', date)
       .order('rank_position', { ascending: true })
       .limit(limit);
+    if (opts.signal) query = query.abortSignal(opts.signal);
+    const { data, error } = await query;
     if (error) throw error;
     return (data ?? []) as any[];
   };
@@ -78,7 +81,7 @@ export async function fetchLatestRanking(opts: {
   // fromDate 미지정 = 오늘 모드: 최신 날짜 자동 감지
   let dates: string[] = [];
   if (!opts.fromDate) {
-    const { data: latest } = await supabase
+    let latestQuery = supabase
       .from('ranking_snapshots')
       .select('snapshot_date')
       .eq('category_code', categoryCode)
@@ -86,6 +89,9 @@ export async function fetchLatestRanking(opts: {
       .eq('age_filter', ageFilter)
       .order('snapshot_date', { ascending: false })
       .limit(1);
+    if (opts.signal) latestQuery = latestQuery.abortSignal(opts.signal);
+    const { data: latest } = await latestQuery;
+    if (opts.signal?.aborted) return [];
     const latestDate = (latest as any[])?.[0]?.snapshot_date;
     if (!latestDate) return [];
     // 전일 비교용으로 하루 더 포함
