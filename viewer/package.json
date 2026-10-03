@@ -18,7 +18,8 @@
     "test:collection-status": "node --test tests/collection-status.test.cjs",
     "test:briefing-evidence": "node --test tests/briefing-evidence.test.cjs",
     "test:briefing-navigation": "node --test tests/briefing-navigation.test.cjs",
-    "test:weekly-reviews": "node --test tests/weekly-review*.test.cjs"
+    "test:weekly-reviews": "node --test tests/weekly-review*.test.cjs",
+    "test:performance": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/performance-*.test.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
@@ -56,6 +57,7 @@
     "@types/react-dom": "^18",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.35",
-    "typescript": "^5"
+    "typescript": "^5",
+    "react-test-renderer": "18.3.1"
   }
 }

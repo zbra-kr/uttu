@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useResolvedViewport } from '@/hooks/useResolvedViewport';
+import { useIsMobile } from '@/hooks/useViewport';
 import MobileRankingView from './MobileRankingView';
 import { PeriodFilter, FilterBlock, PillGroup, CheckRow, DismissChip, SearchSelect } from '@/components/ui/filters';
 import { IcDownload, IcChevL, IcChevR, IcEdit } from '@/components/ui/icons';
@@ -217,8 +217,7 @@ export default function RankingPage() {
 }
 
 function RankingPageRoot() {
-  const viewport = useResolvedViewport();
-  const isMobile = viewport === 'mobile';
+  const isMobile = useIsMobile();
   const params = useSearchParams();
   const query = params.toString();
   const sourceContext = React.useMemo(() => {
@@ -235,7 +234,6 @@ function RankingPageRoot() {
   // note/notes and must not reset edits or reopen the drawer.
   const filterQuery = new URLSearchParams(query);
   filterQuery.delete('note'); filterQuery.delete('notes');
-  if (viewport === null) return <div role="status" aria-live="polite" style={{ padding: 24, minHeight: 160 }}>랭킹을 불러오는 중…</div>;
   if (isMobile && !hasSourceLink) return <MobileRankingView />;
   return <RankingDesktopView key={filterQuery.toString()} sourceContext={sourceContext}
     sourceLink={hasSourceLink} compact={isMobile} />;
@@ -329,11 +327,10 @@ function RankingDesktopView({ sourceContext, sourceLink, compact }: {
   // ── 랭킹 데이터 로드 — category/gender/age/기간 변경 시 재쿼리 ─
   React.useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
     setLoading(true);
     setError(null);
     setSnapshotDate('');
-    fetchLatestRanking({ categoryCode: selectedCategory, genderFilter: gender, ageFilter: age, limit: 300, fromDate: queryFrom, toDate: queryTo, signal: controller.signal })
+    fetchLatestRanking({ categoryCode: selectedCategory, genderFilter: gender, ageFilter: age, limit: 300, fromDate: queryFrom, toDate: queryTo })
       .then(data => {
         if (cancelled) return;
         setAllRows(data);
@@ -346,7 +343,7 @@ function RankingDesktopView({ sourceContext, sourceLink, compact }: {
       })
       .catch(e => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; controller.abort(); };
+    return () => { cancelled = true; };
   }, [selectedCategory, gender, age, queryFrom, queryTo]);
 
   // ── 클라이언트 필터 ───────────────────────────────────────

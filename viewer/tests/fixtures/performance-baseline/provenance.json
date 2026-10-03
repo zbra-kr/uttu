@@ -1,0 +1,16 @@
+{
+  "commit": "5ec40b4b638f7bfb7beef46429ae629a4011c205",
+  "repository": "https://github.com/zbra-kr/uttu",
+  "classification": "Immutable pre-optimization source snapshots, text-only test fixtures; current candidate always loaded from live src paths.",
+  "sha256": {
+    "queries.ts": "c06cb1540a22b907b3d8180cd949af69b20d8f0e366afe26bd711697cba730c4",
+    "reviews-page.tsx": "f896decbc6dc8f9b61d27ca2509663c3caed9107a3c636b8e58ba93610ca8fa5",
+    "format.ts": "075e91daf1e4538586590b651ca7a44cb608740008dbae84a117c9dd802ca316",
+    "ranking-page.tsx": "91debd6735c0ba0cb0b621f4c2111c65478963c1b823bf1082823be77e6e4805",
+    "ranking-context.ts": "6829c9b717d2e3f3f5795e63d01d9c61e90cb19d56d26cf6e947dd5303219ee7",
+    "reviews-mobile.tsx": "2ced9cf51e6088caa18d7a45e4333b5909ca9ade9f464649d9a18addcb2fc6ae",
+    "product-page.tsx": "e4bed4cdfbe556f975064b3bbec878e0e9ba6899711ff09419d9d7710df69765",
+    "ranking-mobile.tsx": "83655d8764e9ee9e7b886fa45bb95e6a69138cb920e48f89cd67e1df618336c9",
+    "useViewport.ts": "a7d8d8b2ff6057d27f3ad2e7440008654b15c5b17fcfabb480a5ab72bfc7f6ac"
+  }
+}
