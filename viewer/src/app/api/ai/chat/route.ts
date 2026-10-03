@@ -7,6 +7,7 @@ import { cookies } from 'next/headers';
 import { DB_SCHEMA } from '@/lib/ai-schema';
 import { NextRequest } from 'next/server';
 import { AI_QUERY_BLOCKED_TABLES, execQueryDb } from '@/lib/ai/pipeline';
+import { isUuid, ensureOwnedAiSession } from '@/lib/ai/session-access';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -150,12 +151,25 @@ AI: ${assistantMsg.slice(0, 300)}`,
 }
 
 export async function POST(req: NextRequest) {
-  const { messages, context, route, sessionId } = await req.json() as {
+  let body: unknown;
+  try { body = await req.json(); }
+  catch { return Response.json({ error: 'invalid_request' }, { status: 400 }); }
+  if (!body || typeof body !== 'object') {
+    return Response.json({ error: 'invalid_request' }, { status: 400 });
+  }
+  const { messages, context, route, sessionId } = body as {
     messages: Array<{ role: string; text?: string; content?: string }>;
-    context: string[];
-    route: string;
+    context?: string[];
+    route?: string;
     sessionId: string;
   };
+  if (!isUuid(sessionId) || !Array.isArray(messages) || messages.length === 0 ||
+      messages.some(m => !m || !['user', 'ai', 'assistant'].includes(m.role) ||
+        typeof (m.content ?? m.text) !== 'string') ||
+      (context !== undefined && (!Array.isArray(context) || context.some(c => typeof c !== 'string'))) ||
+      (route !== undefined && typeof route !== 'string')) {
+    return Response.json({ error: 'invalid_request' }, { status: 400 });
+  }
 
   // 쿠키에서 인증 user_id 추출 (비인증이면 null)
   let userId: string | null = null;
@@ -166,26 +180,26 @@ export async function POST(req: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       { cookies: { get: (name) => cookieStore.get(name)?.value } },
     );
-    const { data: { user } } = await supabaseAuth.auth.getUser();
-    userId = user?.id ?? null;
+    const { data: { user }, error } = await supabaseAuth.auth.getUser();
+    userId = error ? null : user?.id ?? null;
   } catch {
-    // 인증 실패해도 AI 기능은 계속
+    // Authentication must fail closed before service-role access or paid inference.
   }
+
+  if (!userId) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY;
+  if (!serviceKey) return Response.json({ error: 'service_unavailable' }, { status: 503 });
+  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey);
+  const access = await ensureOwnedAiSession(supabase, {
+    id: sessionId, user_id: userId, route: route ?? '/', context: context ?? [],
+  });
+  if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
 
   const enc = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
       const emit = (obj: object) =>
         controller.enqueue(enc.encode(`data: ${JSON.stringify(obj)}\n\n`));
-
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY;
-      if (!serviceKey) {
-        emit({ type: 'error', message: 'SUPABASE_SERVICE_KEY 미설정' });
-        emit({ type: 'done' });
-        controller.close();
-        return;
-      }
-      const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey);
 
       const today = new Date().toLocaleDateString('ko-KR', {
         timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -221,18 +235,10 @@ export async function POST(req: NextRequest) {
         // DB 조회 실패 — hardcoded fallback 유지
       }
 
-      // ── 세션 upsert (await — user 메시지 FK 제약 충족 보장) ────────
-      if (sessionId) {
-        const { error: sessErr } = await supabase.from('ai_sessions').upsert({
-          id:          sessionId,
-          user_id:     userId,
-          route:       route ?? '/',
-          context:     context ?? [],
-          started_at:  new Date().toISOString(),
-          ai_provider: aiProvider,
-          ai_model:    aiModelId,
-        }, { onConflict: 'id', ignoreDuplicates: true });
-        if (sessErr) console.error('[ai_sessions upsert]', sessErr.message, sessErr.details);
+      // The session is already owned and persisted before opening the stream.
+      if (access.created) {
+        await supabase.from('ai_sessions').update({ ai_provider: aiProvider, ai_model: aiModelId })
+          .eq('id', sessionId).eq('user_id', userId);
       }
 
       // ── quota 체크 ───────────────────────────────────────────────
@@ -305,7 +311,7 @@ export async function POST(req: NextRequest) {
       }
 
       const rawMsgs = (messages ?? []).map(m => ({
-        role:    (m.role === 'ai' ? 'assistant' : 'user') as 'user' | 'assistant',
+        role:    (m.role === 'ai' || m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
         content: (m.content ?? m.text ?? '') as string,
       }));
 
@@ -517,7 +523,7 @@ export async function POST(req: NextRequest) {
               output_tokens:   totalOutputTokens,
               tool_call_count: totalToolCalls,
               ...(title ? { title } : {}),
-            }).eq('id', sessionId),
+            }).eq('id', sessionId).eq('user_id', userId),
           ]);
         }
 
