@@ -12,7 +12,7 @@ const STATUS_COLOR: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   done:    '완료',
   error:   '오류',
-  running: '실행 중',
+  running: 'running 기록 (실제 실행 미확인)',
 };
 
 interface Props {

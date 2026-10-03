@@ -1,5 +1,6 @@
 'use client';
 import React from 'react';
+import { formatStoredCount } from '@/lib/collection-status';
 import { IcCalendar } from '@/components/ui/icons';
 import { Line } from '@/components/ui/charts';
 import { supabaseBrowser } from '@/lib/supabase/client';
@@ -33,7 +34,7 @@ const STATUS_COLOR: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   done:    '완료',
   error:   '오류',
-  running: '실행 중',
+  running: 'running 기록',
 };
 
 // ── 진행률 바 ─────────────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ export default function AdminJobsPage() {
 }
 
 function AdminJobsDesktopView() {
-  const [jobs,    setJobs]    = React.useState<CollectionJob[]>([]);
+  const [jobs,    setJobs]    = React.useState<CollectionJob[] | null>(null);
   const [kpi,     setKpi]     = React.useState<JobsKpi | null>(null);
   const [history, setHistory] = React.useState<JobHistoryPoint[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -71,8 +72,11 @@ function AdminJobsDesktopView() {
   const [live,    setLive]    = React.useState(false);
   const kpiTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refreshKpi = React.useCallback(() => {
-    fetchJobsKpi().then(k => { if (k) setKpi(k); });
+  const kpiRequest = React.useRef(0);
+  const refreshKpi = React.useCallback(async () => {
+    const request = ++kpiRequest.current;
+    const result = await fetchJobsKpi().catch(() => null);
+    if (request === kpiRequest.current) setKpi(result);
   }, []);
 
   const scheduleKpiRefresh = React.useCallback(() => {
@@ -81,17 +85,17 @@ function AdminJobsDesktopView() {
   }, [refreshKpi]);
 
   React.useEffect(() => {
+    const requestSequence = kpiRequest;
     // 초기 로드
-    Promise.all([
+    Promise.allSettled([
       fetchTodayJobs(),
-      fetchJobsKpi(),
+      refreshKpi(),
       fetchJobsHistory(14),
-    ]).then(([j, k, h]) => {
-      setJobs(j);
-      if (k) setKpi(k);
-      setHistory(h);
+    ]).then(([j, , h]) => {
+      setJobs(j.status === 'fulfilled' ? j.value : null);
+      setHistory(h.status === 'fulfilled' ? h.value : []);
       setLoading(false);
-    });
+    }).catch(() => { setJobs(null); setKpi(null); setLoading(false); });
 
     // Realtime 구독
     const client = supabaseBrowser();
@@ -101,17 +105,17 @@ function AdminJobsDesktopView() {
         { event: '*', schema: 'public', table: 'collection_jobs' },
         (payload: any) => {
           if (payload.eventType === 'INSERT' && payload.new) {
-            setJobs(prev => [payload.new as CollectionJob, ...prev]);
+            setJobs(prev => prev === null ? null : [payload.new as CollectionJob, ...prev].slice(0, 200));
           } else if (payload.eventType === 'UPDATE' && payload.new) {
-            setJobs(prev => prev.map(j =>
+            setJobs(prev => prev?.map(j =>
               String(j.id) === String(payload.new.id) ? (payload.new as CollectionJob) : j,
-            ));
+            ) ?? null);
             setDetail(prev =>
               prev && String(prev.id) === String(payload.new.id)
                 ? (payload.new as CollectionJob) : prev,
             );
           } else if (payload.eventType === 'DELETE' && payload.old) {
-            setJobs(prev => prev.filter(j => String(j.id) !== String(payload.old.id)));
+            setJobs(prev => prev?.filter(j => String(j.id) !== String(payload.old.id)) ?? null);
           }
           scheduleKpiRefresh();
         },
@@ -121,10 +125,11 @@ function AdminJobsDesktopView() {
       });
 
     return () => {
+      requestSequence.current++;
       client.removeChannel(channel);
       if (kpiTimerRef.current) clearTimeout(kpiTimerRef.current);
     };
-  }, [scheduleKpiRefresh]);
+  }, [scheduleKpiRefresh, refreshKpi]);
 
   // 14일 차트 데이터
   const chartLabels  = history.map(h => fmtDate(h.date));
@@ -150,16 +155,16 @@ function AdminJobsDesktopView() {
             borderColor: live ? 'var(--slf)' : 'var(--bs)',
           }}
         >
-          {live ? '● LIVE' : '○ 연결 중'}
+          {live ? '● 기록 변경 연결됨' : '○ 기록 변경 연결 중'}
         </span>
       </div>
 
       {/* KPI 카드 */}
       <div className="grid grid-4 gap-14" style={{ marginBottom: 24 }}>
         {[
-          { label: '오늘 실행',  value: kpi?.total_today   ?? '—', color: 'var(--f1)'  },
-          { label: '성공',      value: kpi?.success_today  ?? '—', color: 'var(--slf)' },
-          { label: '오류',      value: kpi?.error_today    ?? '—', color: kpi && kpi.error_today > 0 ? 'var(--shf)' : 'var(--f1)' },
+          { label: '오늘 실행',  value: formatStoredCount(kpi?.total_today), color: 'var(--f1)'  },
+          { label: '성공',      value: formatStoredCount(kpi?.success_today), color: 'var(--slf)' },
+          { label: '오류',      value: formatStoredCount(kpi?.error_today), color: kpi?.error_today != null && kpi.error_today > 0 ? 'var(--shf)' : 'var(--f1)' },
           { label: '7일 평균',  value: fmtAvgDuration(kpi?.avg_duration_7d_sec ?? null), color: 'var(--f1)' },
         ].map(({ label, value, color }) => (
           <section key={label} className="panel">
@@ -172,18 +177,16 @@ function AdminJobsDesktopView() {
       {/* 오늘의 실행 현황 테이블 */}
       <section className="panel" style={{ marginBottom: 20 }}>
         <div style={{ fontWeight: 500, fontSize: 13, color: 'var(--f1)', marginBottom: 14 }}>
-          오늘의 실행 현황
-          {kpi?.running_today ? (
-            <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--smf)', fontFamily: 'var(--mono)' }}>
-              ● {kpi.running_today}개 실행 중
-            </span>
-          ) : null}
+          오늘 시작된 작업 기록 (최대 200건)
+          <span style={{ marginLeft: 8, fontSize: 11 }}>running 기록 {formatStoredCount(kpi?.running_today)} · 실제 실행 여부 미확인</span>
         </div>
 
         {loading ? (
           <div className="mono dim" style={{ fontSize: 12, padding: '8px 0' }}>불러오는 중…</div>
+        ) : jobs === null ? (
+          <div role="status">작업 기록 조회 불가</div>
         ) : jobs.length === 0 ? (
-          <div className="mono dim" style={{ fontSize: 12, padding: '8px 0' }}>오늘 실행된 수집 작업이 없습니다</div>
+          <div className="mono dim" style={{ fontSize: 12, padding: '8px 0' }}>오늘 시작된 작업 기록이 없습니다</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>

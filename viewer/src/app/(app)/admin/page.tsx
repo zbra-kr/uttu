@@ -1,4 +1,5 @@
 'use client';
+import { formatStoredCount } from '@/lib/collection-status';
 import React from 'react';
 import Link from 'next/link';
 import {
@@ -99,26 +100,30 @@ function AdminDashboardDesktopView() {
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
 
+  const loadRequest = React.useRef(0);
   const load = React.useCallback(async () => {
-    const [k, a] = await Promise.all([fetchDashboardKpi(), fetchDashboardActivity()]);
-    setKpi(k);
-    setActivity(a);
+    const request = ++loadRequest.current;
+    const [k, a] = await Promise.allSettled([fetchDashboardKpi(), fetchDashboardActivity()]);
+    if (request !== loadRequest.current) return;
+    setKpi(k.status === 'fulfilled' ? k.value : null);
+    setActivity(a.status === 'fulfilled' ? a.value : []);
     setLoading(false);
     setRefreshing(false);
   }, []);
 
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    const requestSequence = loadRequest;
+    load();
+    return () => { requestSequence.current++; };
+  }, [load]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     load();
   };
 
-  const successRate = kpi
-    ? kpi.jobs.total_today > 0
-      ? Math.round((kpi.jobs.success_today / kpi.jobs.total_today) * 100)
-      : null
-    : null;
+  const successRate = kpi?.jobs.total_today != null && kpi.jobs.success_today != null && kpi.jobs.total_today > 0
+    ? Math.round((kpi.jobs.success_today / kpi.jobs.total_today) * 100) : null;
 
   return (
     <div style={{ padding: '24px 28px', maxWidth: 1100 }}>
@@ -166,9 +171,9 @@ function AdminDashboardDesktopView() {
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 11, color: 'var(--f4)', marginBottom: 8, marginTop: 16, letterSpacing: '0.06em' }}>수집 작업 &amp; 알림</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-              <KpiCard label="오늘 실행"       value={kpi?.jobs.total_today ?? 0} />
-              <KpiCard label="성공률"          value={successRate !== null ? `${successRate}%` : '—'} sub={`성공 ${kpi?.jobs.success_today ?? 0} / 오류 ${kpi?.jobs.error_today ?? 0}`} warn={(kpi?.jobs.error_today ?? 0) > 0} />
-              <KpiCard label="7일 평균 시간"   value={fmtDuration(kpi?.jobs.avg_duration_7d_sec ?? null)} />
+              <KpiCard label="오늘 실행"       value={formatStoredCount(kpi?.jobs.total_today)} sub="오늘 기록 최대 500건" />
+              <KpiCard label="성공률"          value={successRate !== null ? `${successRate}%` : '산출 불가'} sub={`성공 ${formatStoredCount(kpi?.jobs.success_today)} / 오류 ${formatStoredCount(kpi?.jobs.error_today)}`} warn={(kpi?.jobs.error_today ?? 0) > 0} />
+              <KpiCard label="7일 평균 시간"   value={fmtDuration(kpi?.jobs.avg_duration_7d_sec ?? null)} sub="7일 기록 최대 2,000건 내 성공 작업" />
               <KpiCard label="24h 알림 발송"   value={kpi?.notifications.total_24h ?? 0} sub={kpi?.notifications.pending ? `대기 ${kpi.notifications.pending}건` : '대기 없음'} />
             </div>
           </div>
@@ -200,7 +205,7 @@ function AdminDashboardDesktopView() {
                 />
                 <QuickCard
                   path="/admin/jobs" label="수집 모니터링" desc="스케줄·실행 이력·에러"
-                  Icon={IcCalendar} kpiValue={kpi?.jobs.error_today ? `오류 ${kpi.jobs.error_today}` : kpi?.jobs.total_today ?? 0}
+                  Icon={IcCalendar} kpiValue={kpi?.jobs.error_today ? `오류 ${kpi.jobs.error_today}` : formatStoredCount(kpi?.jobs.total_today)}
                 />
                 <QuickCard
                   path="/admin/notifications" label="알림 모니터링" desc="채널별 발송 이력"

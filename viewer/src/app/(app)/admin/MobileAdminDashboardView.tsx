@@ -1,4 +1,5 @@
 'use client';
+import { formatStoredCount } from '@/lib/collection-status';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { fetchDashboardKpi, fetchDashboardActivity, type DashboardKpi, type DashboardActivity } from '@/lib/queries-admin';
@@ -25,8 +26,8 @@ export default function MobileAdminDashboardView() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([fetchDashboardKpi(), fetchDashboardActivity()])
-      .then(([k, a]) => { setKpi(k); setActivity(a); setLoading(false); })
+    Promise.allSettled([fetchDashboardKpi(), fetchDashboardActivity()])
+      .then(([k, a]) => { setKpi(k.status === 'fulfilled' ? k.value : null); setActivity(a.status === 'fulfilled' ? a.value : []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
@@ -35,6 +36,7 @@ export default function MobileAdminDashboardView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
 
+      {!kpi && <div role="status">관리 지표 조회 불가</div>}
       {kpi && (
         <>
           {/* 사용자 KPI */}
@@ -53,12 +55,12 @@ export default function MobileAdminDashboardView() {
           </div>
 
           {/* 작업 KPI */}
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f4)', letterSpacing: '0.06em', marginBottom: -4 }}>오늘 작업</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f4)', letterSpacing: '0.06em', marginBottom: -4 }}>오늘 작업 기록 (최대 500건)</div>
           <div style={{ display: 'flex', gap: 8 }}>
             {[
-              { label: '전체', value: kpi.jobs.total_today },
-              { label: '성공', value: kpi.jobs.success_today, color: 'var(--slf)' },
-              { label: '오류', value: kpi.jobs.error_today, color: kpi.jobs.error_today > 0 ? 'var(--shf)' : 'var(--f1)' },
+              { label: '전체', value: formatStoredCount(kpi.jobs.total_today) },
+              { label: '성공', value: formatStoredCount(kpi.jobs.success_today), color: 'var(--slf)' },
+              { label: '오류', value: formatStoredCount(kpi.jobs.error_today), color: (kpi.jobs.error_today ?? 0) > 0 ? 'var(--shf)' : 'var(--f1)' },
             ].map(k => (
               <div key={k.label} style={{ flex: 1, textAlign: 'center', padding: '10px 0', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: ('color' in k ? k.color : 'var(--f1)'), fontFamily: 'var(--mono)' }}>{k.value}</div>

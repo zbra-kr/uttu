@@ -1,3 +1,4 @@
+import { readCount, kstInsertDate, RUNNING_RECORD_LIMIT, type RunningRecords } from './collection-status';
 import { supabaseBrowser } from './supabase/client';
 import { kstDaysAgo } from './format';
 const supabase = supabaseBrowser();
@@ -1783,10 +1784,11 @@ export async function fetchProductRankHistory(musinsaNo: string): Promise<{ date
 export interface CollectionStat {
   id: string;
   label: string;
-  count: number;
+  count: number | null;
   latestDate: string | null;
   target: number | null;
-  status: 'active' | 'partial' | 'pending';
+  status: 'stored' | 'empty' | 'unknown';
+  hasTarget?: boolean;
   link: string | null;
 }
 
@@ -1795,8 +1797,8 @@ export async function fetchCollectionStats(): Promise<CollectionStat[]> {
     /* 0  ranking_snapshots     */ supabase.from('ranking_snapshots').select('snapshot_date', { count: 'exact' }).order('snapshot_date', { ascending: false }).limit(1),
     /* 1  brand_ranking_snapshots */ supabase.from('brand_ranking_snapshots').select('snapshot_date', { count: 'exact' }).order('snapshot_date', { ascending: false }).limit(1),
     /* 2  products is_own       */ supabase.from('products').select('*', { count: 'exact', head: true }).eq('is_own', true),
-    /* 3  products total        */ supabase.from('products').select('*', { count: 'exact', head: true }),
-    /* 4  products detail       */ supabase.from('products').select('*', { count: 'exact', head: true }).not('detail_fetched_at', 'is', null),
+    /* 3  competitor products        */ supabase.from('products').select('*', { count: 'exact', head: true }).eq('is_own', false),
+    /* 4  products detail       */ supabase.from('products').select('*', { count: 'exact', head: true }).eq('is_own', false).not('detail_fetched_at', 'is', null),
     /* 5  snaps                 */ supabase.from('snaps').select('*', { count: 'exact', head: true }),
     /* 5b snap_rankings date   */ supabase.from('snap_rankings').select('snapshot_date').order('snapshot_date', { ascending: false }).limit(1),
     /* 6  magazine_articles     */ supabase.from('magazine_articles').select('published_at', { count: 'exact' }).order('published_at', { ascending: false }).limit(1),
@@ -1810,10 +1812,10 @@ export async function fetchCollectionStats(): Promise<CollectionStat[]> {
     /* 14 review_analysis       */ supabase.from('review_analysis').select('*', { count: 'exact', head: true }),
   ]);
 
-  const g = (i: number): { count: number; data: any[] } => {
+  const g = (i: number): { count: number | null; data: any[] } => {
     const r = rs[i];
-    if (r.status !== 'fulfilled') return { count: 0, data: [] };
-    return { count: (r.value as any).count ?? 0, data: (r.value as any).data ?? [] };
+    const { count } = readCount(r);
+    return { count, data: r.status === 'fulfilled' && !r.value.error ? r.value.data ?? [] : [] };
   };
 
   const rank   = g(0);  const brank  = g(1);
@@ -1827,28 +1829,30 @@ export async function fetchCollectionStats(): Promise<CollectionStat[]> {
   const brankDate = brank.data[0]?.snapshot_date?.slice(5) ?? null;
   const snpsDate  = snpRnk.data[0]?.snapshot_date?.slice(5) ?? null;
   const magsDate  = mags.data[0]?.published_at?.slice(5, 10) ?? null;
-  const revsDate  = revs.data[0]?.created_at?.slice(5, 10) ?? null;
+  const revsDate  = kstInsertDate(revs.data[0]?.created_at);
   const promsDate = proms.data[0]?.snapshot_date?.slice(5) ?? null;
 
-  const compTotal  = allP.count - ownP.count;
-  const compDetail = Math.max(0, detP.count - ownP.count);
+  const compTotal  = allP.count;
+  const compDetail = detP.count;
 
-  return [
-    { id: 'ranking',         label: '상품 랭킹 스냅샷',   count: rank.count,   latestDate: rankDate,  target: null,       status: 'active',                                  link: '/ranking' },
-    { id: 'brand-ranking',   label: '브랜드 랭킹 스냅샷', count: brank.count,  latestDate: brankDate, target: null,       status: 'active',                                  link: '/brand-ranking' },
-    { id: 'own-products',    label: '자사 상품 목록',     count: ownP.count,   latestDate: null,      target: null,       status: 'active',                                  link: '/matching' },
-    { id: 'comp-detail',     label: '경쟁사 상품 상세',   count: compDetail,   latestDate: null,      target: compTotal,  status: compDetail > 0 ? 'partial' : 'pending',    link: '/product' },
-    { id: 'promotions',      label: '프로모션 모듈',      count: proms.count,  latestDate: promsDate, target: null,       status: 'active',                                  link: '/promo' },
-    { id: 'snaps',           label: '스냅',              count: snps.count,   latestDate: snpsDate,  target: null,       status: 'active',                                  link: '/snap' },
-    { id: 'magazines',       label: '매거진 기사',        count: mags.count,   latestDate: magsDate,  target: null,       status: 'active',                                  link: '/magazine' },
-    { id: 'reviews',         label: '자사 리뷰',          count: revs.count,   latestDate: revsDate,  target: null,       status: 'active',                                  link: '/reviews' },
-    { id: 'companies',       label: '법인 마스터',        count: corps.count,  latestDate: null,      target: null,       status: 'active',                                  link: '/companies' },
-    { id: 'dart-disc',       label: 'DART 공시',          count: dartD.count,  latestDate: null,      target: null,       status: dartD.count > 0 ? 'partial' : 'pending',   link: '/companies' },
-    { id: 'dart-fin',        label: 'DART 재무제표',      count: dartF.count,  latestDate: null,      target: null,       status: dartF.count > 0 ? 'partial' : 'pending',   link: '/companies' },
-    { id: 'own-sales',       label: '자사 매출 (ERP)',    count: sales.count,  latestDate: null,      target: null,       status: 'pending',                                 link: null },
-    { id: 'own-inventory',   label: '자사 재고 (ERP)',    count: inv.count,    latestDate: null,      target: null,       status: 'pending',                                 link: null },
-    { id: 'review-analysis', label: 'LLM 리뷰 분석',     count: revA.count,   latestDate: null,      target: revs.count, status: 'pending',                                 link: null },
+  const stats: CollectionStat[] = [
+    { id: 'ranking',         label: '상품 랭킹 스냅샷',   count: rank.count,   latestDate: rankDate,  target: null,       status: 'unknown',                                  link: '/ranking' },
+    { id: 'brand-ranking',   label: '브랜드 랭킹 스냅샷', count: brank.count,  latestDate: brankDate, target: null,       status: 'unknown',                                  link: '/brand-ranking' },
+    { id: 'own-products',    label: '자사 상품 목록',     count: ownP.count,   latestDate: null,      target: null,       status: 'unknown',                                  link: '/matching' },
+    { id: 'comp-detail',     label: '자사 외 상품 상세',   count: compDetail,   latestDate: null,      target: compTotal, hasTarget: true,  status: 'unknown',    link: '/product' },
+    { id: 'promotions',      label: '프로모션 모듈',      count: proms.count,  latestDate: promsDate, target: null,       status: 'unknown',                                  link: '/promo' },
+    { id: 'snaps',           label: '스냅',              count: snps.count,   latestDate: snpsDate,  target: null,       status: 'unknown',                                  link: '/snap' },
+    { id: 'magazines',       label: '매거진 기사',        count: mags.count,   latestDate: magsDate,  target: null,       status: 'unknown',                                  link: '/magazine' },
+    { id: 'reviews',         label: '저장 리뷰 (전체)',          count: revs.count,   latestDate: revsDate,  target: null,       status: 'unknown',                                  link: '/reviews' },
+    { id: 'companies',       label: '법인 마스터',        count: corps.count,  latestDate: null,      target: null,       status: 'unknown',                                  link: '/companies' },
+    { id: 'dart-disc',       label: 'DART 공시',          count: dartD.count,  latestDate: null,      target: null,       status: 'unknown',   link: '/companies' },
+    { id: 'dart-fin',        label: 'DART 재무제표',      count: dartF.count,  latestDate: null,      target: null,       status: 'unknown',   link: '/companies' },
+    { id: 'own-sales',       label: '자사 매출 (ERP)',    count: sales.count,  latestDate: null,      target: null,       status: 'unknown',                                 link: null },
+    { id: 'own-inventory',   label: '자사 재고 (ERP)',    count: inv.count,    latestDate: null,      target: null,       status: 'unknown',                                 link: null },
+    { id: 'review-analysis', label: 'LLM 리뷰 분석',     count: revA.count,   latestDate: null,      target: revs.count, hasTarget: true, status: 'unknown',                                 link: null },
   ];
+  return stats.map(s => ({ ...s, status: s.count == null || (s.hasTarget && s.target == null)
+    ? 'unknown' : s.count === 0 ? 'empty' : 'stored' }));
 }
 
 export interface OwnBrandStat {
@@ -2154,20 +2158,20 @@ export async function fetchShellStats(): Promise<ShellStats> {
   };
 }
 
-/** 현재 실행 중인 작업 목록 조회 (초기 로드 및 Realtime 변경 시 재조회용) */
-export async function fetchActiveJobs(): Promise<CollectionJob[]> {
-  const { data, error } = await supabase
-    .from('collection_jobs')
-    .select('id, script, label, status, rows_done, target, error_msg, started_at, finished_at, updated_at')
-    .eq('status', 'running')
-    .order('started_at', { ascending: false })
-    .limit(20);
-
-  if (error) {
-    console.error('[fetchActiveJobs] failed', error);
-    return [];
-  }
-  return (data ?? []) as CollectionJob[];
+/** Stored running-status records, bounded; no process liveness inference. */
+export async function fetchActiveJobs(): Promise<RunningRecords<CollectionJob>> {
+  try {
+    const { data, error } = await supabase
+      .from('collection_jobs')
+      .select('id, script, label, status, rows_done, target, error_msg, started_at, finished_at, updated_at')
+      .eq('status', 'running')
+      .order('started_at', { ascending: false })
+      .limit(RUNNING_RECORD_LIMIT);
+    if (!error && Array.isArray(data)) {
+      return { state: 'available', jobs: data as CollectionJob[], limit: RUNNING_RECORD_LIMIT };
+    }
+  } catch { /* Offline/unavailable is distinct from zero running records. */ }
+  return { state: 'unavailable', jobs: [], limit: RUNNING_RECORD_LIMIT };
 }
 
 // ── 자사 상품 (가격 포함) ──────────────────────────────────────────

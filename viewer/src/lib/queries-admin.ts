@@ -101,10 +101,10 @@ export interface CollectionJob {
 }
 
 export interface JobsKpi {
-  total_today: number;
-  success_today: number;
-  error_today: number;
-  running_today: number;
+  total_today: number | null;
+  success_today: number | null;
+  error_today: number | null;
+  running_today: number | null;
   avg_duration_7d_sec: number | null;
 }
 
@@ -114,11 +114,13 @@ export interface JobHistoryPoint {
   error: number;
 }
 
-export async function fetchTodayJobs(): Promise<CollectionJob[]> {
-  const res = await fetch('/api/admin/jobs/today');
-  if (!res.ok) return [];
-  const { jobs } = await res.json();
-  return jobs ?? [];
+export async function fetchTodayJobs(): Promise<CollectionJob[] | null> {
+  try {
+    const res = await fetch('/api/admin/jobs/today');
+    if (!res.ok) return null;
+    const { jobs } = await res.json();
+    return Array.isArray(jobs) ? jobs : null;
+  } catch { return null; }
 }
 
 export async function fetchJobsHistory(days = 14): Promise<JobHistoryPoint[]> {
@@ -298,9 +300,9 @@ export interface DashboardKpi {
     ai_tokens_this_month: number;
   };
   jobs: {
-    total_today: number;
-    success_today: number;
-    error_today: number;
+    total_today: number | null;
+    success_today: number | null;
+    error_today: number | null;
     avg_duration_7d_sec: number | null;
   };
   notifications: {

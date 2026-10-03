@@ -46,8 +46,8 @@ export async function GET() {
     admin.from('profiles').select('id', { count: 'exact', head: true }),
     admin.from('ai_user_quotas').select('user_id', { count: 'exact', head: true }).eq('is_blocked', true),
     admin.from('ai_usage_daily').select('input_tokens, output_tokens').gte('usage_date', monthStart),
-    admin.from('collection_jobs').select('status, started_at, finished_at').gte('started_at', todayKst).limit(500),
-    admin.from('collection_jobs').select('status, started_at, finished_at').gte('started_at', now7dAgo).limit(2000),
+    Promise.resolve(admin.from('collection_jobs').select('status, started_at, finished_at').gte('started_at', todayKst).limit(500)).catch(() => ({ data: null, error: true })),
+    Promise.resolve(admin.from('collection_jobs').select('status, started_at, finished_at').gte('started_at', now7dAgo).limit(2000)).catch(() => ({ data: null, error: true })),
     admin.from('user_notifications').select('id', { count: 'exact', head: true }).gte('sent_to_teams_at', now24hAgo),
     admin.from('user_notifications').select('id', { count: 'exact', head: true }).is('sent_to_teams_at', null),
     admin.from('user_notifications').select('sent_to_teams_at')
@@ -73,12 +73,13 @@ export async function GET() {
   );
 
   // 오늘 작업 집계
-  const jobsArr = (jobsTodayRes.data ?? []) as Array<{ status: string; started_at: string; finished_at: string | null }>;
+  const jobsAvailable = !jobsTodayRes.error && Array.isArray(jobsTodayRes.data);
+  const jobsArr = (jobsAvailable ? jobsTodayRes.data : []) as Array<{ status: string; started_at: string; finished_at: string | null }>;
   const successToday = jobsArr.filter(j => j.status === 'done').length;
   const errorToday   = jobsArr.filter(j => j.status === 'error').length;
 
   // 7일 평균 duration (성공 job만)
-  const completed7d = ((jobsHistory7dRes.data ?? []) as Array<{ status: string; started_at: string; finished_at: string | null }>)
+  const completed7d = ((!jobsHistory7dRes.error ? jobsHistory7dRes.data ?? [] : []) as Array<{ status: string; started_at: string; finished_at: string | null }>)
     .filter(j => j.status === 'done' && j.finished_at);
   const avgDuration7dSec = completed7d.length > 0
     ? Math.round(
@@ -114,9 +115,9 @@ export async function GET() {
       ai_tokens_this_month: aiTokensThisMonth,
     },
     jobs: {
-      total_today:        jobsArr.length,
-      success_today:      successToday,
-      error_today:        errorToday,
+      total_today:        jobsAvailable ? jobsArr.length : null,
+      success_today:      jobsAvailable ? successToday : null,
+      error_today:        jobsAvailable ? errorToday : null,
       avg_duration_7d_sec: avgDuration7dSec,
     },
     notifications: {

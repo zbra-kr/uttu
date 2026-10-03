@@ -1,6 +1,7 @@
 'use client';
 import { formatFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
+import { formatStoredCount, runningRecordsLabel, type RunningRecords } from '@/lib/collection-status';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useIsMobile } from '@/hooks/useViewport';
@@ -32,8 +33,8 @@ const PROMO_TYPE_LABEL: Record<string, string> = {
   general:       '기획전',
 };
 
-const COLL_STATUS_LABEL: Record<string, string> = { active: '활성', partial: '미완', pending: '대기' };
-const COLL_STATUS_SEV:   Record<string, string> = { active: 'lo',   partial: 'md',   pending: 'hi' };
+const COLL_STATUS_LABEL: Record<string, string> = { stored: '저장됨', empty: '0건', unknown: '미확인' };
+const COLL_STATUS_SEV:   Record<string, string> = { stored: 'lo', empty: 'md', unknown: 'hi' };
 
 const SCRIPT_TO_STAT_ID: Record<string, string> = {
   musinsa_ranking:       'ranking',
@@ -80,25 +81,23 @@ function CollStatRow({ s, i, job, router }: {
   return (
     <div
       className={`row${s.link ? ' hover' : ''}${i % 2 ? ' alt' : ''}`}
-      style={{ gridTemplateColumns: '1fr 72px 44px 52px', cursor: s.link ? 'pointer' : 'default' }}
+      style={{ gridTemplateColumns: 'minmax(80px, 1fr) 100px 76px 90px', cursor: s.link ? 'pointer' : 'default' }}
       onClick={() => s.link && router.push(s.link)}>
       <span style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {s.label}
       </span>
       <span className="mono" style={{ textAlign: 'right', fontSize: 11 }}>
-        {s.status === 'pending' && s.count === 0
-          ? <span className="dim">—</span>
-          : s.target != null
-          ? <><span>{fmt(s.count)}</span><span className="dim">/{fmt(s.target)}</span></>
-          : fmt(s.count)}
+        {s.hasTarget
+          ? <><span>{formatStoredCount(s.count)}</span><span className="dim">/{formatStoredCount(s.target)}</span></>
+          : formatStoredCount(s.count)}
       </span>
       <span className="mono dim" style={{ textAlign: 'right', fontSize: 10 }}>
         {s.latestDate ?? '—'}
       </span>
       <span style={{ textAlign: 'right' }}>
         {isRunning ? (
-          <span className="sev hi" style={{ fontSize: 9, padding: '1px 4px' }}>
-            <span className="pip" />수집중{progressPct !== null ? ` ${progressPct}%` : ''}
+          <span className="sev hi" style={{ fontSize: 9, padding: '1px 4px', maxWidth: '100%', whiteSpace: 'normal', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <span title="DB에 기록된 상태이며 실제 프로세스 실행 여부는 미확인">running 기록</span>{progressPct !== null ? ` ${progressPct}%` : ''}
           </span>
         ) : (
           <span className={`sev ${COLL_STATUS_SEV[s.status]}`} style={{ fontSize: 9, padding: '1px 4px' }}>
@@ -120,7 +119,8 @@ function HomeDesktopView() {
   const router = useRouter();
 
   const [collStats,   setCollStats]   = React.useState<CollectionStat[]>([]);
-  const [activeJobs,  setActiveJobs]  = React.useState<CollectionJob[]>([]);
+  const [jobResult, setJobResult] = React.useState<RunningRecords<CollectionJob> | null>(null);
+  const activeJobs = jobResult?.jobs ?? [];
   const [ranking,          setRanking]          = React.useState<RankingRow[]>([]);
   const [rankGender,       setRankGender]       = React.useState<string>('A');
   const [rankLoading,      setRankLoading]      = React.useState(true);
@@ -133,16 +133,25 @@ function HomeDesktopView() {
   const [promos,      setPromos]      = React.useState<PromoSummary[]>([]);
   const [loading,     setLoading]     = React.useState(true);
 
+  const statsRequest = React.useRef(0);
+  const refreshStats = React.useCallback(async () => {
+    const request = ++statsRequest.current;
+    const stats = await fetchCollectionStats();
+    if (request === statsRequest.current) setCollStats(stats);
+  }, []);
+
   React.useEffect(() => {
+    const requestSequence = statsRequest;
     setLoading(true);
     Promise.all([
-      fetchCollectionStats().then(setCollStats).catch(() => {}),
+      refreshStats().catch(() => {}),
       fetchOwnBrandBreakdown().then(setOwnBrands).catch(() => {}),
       fetchAnomalySignals().then(setAnomalies).catch(() => {}),
       fetchReviewStats(30).then(setReviewStats).catch(() => {}),
       fetchActivePromotions(10).then(setPromos).catch(() => {}),
     ]).finally(() => setLoading(false));
-  }, []);
+    return () => { requestSequence.current++; };
+  }, [refreshStats]);
 
   React.useEffect(() => {
     setRankLoading(true);
@@ -163,20 +172,20 @@ function HomeDesktopView() {
   // 수집 작업 실시간 상태 구독 + 폴링 백업
   React.useEffect(() => {
     let polling: ReturnType<typeof setInterval> | null = null;
-    let latestJobs: CollectionJob[] = [];
+    let disposed = false;
+    let jobsRequest = 0;
 
-    const refreshJobs = () =>
-      fetchActiveJobs().then(jobs => {
-        latestJobs = jobs;
-        setActiveJobs(jobs);
+    const refreshJobs = () => {
+      const request = ++jobsRequest;
+      return fetchActiveJobs().then(result => {
+        if (disposed || request !== jobsRequest) return;
+        setJobResult(result);
         // 진행 중 job이 있을 때 5초, 없으면 30초 폴링
-        const interval = jobs.length > 0 ? 5000 : 30000;
+        const interval = result.state === 'available' && result.jobs.length > 0 ? 5000 : 30000;
         if (polling) clearInterval(polling);
         polling = setInterval(refreshJobs, interval);
       }).catch(() => {});
-
-    const refreshStats = () =>
-      fetchCollectionStats().then(setCollStats).catch(() => {});
+    };
 
     refreshJobs();
 
@@ -197,10 +206,11 @@ function HomeDesktopView() {
       .subscribe();
 
     return () => {
+      disposed = true;
       client.removeChannel(channel);
       if (polling) clearInterval(polling);
     };
-  }, []);
+  }, [refreshStats]);
 
   // 집계 파생
   const rankStat    = collStats.find(s => s.id === 'ranking');
@@ -213,12 +223,12 @@ function HomeDesktopView() {
   const totalSku    = ownBrands.reduce((s, b) => s + b.sku_count, 0);
 
   const kpis = [
-    { label: '상품 랭킹 스냅샷', val: fmt(rankStat?.count),  sub: `최근 ${latestDate}`,                  Icon: IcRanking,      link: '/ranking' },
-    { label: '브랜드 랭킹',      val: fmt(brankStat?.count), sub: `최근 ${latestDate}`,                  Icon: IcBrandRanking, link: '/brand-ranking' },
-    { label: '자사 SKU',        val: fmt(totalSku || ownStat?.count), sub: `${ownBrands.length}개 브랜드`, Icon: IcProduct,     link: '/matching' },
+    { label: '상품 랭킹 스냅샷', val: formatStoredCount(rankStat?.count),  sub: `최근 ${latestDate}`,                  Icon: IcRanking,      link: '/ranking' },
+    { label: '브랜드 랭킹',      val: formatStoredCount(brankStat?.count), sub: `최근 ${brankStat?.latestDate ?? '—'}`,                  Icon: IcBrandRanking, link: '/brand-ranking' },
+    { label: '자사 SKU',        val: formatStoredCount(ownStat?.count), sub: `${ownBrands.length}개 브랜드`, Icon: IcProduct,     link: '/matching' },
     { label: 'TOP100 진입',     val: fmt(ownTop100),        sub: `${latestDate} 기준`,                  Icon: null,           link: '/ranking' },
-    { label: '수집 리뷰',       val: fmt(reviewStat?.count), sub: `평균 ★${reviewStats?.avgRating ?? '—'}`, Icon: IcReview,    link: '/reviews' },
-    { label: '프로모션',         val: fmt(promoStat?.count), sub: `${promos.length}개 모듈`,              Icon: IcPromo,        link: '/promo' },
+    { label: '수집 리뷰',       val: formatStoredCount(reviewStat?.count), sub: `평균 ★${reviewStats?.avgRating ?? '—'}`, Icon: IcReview,    link: '/reviews' },
+    { label: '프로모션',         val: formatStoredCount(promoStat?.count), sub: `${promos.length}개 모듈`,              Icon: IcPromo,        link: '/promo' },
   ];
 
   return (
@@ -623,20 +633,20 @@ function HomeDesktopView() {
       {!loading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="row-flex between center" style={{ borderBottom: '0.5px solid var(--bs)', paddingBottom: 8 }}>
-            <div className="row-flex baseline gap-10">
+            <div className="row-flex baseline gap-10" style={{ flexWrap: 'wrap' }}>
               <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500, letterSpacing: '-0.014em' }}>수집 현황</h2>
               <span className="sec-tag">
-                {collStats.filter(s => s.status === 'active').length}활성 ·
-                {collStats.filter(s => s.status === 'pending').length}대기
-                {activeJobs.length > 0 && <> · <span style={{ color: 'var(--hi)' }}>{activeJobs.length}수집중</span></>}
+                저장 건수 조회 {collStats.filter(s => s.status !== 'unknown').length}항목 ·
+                미확인 {collStats.filter(s => s.status === 'unknown').length}항목 · {runningRecordsLabel(jobResult)}
               </span>
             </div>
           </div>
-          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14, alignItems: 'start' }}>
+          <p className="dim" style={{ fontSize: 11, margin: 0 }}>저장된 데이터와 작업 기록입니다. 수집 완전성·실제 실행 여부는 확인되지 않았습니다. 리뷰 최근일은 행 저장 시각(KST), 다른 최근일은 각 데이터의 기준일입니다.</p>
+          <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))', gap: 14, alignItems: 'start' }}>
             {/* 1열: 무신사 수집 + 콘텐츠·자사 */}
-            <section className="panel surface">
-              <div className="tbl">
-                <div className="row head" style={{ gridTemplateColumns: '1fr 72px 44px 52px' }}>
+            <section className="panel surface" style={{ minWidth: 0, overflowX: 'auto' }}>
+              <div className="tbl" style={{ minWidth: 440 }}>
+                <div className="row head" style={{ gridTemplateColumns: 'minmax(80px, 1fr) 100px 76px 90px' }}>
                   <span>무신사 · 콘텐츠 · 자사</span>
                   <span style={{ textAlign: 'right' }}>건수</span>
                   <span style={{ textAlign: 'right' }}>최근</span>
@@ -648,9 +658,9 @@ function HomeDesktopView() {
               </div>
             </section>
             {/* 2열: 재무·분석 */}
-            <section className="panel surface">
-              <div className="tbl">
-                <div className="row head" style={{ gridTemplateColumns: '1fr 72px 44px 52px' }}>
+            <section className="panel surface" style={{ minWidth: 0, overflowX: 'auto' }}>
+              <div className="tbl" style={{ minWidth: 440 }}>
+                <div className="row head" style={{ gridTemplateColumns: 'minmax(80px, 1fr) 100px 76px 90px' }}>
                   <span>재무 · 분석</span>
                   <span style={{ textAlign: 'right' }}>건수</span>
                   <span style={{ textAlign: 'right' }}>최근</span>

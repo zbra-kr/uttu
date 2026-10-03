@@ -1,3 +1,4 @@
+import { readCount } from '@/lib/collection-status';
 import { requireAdmin } from '@/lib/auth/require-admin';
 import { NextResponse } from 'next/server';
 
@@ -23,7 +24,7 @@ export async function GET() {
   const start = todayKstStart();
   const weekStart = sevenDaysAgoKst();
 
-  const [totalRes, successRes, errorRes, runningRes, doneWeekRes] = await Promise.all([
+  const [totalRes, successRes, errorRes, runningRes, doneWeekRes] = await Promise.allSettled([
     ss.from('collection_jobs').select('*', { count: 'exact', head: true }).gte('started_at', start),
     ss.from('collection_jobs').select('*', { count: 'exact', head: true }).gte('started_at', start).eq('status', 'done'),
     ss.from('collection_jobs').select('*', { count: 'exact', head: true }).gte('started_at', start).eq('status', 'error'),
@@ -31,7 +32,7 @@ export async function GET() {
     ss.from('collection_jobs').select('started_at, finished_at').gte('started_at', weekStart).eq('status', 'done').not('finished_at', 'is', null),
   ]);
 
-  const doneJobs = (doneWeekRes.data ?? []) as Array<{ started_at: string; finished_at: string }>;
+  const doneJobs = (doneWeekRes.status === 'fulfilled' && !doneWeekRes.value.error ? doneWeekRes.value.data ?? [] : []) as Array<{ started_at: string; finished_at: string }>;
   let avgDurationSec: number | null = null;
   if (doneJobs.length > 0) {
     const total = doneJobs.reduce((s, j) => {
@@ -41,10 +42,10 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    total_today:         totalRes.count   ?? 0,
-    success_today:       successRes.count ?? 0,
-    error_today:         errorRes.count   ?? 0,
-    running_today:       runningRes.count ?? 0,
+    total_today:         readCount(totalRes).count,
+    success_today:       readCount(successRes).count,
+    error_today:         readCount(errorRes).count,
+    running_today:       readCount(runningRes).count,
     avg_duration_7d_sec: avgDurationSec,
   });
 }

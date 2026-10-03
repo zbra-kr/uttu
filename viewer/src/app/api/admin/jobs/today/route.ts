@@ -18,5 +18,6 @@ export async function GET() {
     .limit(200);
 
   if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 });
-  return NextResponse.json({ jobs: data ?? [] });
+  if (!Array.isArray(data)) return NextResponse.json({ error: 'Job records unavailable' }, { status: 502 });
+  return NextResponse.json({ jobs: data });
 }

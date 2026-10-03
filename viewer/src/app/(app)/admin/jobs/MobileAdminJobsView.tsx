@@ -28,7 +28,7 @@ function formatTs(ts: string): string {
 }
 
 export default function MobileAdminJobsView() {
-  const [jobs, setJobs] = useState<CollectionJob[]>([]);
+  const [jobs, setJobs] = useState<CollectionJob[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,10 +38,12 @@ export default function MobileAdminJobsView() {
   }, []);
 
   if (loading) return <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>;
-  if (jobs.length === 0) return <MobileEmptyState icon="⚙️" title="오늘 실행된 작업이 없습니다" />;
+  if (jobs === null) return <div role="status">작업 기록 조회 불가</div>;
+  if (jobs.length === 0) return <MobileEmptyState icon="⚙️" title="오늘 시작된 작업 기록이 없습니다" />;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
+      <p style={{ fontSize: 11 }}>오늘 시작된 작업 기록 (최대 200건) · 실제 실행 여부 미확인</p>
       {jobs.map(j => {
         const pct = j.target && j.target > 0 ? Math.min(100, Math.round((j.rows_done / j.target) * 100)) : null;
         return (
@@ -62,7 +64,7 @@ export default function MobileAdminJobsView() {
                 background: STATUS_BG[j.status] ?? 'var(--snk)',
                 padding: '2px 6px', borderRadius: 5,
               }}>
-                {j.status}
+                {j.status === 'running' ? 'running 기록' : j.status}
               </span>
             </div>
             {/* 진행률 */}
