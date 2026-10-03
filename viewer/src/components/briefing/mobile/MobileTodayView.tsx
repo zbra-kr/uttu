@@ -100,6 +100,8 @@ function BriefingContent({ briefing, audience }: { briefing: Briefing; audience:
 
 /* ── 메인 뷰 ── */
 export interface MobileTodayViewProps {
+  activeTab: AudienceKey;
+  onTabSelect: (tab: AudienceKey) => void;
   data: AllBriefings | null;
   kpiData: BriefingKpiData | null;
   loading: boolean;
@@ -110,6 +112,8 @@ export interface MobileTodayViewProps {
 }
 
 export default function MobileTodayView({
+  activeTab,
+  onTabSelect,
   data,
   loading,
   activeDate,
@@ -117,8 +121,6 @@ export default function MobileTodayView({
   isFuture,
   onDateChange,
 }: MobileTodayViewProps) {
-  const [activeTab, setActiveTab] = React.useState<AudienceKey>('executive');
-
   const activeBriefing = data ? data[activeTab] : null;
 
   return (
@@ -128,7 +130,7 @@ export default function MobileTodayView({
         executive={data?.executive ?? null}
         staff={data?.staff ?? null}
         cs={data?.cs ?? null}
-        onSelect={setActiveTab}
+        onSelect={onTabSelect}
         currentDate={activeDate}
         availableDates={availableDates}
         onDateChange={onDateChange}

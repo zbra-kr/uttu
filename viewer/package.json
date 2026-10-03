@@ -17,6 +17,7 @@
     "test:matching": "node --test tests/matching-score.test.cjs",
     "test:collection-status": "node --test tests/collection-status.test.cjs",
     "test:briefing-evidence": "node --test tests/briefing-evidence.test.cjs",
+    "test:briefing-navigation": "node --test tests/briefing-navigation.test.cjs",
     "test:weekly-reviews": "node --test tests/weekly-review*.test.cjs"
   },
   "dependencies": {

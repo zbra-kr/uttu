@@ -1,0 +1,10 @@
+.detail {
+  padding-bottom: 40px;
+}
+
+@media (max-width: 767px) {
+  .detail {
+    /* Clear the mobile shell's 56px AI button, 20px offset, and a 12px gap. */
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+}

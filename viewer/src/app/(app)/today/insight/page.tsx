@@ -9,6 +9,7 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { fetchAllBriefings, type InsightPage } from '@/lib/queries-briefing';
+import styles from './page.module.css';
 
 const CM = { top: 4, right: 4, bottom: 4, left: -16 };
 
@@ -155,13 +156,17 @@ function InsightDetailContent() {
   const [total, setTotal] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
     fetchAllBriefings(date).then(data => {
+      if (cancelled) return;
       const briefing = data[audience];
       const pages = briefing?.insight_pages ?? [];
       setTotal(pages.length);
       setPage(pages[idx] ?? null);
       setLoading(false);
     });
+    return () => { cancelled = true; };
   }, [date, audience, idx]);
 
   const goTo = (newIdx: number) => {
@@ -170,7 +175,7 @@ function InsightDetailContent() {
   };
 
   return (
-    <div style={{ maxWidth: 680, margin: '0 auto', paddingBottom: 40 }}>
+    <div className={styles.detail} style={{ maxWidth: 680, margin: '0 auto' }}>
       {/* 상단 네비 */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,

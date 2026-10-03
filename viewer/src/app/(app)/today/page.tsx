@@ -62,16 +62,19 @@ function TodayContent() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setKpiData(null);
     Promise.all([
       fetchAllBriefings(activeDate),
       isFuture ? Promise.resolve(null) : fetchBriefingKpiData(activeDate),
     ]).then(([result, kpi]) => {
+      if (cancelled) return;
       setData(result);
       setKpiData(kpi);
       setLoading(false);
     });
+    return () => { cancelled = true; };
   }, [activeDate, isFuture]);
 
   function handleTabSelect(tab: Tab) {
@@ -90,6 +93,8 @@ function TodayContent() {
   if (isMobile) {
     return (
       <MobileTodayView
+        activeTab={activeTab}
+        onTabSelect={handleTabSelect}
         data={data}
         kpiData={kpiData}
         loading={loading}
