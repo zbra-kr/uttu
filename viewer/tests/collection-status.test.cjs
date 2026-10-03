@@ -40,11 +40,12 @@ for(const [timestamp,expected] of [
 for(const mode of ['zero','error','missing','rejected','partial'])test(`collection query ${mode}`,async()=>{
  const responses=Array.from({length:16},()=>ok());
  responses[0]=ok(30,[{snapshot_date:'2026-10-03'}]);
- responses[1]=mode==='error'?failed:mode==='missing'?ok(null):mode==='rejected'?rejected:ok(mode==='partial'?null:0,[{snapshot_date:'2026-10-02'}]);
+ responses[1]=mode==='error'?failed:mode==='missing'?ok(null,[{snapshot_date:'2026-10-02'}]):mode==='rejected'?rejected:ok(mode==='partial'?null:0,[{snapshot_date:'2026-10-02'}]);
+ if (['zero','missing','partial'].includes(mode)) responses.push(mode==='missing'||mode==='partial'?ok(null):ok(0));
  responses[2]=ok(100); responses[3]=mode==='partial'?failed:ok(50); responses[4]=ok(12);
  responses[8]=ok(25,[{created_at:'2026-10-02T15:00:00Z'}]);
  const {queries,calls}=harness(responses);const stats=await queries.fetchCollectionStats();
- assert.equal(stats.length,14);assert.equal(calls.length,16);
+ assert.equal(stats.length,14);assert.equal(calls.length,['zero','missing','partial'].includes(mode)?17:16);
  const by=id=>stats.find(s=>s.id===id);
  assert.equal(by('ranking').count,30);
  assert.equal(by('brand-ranking').count,mode==='zero'?0:null);
@@ -230,4 +231,65 @@ test('admin KPI realtime newer failure survives older initial success and slow h
   newer.resolve(null);await flush();old.resolve({total_today:123});history.resolve([]);await flush();
   assert.deepEqual(updates.filter(([idx])=>idx===1).map(([,v])=>v),[null]);cleanup();
  }finally{global.setTimeout=priorTimeout;global.clearTimeout=priorClear;}
+});
+
+
+// The latest-date counter must never scan/count the lifetime table.
+for (const [name, latest, countReply, expectedCount, expectedDate] of [
+ ['latest', ok(null,[{snapshot_date:'2026-10-03'}]), ok(52447), 52447, '2026-10-03'],
+ ['stale', ok(null,[{snapshot_date:'2025-12-31'}]), ok(9), 9, '2025-12-31'],
+ ['year rollover', ok(null,[{snapshot_date:'2027-01-01'}]), ok(10), 10, '2027-01-01'],
+ ['empty table', ok(null,[]), undefined, 0, null],
+ ['missing data', {data:null,error:null}, undefined, null, null],
+ ['date error', failed, undefined, null, null],
+ ['date rejection', rejected, undefined, null, null],
+ ['missing date', ok(null,[{}]), undefined, null, null],
+ ['malformed date', ok(null,[{snapshot_date:'2026-10-03T00:00:00Z'}]), undefined, null, null],
+ ['impossible date', ok(null,[{snapshot_date:'2026-02-30'}]), undefined, null, null],
+ ['count zero', ok(null,[{snapshot_date:'2026-10-03'}]), ok(0), 0, '2026-10-03'],
+ ['count error', ok(null,[{snapshot_date:'2026-10-03'}]), failed, null, '2026-10-03'],
+ ['count missing', ok(null,[{snapshot_date:'2026-10-03'}]), ok(null), null, '2026-10-03'],
+ ['count rejection', ok(null,[{snapshot_date:'2026-10-03'}]), rejected, null, '2026-10-03'],
+]) test('bounded brand count: '+name,async()=>{
+ const responses=countReply===undefined?[latest]:[latest,countReply];
+ const {queries,calls}=harness(responses);
+ const result=await queries.fetchLatestBrandSnapshotCount();
+ assert.equal(result.count,expectedCount);
+ assert.equal(result.data[0]?.snapshot_date??null,expectedDate);
+ assert.deepEqual(calls[0],{table:'brand_ranking_snapshots',ops:[
+  ['select','snapshot_date'],['order','snapshot_date',{ascending:false}],['limit',1],
+ ]});
+ assert.equal(calls.length,countReply===undefined?1:2);
+ if(countReply!==undefined) assert.deepEqual(calls[1],{table:'brand_ranking_snapshots',ops:[
+  ['select','*',{count:'exact',head:true}],['eq','snapshot_date',expectedDate],
+ ]});
+ assert.equal(responses.length,0);
+});
+
+test('rollover between reads stays pinned; next refresh discovers newer date',async()=>{
+ const {queries,calls}=harness([
+  ok(null,[{snapshot_date:'2026-12-31'}]),ok(21),
+  ok(null,[{snapshot_date:'2027-01-01'}]),ok(3),
+ ]);
+ const old=await queries.fetchLatestBrandSnapshotCount();
+ const next=await queries.fetchLatestBrandSnapshotCount();
+ assert.deepEqual(old,{count:21,data:[{snapshot_date:'2026-12-31'}]});
+ assert.deepEqual(next,{count:3,data:[{snapshot_date:'2027-01-01'}]});
+ assert.deepEqual(calls[1].ops.at(-1),['eq','snapshot_date','2026-12-31']);
+ assert.deepEqual(calls[3].ops.at(-1),['eq','snapshot_date','2027-01-01']);
+});
+
+test('home KPI and collection row identify latest-date segment rows with full stale year',async()=>{
+ const responses=Array.from({length:16},()=>ok());
+ responses[1]=ok(null,[{snapshot_date:'2025-12-31'}]);responses.push(ok(52447));
+ const {queries}=harness(responses);const stats=await queries.fetchCollectionStats();
+ const brank=stats.find(s=>s.id==='brand-ranking');
+ assert.equal(brank.count,52447);assert.equal(brank.latestDate,'2025-12-31');
+ assert.equal(brank.label,'브랜드 랭킹 (최근일)');assert.equal(brank.status,'stored');
+ const html=renderHome(stats,{state:'available',jobs:[],limit:20});
+ assert.equal((html.match(/브랜드 랭킹 \(최근일\)/g)||[]).length,2);
+ assert.match(html,/2025-12-31 · 스냅샷 행/);
+ assert.match(html,/세그먼트별 저장 스냅샷 행 수의 합/);
+ assert.match(html,/고유 브랜드 수가 아닙니다/);
+ assert.match(html,/수집 완전성·실제 실행 여부는 확인되지 않았습니다/);
 });

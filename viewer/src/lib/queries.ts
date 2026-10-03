@@ -1792,10 +1792,39 @@ export interface CollectionStat {
   link: string | null;
 }
 
+/**
+ * Count stored segment rows for the latest observed brand-ranking date only.
+ * A later collection may arrive between reads: keep the count pinned to the
+ * date we selected, and let the next refresh discover the newer date.
+ */
+export async function fetchLatestBrandSnapshotCount(): Promise<{ count: number | null; data: { snapshot_date: string }[]; error?: undefined }> {
+  let data: { snapshot_date: string }[] = [];
+  try {
+    // Deliberately no count here: LIMIT does not bound PostgREST's exact count.
+    const latest = await supabase.from('brand_ranking_snapshots')
+      .select('snapshot_date').order('snapshot_date', { ascending: false }).limit(1);
+    if (latest.error || !Array.isArray(latest.data)) return { count: null, data };
+    if (latest.data.length === 0) return { count: 0, data };
+    const date = latest.data[0]?.snapshot_date;
+    // Never issue a count with an absent/malformed date or substitute today.
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) {
+      return { count: null, data };
+    }
+    data = [{ snapshot_date: date }];
+    const result = await supabase.from('brand_ranking_snapshots')
+      .select('*', { count: 'exact', head: true }).eq('snapshot_date', date);
+    return { count: readCount({ status: 'fulfilled', value: result }).count, data };
+  } catch {
+    // Retain a successfully observed date when only the bounded count failed.
+    return { count: null, data };
+  }
+}
+
 export async function fetchCollectionStats(): Promise<CollectionStat[]> {
   const rs = await Promise.allSettled([
     /* 0  ranking_snapshots     */ supabase.from('ranking_snapshots').select('snapshot_date', { count: 'exact' }).order('snapshot_date', { ascending: false }).limit(1),
-    /* 1  brand_ranking_snapshots */ supabase.from('brand_ranking_snapshots').select('snapshot_date', { count: 'exact' }).order('snapshot_date', { ascending: false }).limit(1),
+    /* 1  brand latest date rows */ fetchLatestBrandSnapshotCount(),
     /* 2  products is_own       */ supabase.from('products').select('*', { count: 'exact', head: true }).eq('is_own', true),
     /* 3  competitor products        */ supabase.from('products').select('*', { count: 'exact', head: true }).eq('is_own', false),
     /* 4  products detail       */ supabase.from('products').select('*', { count: 'exact', head: true }).eq('is_own', false).not('detail_fetched_at', 'is', null),
@@ -1826,7 +1855,7 @@ export async function fetchCollectionStats(): Promise<CollectionStat[]> {
   const sales  = g(13); const inv    = g(14); const revA   = g(15);
 
   const rankDate  = rank.data[0]?.snapshot_date?.slice(5) ?? null;
-  const brankDate = brank.data[0]?.snapshot_date?.slice(5) ?? null;
+  const brankDate = brank.data[0]?.snapshot_date ?? null;
   const snpsDate  = snpRnk.data[0]?.snapshot_date?.slice(5) ?? null;
   const magsDate  = mags.data[0]?.published_at?.slice(5, 10) ?? null;
   const revsDate  = kstInsertDate(revs.data[0]?.created_at);
@@ -1837,7 +1866,7 @@ export async function fetchCollectionStats(): Promise<CollectionStat[]> {
 
   const stats: CollectionStat[] = [
     { id: 'ranking',         label: '상품 랭킹 스냅샷',   count: rank.count,   latestDate: rankDate,  target: null,       status: 'unknown',                                  link: '/ranking' },
-    { id: 'brand-ranking',   label: '브랜드 랭킹 스냅샷', count: brank.count,  latestDate: brankDate, target: null,       status: 'unknown',                                  link: '/brand-ranking' },
+    { id: 'brand-ranking',   label: '브랜드 랭킹 (최근일)', count: brank.count,  latestDate: brankDate, target: null,       status: 'unknown',                                  link: '/brand-ranking' },
     { id: 'own-products',    label: '자사 상품 목록',     count: ownP.count,   latestDate: null,      target: null,       status: 'unknown',                                  link: '/matching' },
     { id: 'comp-detail',     label: '자사 외 상품 상세',   count: compDetail,   latestDate: null,      target: compTotal, hasTarget: true,  status: 'unknown',    link: '/product' },
     { id: 'promotions',      label: '프로모션 모듈',      count: proms.count,  latestDate: promsDate, target: null,       status: 'unknown',                                  link: '/promo' },

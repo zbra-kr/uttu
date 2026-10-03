@@ -224,7 +224,7 @@ function HomeDesktopView() {
 
   const kpis = [
     { label: '상품 랭킹 스냅샷', val: formatStoredCount(rankStat?.count),  sub: `최근 ${latestDate}`,                  Icon: IcRanking,      link: '/ranking' },
-    { label: '브랜드 랭킹',      val: formatStoredCount(brankStat?.count), sub: `최근 ${brankStat?.latestDate ?? '—'}`,                  Icon: IcBrandRanking, link: '/brand-ranking' },
+    { label: '브랜드 랭킹 (최근일)', val: formatStoredCount(brankStat?.count), sub: `${brankStat?.latestDate ?? '—'} · 스냅샷 행`,                  Icon: IcBrandRanking, link: '/brand-ranking' },
     { label: '자사 SKU',        val: formatStoredCount(ownStat?.count), sub: `${ownBrands.length}개 브랜드`, Icon: IcProduct,     link: '/matching' },
     { label: 'TOP100 진입',     val: fmt(ownTop100),        sub: `${latestDate} 기준`,                  Icon: null,           link: '/ranking' },
     { label: '수집 리뷰',       val: formatStoredCount(reviewStat?.count), sub: `평균 ★${reviewStats?.avgRating ?? '—'}`, Icon: IcReview,    link: '/reviews' },
@@ -641,7 +641,7 @@ function HomeDesktopView() {
               </span>
             </div>
           </div>
-          <p className="dim" style={{ fontSize: 11, margin: 0 }}>저장된 데이터와 작업 기록입니다. 수집 완전성·실제 실행 여부는 확인되지 않았습니다. 리뷰 최근일은 행 저장 시각(KST), 다른 최근일은 각 데이터의 기준일입니다.</p>
+          <p className="dim" style={{ fontSize: 11, margin: 0 }}>저장된 데이터와 작업 기록입니다. 브랜드 랭킹은 표시된 최근 기준일의 세그먼트별 저장 스냅샷 행 수의 합이며, 고유 브랜드 수가 아닙니다. 수집 완전성·실제 실행 여부는 확인되지 않았습니다. 리뷰 최근일은 행 저장 시각(KST), 다른 최근일은 각 데이터의 기준일입니다.</p>
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))', gap: 14, alignItems: 'start' }}>
             {/* 1열: 무신사 수집 + 콘텐츠·자사 */}
             <section className="panel surface" style={{ minWidth: 0, overflowX: 'auto' }}>
