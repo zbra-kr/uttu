@@ -1,17 +1,13 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { formatMatchingScore, MATCHING_SCORE_HELP } from '@/lib/matching-score';
 import {
   fetchOwnBrands, fetchOwnProductsWithPrices, fetchProductMatches,
   type OwnProductWithPrice, type ProductMatchRow,
 } from '@/lib/queries';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
-
-function fmtScore(s: number | null): string {
-  if (s == null) return '';
-  return `${Math.round(s * 100)}%`;
-}
 
 function fmtPrice(v: number | null): string {
   if (v == null) return '';
@@ -117,10 +113,11 @@ export default function MobileMatchingView() {
             </div>
           </div>
 
-          {/* 유사 경쟁 상품 */}
+          {/* 매칭 경쟁 상품 */}
           <div style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>
-            유사 경쟁 상품 {matches.length}개
+            매칭 경쟁 상품 {matches.length}개
           </div>
+          <div style={{ fontSize: 11, color: 'var(--f4)', lineHeight: 1.5 }}>{MATCHING_SCORE_HELP}</div>
           {loadingMatches ? (
             <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>
           ) : matches.length === 0 ? (
@@ -146,7 +143,7 @@ export default function MobileMatchingView() {
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--f3)' }}>{m.competitor_brand}</div>
                   <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>
-                    유사도 {fmtScore(m.score)}
+                    {formatMatchingScore(m.score)}
                   </div>
                 </div>
                 <span style={{ color: 'var(--f4)', fontSize: 14 }}>→</span>

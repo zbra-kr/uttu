@@ -1,5 +1,6 @@
 'use client';
 import { formatFiveStarRating } from '@/lib/rating-format';
+import { formatMatchingScore, getMatchingGrade, MATCHING_SCORE_HELP } from '@/lib/matching-score';
 import React from 'react';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileMatchingView from './MobileMatchingView';
@@ -380,8 +381,9 @@ function MatchCard({ m, onConfirm, onExclude }: {
 }) {
   const confirmed = m.status === 'confirmed';
   const isAuto = m.status === 'auto';
-  const gradeA = isAuto && m.score != null && m.score >= 70;
-  const gradeB = isAuto && m.score != null && m.score < 70;
+  const grade = getMatchingGrade(m.status, m.score);
+  const gradeA = grade === 'A';
+  const gradeB = grade === 'B';
 
   return (
     <div style={{
@@ -404,7 +406,7 @@ function MatchCard({ m, onConfirm, onExclude }: {
         )}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="row-flex center gap-4" style={{ marginBottom: 4 }}>
+        <div className="row-flex center gap-4" style={{ marginBottom: 4, flexWrap: 'wrap' }}>
           <span className="chip" style={{ fontSize: 10 }}>{m.competitor_brand}</span>
           {confirmed && (
             <span className="chip" style={{
@@ -422,9 +424,9 @@ function MatchCard({ m, onConfirm, onExclude }: {
               borderColor: 'var(--grade-b)', fontSize: 10, fontWeight: 700,
             }}>B</span>
           )}
-          {isAuto && m.score != null && (
-            <span className="mono" style={{ fontSize: 10, color: gradeA ? 'var(--grade-a)' : 'var(--grade-b)' }}>
-              {m.score}%
+          {isAuto && (
+            <span className="mono" style={{ fontSize: 10, color: gradeA ? 'var(--grade-a)' : gradeB ? 'var(--grade-b)' : 'var(--f4)' }}>
+              {formatMatchingScore(m.score)}
             </span>
           )}
         </div>
@@ -568,12 +570,12 @@ function ProductMatching() {
 
   // ── derived ──
   const confirmedCount = matches.filter(m => m.status === 'confirmed').length;
-  const aCount = matches.filter(m => m.status === 'auto' && (m.score ?? 0) >= 70).length;
-  const bCount = matches.filter(m => m.status === 'auto' && (m.score ?? 0) < 70).length;
+  const aCount = matches.filter(m => getMatchingGrade(m.status, m.score) === 'A').length;
+  const bCount = matches.filter(m => getMatchingGrade(m.status, m.score) === 'B').length;
   const visibleMatches = matches.filter(m => {
     if (matchFilter === 'confirmed') return m.status === 'confirmed';
-    if (matchFilter === 'a') return m.status === 'auto' && (m.score ?? 0) >= 70;
-    if (matchFilter === 'b') return m.status === 'auto' && (m.score ?? 0) < 70;
+    if (matchFilter === 'a') return getMatchingGrade(m.status, m.score) === 'A';
+    if (matchFilter === 'b') return getMatchingGrade(m.status, m.score) === 'B';
     return true;
   });
   const alreadyMatchedIds = new Set(matches.map(m => m.competitor_product_id));
@@ -942,6 +944,7 @@ function ProductMatching() {
                         ))}
                       </div>
                     </div>
+                    <div style={{ padding: '10px 14px 0', fontSize: 11, color: 'var(--f4)', lineHeight: 1.5 }}>{MATCHING_SCORE_HELP}</div>
                     <div style={{ padding: 14 }}>
                       {loadingMatches ? (
                         <div style={{ textAlign: 'center', color: 'var(--f4)', fontSize: 12, padding: '24px 0' }}>불러오는 중…</div>

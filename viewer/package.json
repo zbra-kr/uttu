@@ -13,7 +13,8 @@
     "test:teams": "node --test tests/teams-*.test.cjs",
     "test:onboarding": "node --test tests/onboarding*.test.cjs",
     "test:ai-session": "node --test tests/ai-session-access.test.cjs",
-    "test:ratings": "node --test tests/rating-format.test.cjs"
+    "test:ratings": "node --test tests/rating-format.test.cjs",
+    "test:matching": "node --test tests/matching-score.test.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
