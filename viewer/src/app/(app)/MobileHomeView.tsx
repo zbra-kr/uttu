@@ -1,4 +1,5 @@
 'use client';
+import { formatFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -179,7 +180,7 @@ export default function MobileHomeView() {
                 TOP100 {b.top100_count > 0 ? b.top100_count : '—'}
               </span>
               {b.avg_satisfaction != null && (
-                <span style={{ fontSize: 11, color: 'var(--hs)', fontFamily: 'var(--mono)', flexShrink: 0 }}>★{b.avg_satisfaction}</span>
+                <span style={{ fontSize: 11, color: 'var(--hs)', fontFamily: 'var(--mono)', flexShrink: 0 }}>{formatFiveStarRating(b.avg_satisfaction)}</span>
               )}
             </div>
           ))}

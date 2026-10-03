@@ -12,7 +12,8 @@
     "test:auth:admin": "node --test tests/auth-admin-password.test.cjs tests/auth-admin-ssr.test.cjs",
     "test:teams": "node --test tests/teams-*.test.cjs",
     "test:onboarding": "node --test tests/onboarding*.test.cjs",
-    "test:ai-session": "node --test tests/ai-session-access.test.cjs"
+    "test:ai-session": "node --test tests/ai-session-access.test.cjs",
+    "test:ratings": "node --test tests/rating-format.test.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",

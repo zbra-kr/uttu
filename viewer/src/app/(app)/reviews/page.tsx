@@ -1,4 +1,5 @@
 'use client';
+import { formatFiveStarRating, isLowFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileReviewsView from './MobileReviewsView';
@@ -358,7 +359,7 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
             <span>상품</span>
             <span>브랜드</span>
             <span className="cell-r">리뷰</span>
-            <span className="cell-r">만족도</span>
+            <span className="cell-r">평점</span>
             <span></span>
           </div>
           {ownProducts.slice(0, 8).map((p, i) => (
@@ -374,9 +375,9 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
               </div>
               <span className="dim" style={{ fontSize: 11 }}>{p.brand_name}</span>
               <span className="mono cell-r" style={{ fontSize: 12 }}>{(p.review_count ?? 0).toLocaleString()}</span>
-              <span className={`mono cell-r ${(p.satisfaction_score ?? 100) < 60 ? 'hs' : ''}`}
-                style={{ fontWeight: (p.satisfaction_score ?? 100) < 60 ? 500 : 400, fontSize: 12 }}>
-                {p.satisfaction_score != null ? `${p.satisfaction_score}%` : '—'}
+              <span className={`mono cell-r ${isLowFiveStarRating(p.satisfaction_score) ? 'hs' : ''}`}
+                style={{ fontWeight: isLowFiveStarRating(p.satisfaction_score) ? 500 : 400, fontSize: 12 }}>
+                {formatFiveStarRating(p.satisfaction_score)}
               </span>
               <span>
                 <a href={`/product?no=${p.musinsa_no}`} className="btn sm icon">
@@ -1564,7 +1565,7 @@ function RvProductBrowse() {
                 <span className="cell-r" style={{ fontSize: 10 }}>할인율</span>
                 <span className="cell-c" style={{ fontSize: 10 }}>품절</span>
                 <span className="cell-r" style={{ fontSize: 10 }}>리뷰</span>
-                <span className="cell-r" style={{ fontSize: 10 }}>만족도</span>
+                <span className="cell-r" style={{ fontSize: 10 }}>평점</span>
               </div>
 
               {/* 로딩 스켈레톤 */}
@@ -1655,9 +1656,9 @@ function RvProductBrowse() {
                     {/* 만족도 */}
                     <div className="mono cell-r" style={{
                       fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-                      color: (p.satisfaction_score ?? 100) < 60 ? 'var(--dn)' : undefined,
+                      color: isLowFiveStarRating(p.satisfaction_score) ? 'var(--dn)' : undefined,
                     }}>
-                      {p.satisfaction_score != null ? `${p.satisfaction_score}%` : '—'}
+                      {formatFiveStarRating(p.satisfaction_score)}
                     </div>
                   </div>
                 );

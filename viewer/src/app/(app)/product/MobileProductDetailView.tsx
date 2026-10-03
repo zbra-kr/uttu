@@ -1,4 +1,5 @@
 'use client';
+import { formatFiveStarRating } from '@/lib/rating-format';
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
@@ -215,13 +216,13 @@ export default function MobileProductDetailView() {
           valueColor={detail.rank_position && detail.rank_position <= 10 ? 'var(--hs)' : undefined}
         />
         <MiniKpi
-          label="별점"
-          value={detail.satisfaction_score != null ? `★${detail.satisfaction_score}` : '—'}
+          label="평점"
+          value={formatFiveStarRating(detail.satisfaction_score)}
           sub={detail.review_count > 0 ? `리뷰 ${detail.review_count.toLocaleString()}건` : undefined}
           valueColor="var(--smf)"
         />
         <MiniKpi
-          label="리뷰점수"
+          label="리뷰 만족도"
           value={detail.review_score != null ? `${detail.review_score}%` : '—'}
         />
       </div>

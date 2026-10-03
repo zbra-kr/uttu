@@ -1,4 +1,5 @@
 'use client';
+import { formatFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Suspense } from 'react';
@@ -529,7 +530,7 @@ function TabRanking({ rankStats, top100Trend, brandTrend, productDist, productsB
                   <SecPanel title={`보유 상품 현황 (총 ${productsBasic.total_count.toLocaleString()}개)`}>
                     <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
                       <div className="row head" style={{ gridTemplateColumns: '1fr 44px 60px 50px' }}>
-                        <span>브랜드</span><span className="cell-r">상품</span><span className="cell-r">리뷰수</span><span className="cell-r">만족도</span>
+                        <span>브랜드</span><span className="cell-r">상품</span><span className="cell-r">리뷰수</span><span className="cell-r">평점</span>
                       </div>
                       {productsBasic.by_brand.map((b, i) => (
                         <div key={b.brand_name} className={`row ${i % 2 ? 'alt' : ''}`} style={{ gridTemplateColumns: '1fr 44px 60px 50px' }}>
@@ -537,7 +538,7 @@ function TabRanking({ rankStats, top100Trend, brandTrend, productDist, productsB
                           <span className="cell-r mono" style={{ fontSize: 11 }}>{b.product_count.toLocaleString()}</span>
                           <span className="cell-r mono dim" style={{ fontSize: 10 }}>{b.total_reviews > 0 ? b.total_reviews.toLocaleString() : '—'}</span>
                           <span className="cell-r mono" style={{ fontSize: 11, color: b.avg_score != null ? 'var(--hs)' : 'var(--f4)' }}>
-                            {b.avg_score != null ? Number(b.avg_score).toFixed(1) : '—'}
+                            {formatFiveStarRating(b.avg_score)}
                           </span>
                         </div>
                       ))}
@@ -554,7 +555,7 @@ function TabRanking({ rankStats, top100Trend, brandTrend, productDist, productsB
                 <SecPanel title="강점 상품 · 리뷰 상위">
                   <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>
                     <div className="row head" style={{ gridTemplateColumns: '1fr 80px 80px 54px 46px' }}>
-                      <span>상품명</span><span>브랜드</span><span>카테고리</span><span className="cell-r">리뷰</span><span className="cell-r">만족도</span>
+                      <span>상품명</span><span>브랜드</span><span>카테고리</span><span className="cell-r">리뷰</span><span className="cell-r">평점</span>
                     </div>
                     {productsBasic.top_products.map((p, i) => (
                       <a key={p.musinsa_no}
@@ -567,7 +568,7 @@ function TabRanking({ rankStats, top100Trend, brandTrend, productDist, productsB
                         <span className="dim" style={{ fontSize: 10 }}>{p.category_d2_name ?? '—'}</span>
                         <span className="cell-r mono" style={{ fontSize: 11 }}>{p.review_count.toLocaleString()}</span>
                         <span className="cell-r mono" style={{ fontSize: 11, color: p.satisfaction_score != null ? 'var(--slf)' : 'var(--f4)' }}>
-                          {p.satisfaction_score != null ? Number(p.satisfaction_score).toFixed(1) : '—'}
+                          {formatFiveStarRating(p.satisfaction_score)}
                         </span>
                       </a>
                     ))}

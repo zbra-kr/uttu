@@ -1,4 +1,5 @@
 'use client';
+import { formatFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
@@ -544,8 +545,8 @@ function ProductPageInner() {
               )}
               <hr className="hr-d" style={{ margin: '8px 0' }} />
               <InfoRow label="현재 랭킹" value={detail.rank_position ? `#${detail.rank_position}` : '—'} />
-              <InfoRow label="별점" value={detail.satisfaction_score ? `${detail.satisfaction_score} / 5.0` : '—'} />
-              <InfoRow label="리뷰점수" value={detail.review_score != null ? `${detail.review_score}점` : '—'} />
+              <InfoRow label="평점" value={formatFiveStarRating(detail.satisfaction_score)} />
+              <InfoRow label="리뷰 만족도" value={detail.review_score != null ? `${detail.review_score}%` : '—'} />
               <InfoRow label="리뷰수" value={`${detail.review_count.toLocaleString()}건`} />
             </section>
 

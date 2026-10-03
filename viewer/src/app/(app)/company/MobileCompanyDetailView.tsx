@@ -1,4 +1,5 @@
 'use client';
+import { formatFiveStarRating } from '@/lib/rating-format';
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
@@ -397,7 +398,7 @@ function TabRanking({
                   {p.category_d2_name && <span>{p.category_d2_name}</span>}
                   <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', color: 'var(--f3)' }}>
                     리뷰 {p.review_count.toLocaleString()}
-                    {p.satisfaction_score != null && ` · ${Number(p.satisfaction_score).toFixed(1)}점`}
+                    {p.satisfaction_score != null && ` · ${formatFiveStarRating(p.satisfaction_score)}`}
                   </span>
                 </div>
               </div>
@@ -416,7 +417,7 @@ function TabRanking({
                 <div style={{ flex: 1, fontSize: 13, color: 'var(--f1)' }}>{b.brand_name}</div>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--f3)' }}>{b.product_count}개</div>
                 {b.avg_score != null && (
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--hs)' }}>{Number(b.avg_score).toFixed(1)}점</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--hs)' }}>{formatFiveStarRating(b.avg_score)}</div>
                 )}
               </div>
             ))}

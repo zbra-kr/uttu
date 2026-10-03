@@ -1,4 +1,5 @@
 'use client';
+import { formatFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -437,7 +438,7 @@ function HomeDesktopView() {
                     </span>
                     <span className="mono" style={{ textAlign: 'right', fontSize: 11 }}>
                       {b.avg_satisfaction != null
-                        ? <><span style={{ color: 'var(--hs)' }}>★</span>{b.avg_satisfaction}</>
+                        ? formatFiveStarRating(b.avg_satisfaction)
                         : <span className="dim">—</span>}
                     </span>
                   </div>

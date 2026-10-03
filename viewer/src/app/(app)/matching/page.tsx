@@ -1,4 +1,5 @@
 'use client';
+import { formatFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileMatchingView from './MobileMatchingView';
@@ -440,7 +441,7 @@ function MatchCard({ m, onConfirm, onExclude }: {
           <span className="mono dim" style={{ fontSize: 10 }}>#{m.competitor_musinsa_no}</span>
           <span className="mono dim" style={{ fontSize: 10 }}>리뷰 {m.competitor_review_count.toLocaleString()}</span>
           {m.competitor_satisfaction != null && (
-            <span className="mono" style={{ fontSize: 10, color: 'var(--hs)' }}>★{m.competitor_satisfaction}</span>
+            <span className="mono" style={{ fontSize: 10, color: 'var(--hs)' }}>{formatFiveStarRating(m.competitor_satisfaction)}</span>
           )}
           {m.competitor_category && (
             <span className="mono dim" style={{ fontSize: 10 }}>
@@ -761,7 +762,7 @@ function ProductMatching() {
                         리뷰 {(p.review_count ?? 0).toLocaleString()}
                       </span>
                       {p.satisfaction_score != null && (
-                        <span className="mono" style={{ fontSize: 10, color: 'var(--hs)' }}>★{p.satisfaction_score}</span>
+                        <span className="mono" style={{ fontSize: 10, color: 'var(--hs)' }}>{formatFiveStarRating(p.satisfaction_score)}</span>
                       )}
                       {p.final_price && (
                         <span className="mono" style={{ fontSize: 10, color: 'var(--f3)' }}>
@@ -831,7 +832,7 @@ function ProductMatching() {
                             </span>
                           )}
                           {selectedProduct.satisfaction_score != null && (
-                            <span style={{ fontSize: 11, color: 'var(--hs)' }}>★{selectedProduct.satisfaction_score}</span>
+                            <span style={{ fontSize: 11, color: 'var(--hs)' }}>{formatFiveStarRating(selectedProduct.satisfaction_score)}</span>
                           )}
                           {selectedProduct.style_no && (
                             <span className="mono dim" style={{ fontSize: 10 }}>{selectedProduct.style_no}</span>
