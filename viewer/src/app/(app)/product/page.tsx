@@ -325,8 +325,20 @@ function ProductPageInner() {
     setRankHistory([]);
     setCategoryRanks([]);
     setCategoryRanksDate('');
+    let requestFailed = false;
+    const detailRequest = fetchProductDetail(selectedNo);
+    // These reads depend only on product identity, not on price/rank histories.
+    // Settle failures as data until the original first-wave UI boundary is reached.
+    const ownExtrasRequest = detailRequest.then(async d => {
+      if (!active || requestFailed || !d?.is_own) return null;
+      const values = await Promise.all([
+        fetchReviews({ productId: d.id, sort: 'recent', limit: 10, offset: 0 }),
+        fetchBodyStats(d.id),
+      ]);
+      return { values };
+    }).catch(error => ({ error }));
     Promise.all([
-      fetchProductDetail(selectedNo),
+      detailRequest,
       fetchProductPriceHistory(selectedNo),
       fetchProductRankHistory(selectedNo),
       fetchProductCategoryRanks(selectedNo),
@@ -347,16 +359,17 @@ function ProductPageInner() {
       setCategoryRanks(cr.rows);
       setCategoryRanksDate(cr.snapshot_date);
       if (d?.is_own) {
-        const [rv, bs] = await Promise.all([
-          fetchReviews({ productId: d.id, sort: 'recent', limit: 10, offset: 0 }),
-          fetchBodyStats(d.id),
-        ]);
+        const extras = await ownExtrasRequest;
         if (!active) return;
-        setReviews(rv.rows);
-        setBodyStats(bs);
+        if (extras && 'error' in extras) throw extras.error;
+        if (extras && 'values' in extras) {
+          const [rv, bs] = extras.values;
+          setReviews(rv.rows);
+          setBodyStats(bs);
+        }
       }
       setLoading(false);
-    }).catch(e => { if (active) { console.error(e); setLoading(false); } });
+    }).catch(e => { requestFailed = true; if (active) { console.error(e); setLoading(false); } });
     return () => { active = false; };
   }, [selectedNo]);
 
