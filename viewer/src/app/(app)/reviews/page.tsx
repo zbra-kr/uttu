@@ -196,13 +196,25 @@ export default function ReviewsPage() {
   </>;
 }
 
+type ReviewTab = 'dash' | 'browse' | 'product-browse' | 'anomaly';
+function readReviewTab(): ReviewTab {
+  if (typeof window === 'undefined') return 'dash';
+  try {
+    const raw = localStorage.getItem('rv_tab');
+    let value: unknown = raw;
+    try { value = raw === null ? null : JSON.parse(raw); } catch {}
+    return value === 'dash' || value === 'browse' || value === 'product-browse' || value === 'anomaly'
+      ? value : 'dash';
+  } catch { return 'dash'; }
+}
+
 function ReviewsDesktopView() {
   const [tab, setTab] = React.useState<'dash' | 'browse' | 'product-browse' | 'anomaly'>(
-    () => lsRead('rv_tab', 'dash') as any
+    readReviewTab
   );
   const changeTab = (t: typeof tab) => {
     setTab(t);
-    try { localStorage.setItem('rv_tab', t); } catch {}
+    try { localStorage.setItem('rv_tab', JSON.stringify(t)); } catch {}
   };
   return (
     <>

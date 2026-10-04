@@ -50,6 +50,11 @@ const CONTEXTS: Record<string, string[]> = {
 
 export default function ShellClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
+  // Prerendered shells may have no pathname. Keep the first client render
+  // identical, then resolve route-specific labels and date context after mount.
+  const presentationPathname = mounted ? (pathname || '') : '';
   const tour = useOnboarding();
   const tourAiOpen = tour.active ? tour.step === 1 : undefined;
   const isMobile = useIsMobile();
@@ -151,15 +156,15 @@ export default function ShellClient({ children }: { children: React.ReactNode })
 
   // productCrumb.brand 가 회사명으로도 사용됨 (company 페이지)
   const breadcrumb =
-    pathname === '/product' && productCrumb && productCrumb.name
+    presentationPathname === '/product' && productCrumb && productCrumb.name
       ? [`브랜드 · ${productCrumb.brand}`, productCrumb.name]
-      : pathname === '/company' && productCrumb && productCrumb.brand
+      : presentationPathname === '/company' && productCrumb && productCrumb.brand
         ? [`회사 · ${productCrumb.brand}`]
-        : pathname === '/brand' && brandCrumb
+        : presentationPathname === '/brand' && brandCrumb
           ? brandCrumb.company
             ? [`회사 · ${brandCrumb.company}`, `브랜드 · ${brandCrumb.name}`]
             : [`브랜드 · ${brandCrumb.name}`]
-          : (BREADCRUMBS[pathname] || ['UTTU']);
+          : (BREADCRUMBS[presentationPathname] || ['UTTU']);
 
   const todayStr = kstToday().replace(/-/g, '.');
   const a       = shellStats?.anomalyCount ?? 0;
@@ -185,7 +190,7 @@ export default function ShellClient({ children }: { children: React.ReactNode })
     ],
   };
   // 페이지가 uttu:ai-context 이벤트로 실시간 컨텍스트를 제공하면 그것을 우선 사용
-  const context = pageAiCtx ?? (dynamicContexts[pathname] || ['UTTU']);
+  const context = mounted ? (pageAiCtx ?? (dynamicContexts[presentationPathname] || ['UTTU'])) : ['UTTU'];
 
   const navCounts: Record<string, number> = {
     home:     a,
@@ -240,7 +245,7 @@ export default function ShellClient({ children }: { children: React.ReactNode })
           </div>
         </main>
       </div>
-      <AiPanel open={tourAiOpen ?? aipOpen} onToggle={toggleAip} context={context} route={pathname} />
+      <AiPanel open={tourAiOpen ?? aipOpen} onToggle={toggleAip} context={context} route={presentationPathname} />
       <CmdK open={cmdkOpen} onClose={() => setCmdkOpen(false)} />
     </>
   );
