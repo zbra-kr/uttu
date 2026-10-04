@@ -5,6 +5,12 @@ globalThis.IS_REACT_ACT_ENVIRONMENT=true;
 globalThis.document={documentElement:{setAttribute(){},style:{setProperty(){}},classList:{toggle(){},remove(){}}},addEventListener(){},removeEventListener(){}};
 const element=f=>React.createElement(f.Shell,null,React.createElement('main',null,'Inert note route'));
 const contexts=root=>root.root.findAll(x=>x.props.className==='aip-context').map(x=>x.findAll(x=>x.type==='span').map(x=>x.children.filter(c=>typeof c==='string').join('')).join('|'));
+const flush=async()=>{for(let i=0;i<8;i++)await Promise.resolve()};
+const helpButton=root=>root.root.findAllByType('button').find(b=>b.props['data-tour-help']===true);
+const helpDrawer=root=>root.root.find(x=>x.type?.name==='HelpDrawer');
+test('actual /index server versus / first client and same-path help presentation match',()=>{
+ for(const [serverPath,clientPath]of [['/index','/'],['/','/'],['/reviews','/reviews'],[null,'/']]){const server=fixture(true),client=fixture();server.setRoute(serverPath);client.setRoute(clientPath);const html=SSR.renderToString(element(server));assert.equal(SSR.renderToString(element(client)),html);assert.equal(server.guideRequests.length,0);assert.equal(client.guideRequests.length,0);}
+});
 test('generic server and first client shell match across routes, dates and timezone',()=>{
  const server=fixture(true);const html=SSR.renderToString(element(server));assert.match(html,/UTTU/);
  const savedTZ=process.env.TZ;
@@ -23,4 +29,16 @@ test('post-mount home and note navigation resolves context with real closed/open
 });
 test('actual MobileShell mounts its mobile AiPanel',async()=>{
  const f=fixture();f.setMobile(true);let root;await React.act(async()=>{root=Renderer.create(element(f));await Promise.resolve();});assert.equal(root.root.findAll(x=>x.type?.name==='MobileShell').length,1);assert.equal(root.root.find(x=>x.type?.name==='AiPanel').props.mobileMode,true);await React.act(async()=>root.unmount());
+});
+test('real Topbar/HelpDrawer open, route cancellation, cache and closed-route lookup',async()=>{
+ const f=fixture();f.setDeferGuide(true);let root;await React.act(async()=>{root=Renderer.create(element(f));await flush()});
+ assert.equal(root.root.findAll(x=>x.type?.name==='Topbar').length,1);assert.equal(root.root.findAll(x=>x.type?.name==='HelpButton').length,1);assert.equal(helpDrawer(root).props.pagePath,'/');assert.deepEqual(f.guideRequests,[]);
+ await React.act(async()=>{helpButton(root).props.onClick();await flush()});assert.equal(helpDrawer(root).props.open,true);assert.deepEqual(f.guideRequests,['/']);
+ f.setRoute('/product');await React.act(async()=>{root.update(element(f));await flush()});assert.equal(helpDrawer(root).props.pagePath,'/product');assert.deepEqual(f.guideRequests,['/','/product']);
+ await React.act(async()=>{f.resolveGuide('/',[{id:'old',title:'Stale home guide',slug:'old',content:{}}]);await flush()});assert.ok(!JSON.stringify(root.toJSON()).includes('Stale home guide'));
+ await React.act(async()=>{f.resolveGuide('/product',[{id:'current',title:'Current product guide',slug:'product',content:{}}]);await flush()});assert.ok(JSON.stringify(root.toJSON()).includes('Current product guide'));
+ await React.act(async()=>{helpDrawer(root).props.onClose();await flush()});assert.equal(helpDrawer(root).props.open,false);
+ await React.act(async()=>{helpButton(root).props.onClick();await flush()});assert.deepEqual(f.guideRequests,['/','/product']);
+ await React.act(async()=>{helpDrawer(root).props.onClose();f.setRoute('/me');root.update(element(f));await flush()});assert.equal(helpDrawer(root).props.pagePath,'/me');assert.deepEqual(f.guideRequests,['/','/product']);assert.ok(!JSON.stringify(root.toJSON()).includes('Current product guide'));
+ await React.act(async()=>{helpButton(root).props.onClick();await flush()});assert.deepEqual(f.guideRequests,['/','/product','/me']);await React.act(async()=>root.unmount());await React.act(async()=>{f.resolveGuide('/me',[]);await flush()});
 });

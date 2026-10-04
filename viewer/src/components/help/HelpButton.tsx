@@ -8,8 +8,12 @@ import HelpDrawer from './HelpDrawer';
 export default function HelpButton() {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
 
-  const pagePath = helpPagePath(pathname);
+  // Static home HTML may use /index while the browser uses /. Resolve help
+  // presentation after hydration; subsequent route changes remain immediate.
+  const pagePath = mounted ? helpPagePath(pathname) : null;
 
   const toggle = () => setOpen(o => !o);
 
