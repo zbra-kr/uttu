@@ -91,6 +91,10 @@ jobs:
         run: npm run test:briefing-navigation
         working-directory: viewer
 
+      - name: Framework migration regression tests
+        run: npm run test:framework
+        working-directory: viewer
+
       - name: Loading performance regression tests
         run: npm run test:performance
         working-directory: viewer

@@ -25,6 +25,8 @@ function readSource(reference) {
     return source;
   }
   assert.ok(['abort-candidate','detail-candidate','viewport-candidate','current'].includes(variant), `Unknown variant ${variant}`);
-  return fs.readFileSync(path.join(__dirname, '..', live[name]), 'utf8');
+  // Live source text may have Git's Windows CRLF checkout conversion. Normalize
+  // only parser input; immutable baseline bytes above retain exact hash checks.
+  return fs.readFileSync(path.join(__dirname, '..', live[name]), 'utf8').replace(/\r\n/g, '\n');
 }
 module.exports = { readSource };

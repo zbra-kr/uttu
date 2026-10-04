@@ -12,11 +12,11 @@ function adminClient() {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { error: authErr } = await requireAdmin();
   if (authErr) return authErr;
-  const { id } = params;
+  const { id } = await params;
   if (!id) return NextResponse.json({ error: 'id 필수' }, { status: 400 });
 
   let body: { corp_code: string; is_listed: boolean };

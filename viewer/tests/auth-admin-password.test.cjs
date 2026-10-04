@@ -179,11 +179,11 @@ function loginUI({ mobile, pending = false, formError = null }) {
 }
 for (const mobile of [false, true]) {
   for (const admin of [false, true]) {
-    test(`${mobile ? 'mobile' : 'desktop'} ${admin ? 'admin' : 'normal'} UI renders only permitted entry`, () => {
+    test(`${mobile ? 'mobile' : 'desktop'} ${admin ? 'admin' : 'normal'} UI renders only permitted entry`, async () => {
       const saved = process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED; process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED = 'true';
       try {
         const component = loginUI({ mobile })[admin ? 'admin' : 'normal'];
-        const html = renderToStaticMarkup(React.createElement(component, { searchParams: { redirect: '/today?team=finance&date=today' } }));
+        const html = renderToStaticMarkup(await component({ searchParams: Promise.resolve({ redirect: '/today?team=finance&date=today' }) }));
         assert.equal(html.includes('name="email"'), admin); assert.equal(html.includes('type="password"'), admin);
         assert.equal(html.includes('회사 Microsoft 계정으로 로그인'), !admin); assert.equal(html.includes('href="/forgot-password"'), admin);
         assert.doesNotMatch(html, /href="\/signup"|계정 만들기|name="full_name"/); assert.match(html, /name="next" value="\/today\?team=finance&amp;date=today"/);
@@ -192,23 +192,23 @@ for (const mobile of [false, true]) {
       } finally { if (saved === undefined) delete process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED; else process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED = saved; }
     });
   }
-  test(`${mobile ? 'mobile' : 'desktop'} admin form disables repeat submission, displays error, sanitizes next`, () => {
+  test(`${mobile ? 'mobile' : 'desktop'} admin form disables repeat submission, displays error, sanitizes next`, async () => {
     const { admin } = loginUI({ mobile, pending: true, formError: '관리자 계정을 확인해 주세요.' });
-    const html = renderToStaticMarkup(React.createElement(admin, { searchParams: { redirect: '//evil.example' } }));
+    const html = renderToStaticMarkup(await admin({ searchParams: Promise.resolve({ redirect: '//evil.example' }) }));
     assert.match(html, /disabled=""/); assert.match(html, /aria-busy="true"/); assert.match(html, /로그인 중…/); assert.match(html, /role="alert"/); assert.match(html, /관리자 계정을 확인해 주세요/); assert.match(html, /name="next" value="\/"/);
   });
-  test(`${mobile ? 'mobile' : 'desktop'} disabled Microsoft rollout never exposes ordinary password fields`, () => {
+  test(`${mobile ? 'mobile' : 'desktop'} disabled Microsoft rollout never exposes ordinary password fields`, async () => {
     const saved = process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED; delete process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED;
     try {
-      const { normal } = loginUI({ mobile }); const html = renderToStaticMarkup(React.createElement(normal));
+      const { normal } = loginUI({ mobile }); const html = renderToStaticMarkup(await normal({}));
       assert.doesNotMatch(html, /type="password"|name="email"|회사 Microsoft 계정으로 로그인/); assert.match(html, /Microsoft 로그인을 준비 중/); assert.match(html, /href="\/admin-login"/);
     } finally { if (saved !== undefined) process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED = saved; }
   });
 }
 for (const [next, destination] of [['/today?team=finance', '/login?redirect=%2Ftoday%3Fteam%3Dfinance'], ['//evil.example', '/login'], ['/admin-login', '/login']]) {
-  test(`legacy signup route has no email UI and redirects safely: ${next}`, () => {
+  test(`legacy signup route has no email UI and redirects safely: ${next}`, async () => {
     const SignupPage = loadSource('src/app/signup/page.tsx', { '@/lib/auth/oauth': oauth, 'next/navigation': { redirect }, './SignupView': () => null }).default;
-    assert.throws(() => SignupPage({ searchParams: { redirect: next } }), (error) => error.url === destination);
+    await assert.rejects(SignupPage({ searchParams: Promise.resolve({ redirect: next }) }), (error) => error.url === destination);
   });
 }
 function middleware(user) {
@@ -288,11 +288,11 @@ for (const flag of [undefined, 'false']) {
         const saved = process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED; process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED = 'true';
         try {
           const { normal, admin } = loginUI({ mobile });
-          const html = renderToStaticMarkup(React.createElement(normal));
+          const html = renderToStaticMarkup(await normal({}));
           assert.match(html, /name="email"/); assert.match(html, /type="password"/); assert.match(html, /회사 Microsoft 계정으로 로그인/);
           assert.match(html, /href="\/signup"/); assert.match(html, /href="\/forgot-password"/); assert.match(html, /href="\/admin-login"/);
           if (mobile) assert.match(html, /flex-wrap:wrap/);
-          const adminHTML = renderToStaticMarkup(React.createElement(admin));
+          const adminHTML = renderToStaticMarkup(await admin({}));
           assert.match(adminHTML, /관리자 로그인/); assert.match(adminHTML, /type="password"/); assert.doesNotMatch(adminHTML, /href="\/signup"/);
         } finally { if (saved === undefined) delete process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED; else process.env.NEXT_PUBLIC_MICROSOFT_LOGIN_ENABLED = saved; }
       });
@@ -304,7 +304,7 @@ for (const flag of [undefined, 'false']) {
         const MobileSignupView = loadSource('src/app/signup/MobileSignupView.tsx', common).default;
         const SignupView = loadSource('src/app/signup/SignupView.tsx', { ...common, '@/hooks/useViewport': { useIsMobile: () => mobile }, './MobileSignupView': MobileSignupView }).default;
         const SignupPage = loadSource('src/app/signup/page.tsx', { '@/lib/auth/oauth': oauth, 'next/navigation': { redirect }, './SignupView': SignupView }).default;
-        const html = renderToStaticMarkup(React.createElement(SignupPage));
+        const html = renderToStaticMarkup(await SignupPage({}));
         assert.match(html, /name="full_name"/); assert.match(html, /name="email"/); assert.match(html, /type="password"/); assert.match(html, /계정 만들기/);
       });
     });

@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
   // 쿠키에서 인증 user_id 추출 (비인증이면 null)
   let userId: string | null = null;
   try {
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const supabaseAuth = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

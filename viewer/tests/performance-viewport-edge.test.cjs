@@ -22,7 +22,7 @@ fixtureModule.filename = fixturePath;
 fixtureModule.paths = Module._nodeModulePaths(__dirname);
 fixtureModule._compile(fixturePrefix + '\nmodule.exports={createFixture,mount,unmount,flush,React,Renderer,SSR};', fixturePath);
 const { createFixture, mount, unmount, flush, React, Renderer, SSR } = fixtureModule.exports;
-const { act } = Renderer;
+const { act } = React;
 const plain = value => JSON.parse(JSON.stringify(value));
 const helperLedger = fixture => plain(fixture.helpers).map(x => ({ ...x, args: x.args.map(arg => { if (!arg || typeof arg !== 'object') return arg; const { signal, ...rest } = arg; return rest; }) }));
 const dispatchLedger = fixture => plain(fixture.requests).map(x => ({ ...x, ops: x.ops.filter(op => op[0] !== 'abortSignal') }));

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { error, ss } = await requireAdmin();
   if (error) return error;
@@ -11,7 +11,7 @@ export async function GET(
   const { data, error: dbErr } = await ss
     .from('collection_jobs')
     .select('*')
-    .eq('id', params.id)
+    .eq('id', (await params).id)
     .single();
 
   if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 });

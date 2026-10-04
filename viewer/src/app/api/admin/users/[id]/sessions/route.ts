@@ -7,7 +7,7 @@ const adminClient = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY!,
 );
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { error } = await requireAdmin();
   if (error) return error;
 
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const { data, error: sessErr } = await adminClient
     .from('ai_sessions')
     .select('id, route, context, started_at, ended_at, message_count, input_tokens, output_tokens, title')
-    .eq('user_id', params.id)
+    .eq('user_id', (await params).id)
     .order('started_at', { ascending: false })
     .limit(limit);
 

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Baseline: commit `5ec40b4b638f7bfb7beef46429ae629a4011c205`, Next14.2.35 and React18.3.1.
+Immutable performance source baseline: commit `5ec40b4b638f7bfb7beef46429ae629a4011c205`. Release base: main `247ba632795844a34f05512ed3246b9a3ff24f97`, Next15.5.27 and React/ReactDOM19.2.8. The five application files affected by this PR are unchanged between the source baseline and framework release base.
 
 This change combines three independent optimizations:
 
@@ -16,11 +16,11 @@ No cache/auth/SSO/role/schema/index/telemetry behavior is changed.
 
 Install the lockfile with `npm ci` in `viewer`, then run `npm run test:performance`.
 
-The performance suite runs serially with strict unhandled-rejection handling. `react-test-renderer` is an exact18.3.1 devDependency and the mount harness explicitly checks React, ReactDOM and renderer versions. Test-only immutable `.txt` source fixtures represent the baseline; a hash manifest verifies them. Current candidate modules always load from live `viewer/src`, including the combined query changes. Tests are portable and do not fetch Git history, load credentials or make network requests.
+The performance suite runs serially with strict unhandled-rejection handling. `react-test-renderer` is an exact19.2.8 devDependency and the mount harness explicitly checks React, ReactDOM and renderer versions. It uses React's async `act` and declares the act environment. A Profiler observes the initial pending commit before passive effects, rather than relying on synchronous renderer creation. Test-only immutable `.txt` source fixtures represent the baseline; a hash manifest verifies their exact bytes. Git attributes prevent Windows line-ending conversion of these fixtures; only live-source parser input normalizes CRLF. Current candidate modules always load from live `viewer/src`, including the combined query changes. Tests do not fetch Git history, load credentials or make network requests.
 
 - Abort tests cover unchanged request/result/error shape, aborted lookup preventing followup reads, forwarded signals, and stale state protection even when a request ignores abort
 - Detail tests cover own/external/empty/missing products, immediate and delayed failure, early-history failure before detail, error/state parity and navigation cancellation
-- Viewport tests use real React18 mounts of complete route/data-view modules and actual query functions. UI-only dependencies, Next navigation and Supabase/service boundaries are inert. Test date is fixed at2026-10-03T12:00:00Z; production date helpers are used
+- Viewport tests use real React19 mounts of complete route/data-view modules and actual query functions. UI-only dependencies, Next navigation and Supabase/service boundaries are inert. Test date is fixed at2026-10-03T12:00:00Z; production date helpers are used
 - Shell integration additionally mounts the real ShellClient and MobileShell around the routes, with chrome/auth/onboarding-context services inert; it covers initial responsive ancestor remounting and listener cleanup
 - Supplemental tests cover desktop operation parity, all review tabs, modern/legacy source links and note flags, preserved filters, source A→B→A changes, breakpoint cleanup, exact767px media query, and SSR markup without browser globals
 
@@ -34,7 +34,7 @@ Virtual detail scheduling shows that independent work can overlap, not how many 
 
 ## Framework upgrades
 
-Do not silently run renderer18 against React19. If the framework upgrade lands first, rebase on that exact head, update renderer to the same React version as the application, refresh the lock without changing unrelated packages, review the supported act API/test-renderer behavior, and rerun the full suite. Current framework-upgrade candidate is React19.2.8; this branch intentionally remains on React18.3.1. Renderer deprecation may motivate a separate ReactDOM/DOM test-tooling migration; fake hook scheduling is not a substitute for real mount coverage.
+This branch integrates the released framework main without rewriting the existing PR history. React, ReactDOM and renderer are19.2.8; all existing runtime lock entries, including top-level react-is19.2.6, remain unchanged. The renderer has a nested test-only react-is19.2.8. The seven focused suites cover83 scenarios. Renderer deprecation may motivate a separate ReactDOM/DOM test-tooling migration; fake hook scheduling is not a substitute for real mount coverage.
 
 ## Remaining release gates
 

@@ -10,7 +10,7 @@ function adminClient() {
 
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { error } = await requireAdmin();
   if (error) return error;
@@ -19,7 +19,7 @@ export async function PATCH(
     const { data, error } = await adminClient()
       .from('brands')
       .update({ remark: remark || null })
-      .eq('id', params.id)
+      .eq('id', (await params).id)
       .select('id, remark')
       .single();
     if (error) throw error;

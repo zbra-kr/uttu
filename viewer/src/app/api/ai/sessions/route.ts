@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 export async function GET() {
   let userId: string | null = null;
   try {
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const supabaseAuth = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
