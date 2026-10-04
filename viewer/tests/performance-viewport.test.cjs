@@ -25,6 +25,7 @@ function createFixture(variant, mobile, route='ranking', search='', tab='dash'){
   if(table==='brands')data=[{id:'brand-1',name:'Fixture'}];
   return Promise.resolve({data,error:null,count:data.length}).then(resolve,reject);
  };return(...args)=>{call.ops.push([name,...args]);return query}}});return query}};
+ sb.auth={getUser:async()=>({data:{user:{id:'fixture-user',email:'fixture@example.invalid'}}}),onAuthStateChange(){return{data:{subscription:{unsubscribe(){}}}}}};
  const cache={};const noop=()=>null;
  const inert=new Proxy({__esModule:true,default:noop},{get:(t,k)=>k in t?t[k]:noop});
  const modules={
@@ -32,6 +33,7 @@ function createFixture(variant, mobile, route='ranking', search='', tab='dash'){
   'next/navigation':{useRouter:()=>({push(){},replace(){}}),useSearchParams:()=>new URLSearchParams(search)},
   'next/link':{__esModule:true,default:({children,...props})=>React.createElement('a',props,children)},
   './supabase/client':{supabaseBrowser:()=>sb},'./collection-status':{},
+  '@/lib/supabase/client':{supabaseBrowser:()=>sb},
   '@/lib/rating-format':{formatFiveStarRating:()=>'',isLowFiveStarRating:()=>false},
   '@/lib/queries-me':{fetchNoteCountForEntity:async()=>0,logView:()=>{}},
   '@/components/me/NoteDrawer':{__esModule:true,default:noop,useSourceNoteDrawer:()=>({noteDrawerOpen:false,setNoteDrawerOpen(){}})},

@@ -71,6 +71,10 @@ jobs:
         run: npm run test:ratings
         working-directory: viewer
 
+      - name: Mobile review pagination regression tests
+        run: npm run test:reviews-mobile
+        working-directory: viewer
+
       - name: Matching score regression tests
         run: npm run test:matching
         working-directory: viewer

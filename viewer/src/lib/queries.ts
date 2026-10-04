@@ -509,6 +509,9 @@ export async function fetchReviews(opts: {
   sort?: 'recent' | 'rating_asc' | 'rating_desc' | 'helpful';
   limit?: number;
   offset?: number;
+  signal?: AbortSignal;
+  requireExactCount?: boolean;
+  stableOrder?: boolean;
 }): Promise<{ rows: ReviewRow[]; total: number }> {
   const {
     ratingMin = 1, ratingMax = 5, dateFrom, dateTo, keyword, ownOnly = true,
@@ -548,9 +551,13 @@ export async function fetchReviews(opts: {
   else if (sort === 'rating_asc') q = q.order('rating', { ascending: true });
   else if (sort === 'rating_desc') q = q.order('rating', { ascending: false });
   else if (sort === 'helpful') q = q.order('helpful_count', { ascending: false });
+  if (opts.stableOrder) q = q.order('id', { ascending: false });
+  if (opts.signal) q = q.abortSignal(opts.signal);
 
   const { data, error, count } = await q;
   if (error) throw error;
+  if (opts.requireExactCount && (!Array.isArray(data) || !Number.isSafeInteger(count) || count! < 0))
+    throw new Error('Review page count unavailable');
 
   return {
     rows: (data ?? []).map((r: any) => ({
@@ -625,12 +632,14 @@ export async function fetchBodyStats(productId: string): Promise<BodyStats> {
   return { byHeight, byWeight, totalSampled };
 }
 
-export async function fetchOwnBrands(): Promise<{ id: string; name: string }[]> {
-  const { data, error } = await supabase
+export async function fetchOwnBrands(signal?: AbortSignal): Promise<{ id: string; name: string }[]> {
+  let query = supabase
     .from('brands')
     .select('id, name')
     .eq('is_own', true)
     .order('name');
+  if (signal) query = query.abortSignal(signal);
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as { id: string; name: string }[];
 }
