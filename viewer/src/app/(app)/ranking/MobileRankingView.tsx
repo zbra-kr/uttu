@@ -1,5 +1,6 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { validateRankingSourceContext, type RankingSourceContext } from '@/lib/notes/ranking-context';
 import { useRouter } from 'next/navigation';
 import { fetchLatestRanking, type RankingRow } from '@/lib/queries';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
@@ -54,7 +55,9 @@ function RankChange({ change }: { change: number | null }) {
 
 const PAGE_SIZE = 50;
 
-export default function MobileRankingView() {
+export default function MobileRankingView({ insights, onInsightsScope }: {
+  insights?: ReactNode; onInsightsScope?: (scope: RankingSourceContext | null) => void;
+}) {
   const router = useRouter();
   const [cat, setCat] = useState('000');
   const [gf, setGf] = useState('A');
@@ -69,6 +72,11 @@ export default function MobileRankingView() {
   const loaderRef = useRef<HTMLDivElement>(null);
 
   const displayed = rows.slice(0, page * PAGE_SIZE);
+
+  useEffect(() => { onInsightsScope?.(validateRankingSourceContext({
+    version: 1, kind: 'ranking', period: 'today', fromDate: '', toDate: '', selectedCategory: cat, gender: gf, age,
+    price: [0, 50], companies: [], brands: [], ownOnly: false, moverOnly: false, sort: 'rank', sortDir: 'asc', page: 1,
+  })); }, [onInsightsScope, cat, gf, age]);
 
   useEffect(() => {
     setLoading(true);
@@ -127,6 +135,7 @@ export default function MobileRankingView() {
       </div>
 
       {/* 리스트 */}
+      {insights}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>
       ) : rows.length === 0 ? (

@@ -20,6 +20,7 @@
     "test:briefing-navigation": "node --test tests/briefing-navigation.test.cjs",
     "test:weekly-reviews": "node --test tests/weekly-review*.test.cjs",
     "test:framework": "node --test tests/framework-migration.test.cjs tests/help-route.test.cjs",
+    "test:ranking-daily": "node --test tests/ranking-daily-insights*.test.cjs",
     "test:performance": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/performance-*.test.cjs"
   },
   "dependencies": {

@@ -99,6 +99,10 @@ jobs:
         run: npm run test:performance
         working-directory: viewer
 
+      - name: Daily ranking insights regression tests
+        run: npm run test:ranking-daily
+        working-directory: viewer
+
       - name: Build
         # 빌드에 필요한 공개 환경변수만 주입 (service_role 키 불필요)
         env:

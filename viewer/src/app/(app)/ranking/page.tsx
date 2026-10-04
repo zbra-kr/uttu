@@ -3,6 +3,7 @@ import React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useResolvedViewport } from '@/hooks/useResolvedViewport';
 import MobileRankingView from './MobileRankingView';
+import RankingDailyInsights, { useRankingDailyInsights } from '@/components/ranking/RankingDailyInsights';
 import { PeriodFilter, FilterBlock, PillGroup, CheckRow, DismissChip, SearchSelect } from '@/components/ui/filters';
 import { IcDownload, IcChevL, IcChevR, IcEdit } from '@/components/ui/icons';
 import NoteDrawer, { useSourceNoteDrawer } from '@/components/me/NoteDrawer';
@@ -221,6 +222,9 @@ function RankingPageRoot() {
   const isMobile = viewport === 'mobile';
   const params = useSearchParams();
   const query = params.toString();
+  const [insightsScope, setInsightsScope] = React.useState<RankingSourceContext | null>(null);
+  const dailyLoad = useRankingDailyInsights(insightsScope);
+  const insights = <RankingDailyInsights scope={insightsScope} load={dailyLoad} compact={isMobile} />;
   const sourceContext = React.useMemo(() => {
     const modern = rankingContextFromSearchParams(new URLSearchParams(query));
     if (modern) return modern;
@@ -236,13 +240,14 @@ function RankingPageRoot() {
   const filterQuery = new URLSearchParams(query);
   filterQuery.delete('note'); filterQuery.delete('notes');
   if (viewport === null) return <div role="status" aria-live="polite" style={{ padding: 24, minHeight: 160 }}>랭킹을 불러오는 중…</div>;
-  if (isMobile && !hasSourceLink) return <MobileRankingView />;
+  if (isMobile && !hasSourceLink) return <MobileRankingView insights={insights} onInsightsScope={setInsightsScope} />;
   return <RankingDesktopView key={filterQuery.toString()} sourceContext={sourceContext}
-    sourceLink={hasSourceLink} compact={isMobile} />;
+    sourceLink={hasSourceLink} compact={isMobile} insights={insights} onInsightsScope={setInsightsScope} />;
 }
 
-function RankingDesktopView({ sourceContext, sourceLink, compact }: {
+function RankingDesktopView({ sourceContext, sourceLink, compact, insights, onInsightsScope }: {
   sourceContext: RankingSourceContext | null; sourceLink: boolean; compact: boolean;
+  insights?: React.ReactNode; onInsightsScope?: (scope: RankingSourceContext | null) => void;
 }) {
   const router = useRouter();
 
@@ -437,6 +442,13 @@ function RankingDesktopView({ sourceContext, sourceLink, compact }: {
       ? '이 화면의 조건을 안전하게 저장할 수 없습니다. 기간은 366일 이내, 회사·브랜드는 각각 20개 이하로 선택하고 선택 내용의 길이를 줄여 주세요.'
       : undefined;
 
+  const dailyScope = React.useMemo(() => validateRankingSourceContext({
+    version: 1, kind: 'ranking', period, fromDate, toDate, selectedCategory, gender, age,
+    price, companies: [...companies], brands: [...brands], ownOnly, moverOnly, sort, sortDir, page,
+    ...(queryFrom && queryTo ? { resolvedFromDate: queryFrom, resolvedToDate: queryTo } : {}),
+  }), [period, fromDate, toDate, selectedCategory, gender, age, price, companies, brands, ownOnly, moverOnly, sort, sortDir, page, queryFrom, queryTo]);
+  React.useEffect(() => { onInsightsScope?.(dailyScope); }, [onInsightsScope, dailyScope]);
+
   const rankingEntityLabel = [
     gender === 'M' ? '남성' : gender === 'F' ? '여성' : null,
     AGE_MAP[age] ?? null,
@@ -510,6 +522,7 @@ function RankingDesktopView({ sourceContext, sourceLink, compact }: {
         </div>
       </div>
 
+      {insights}
       <div className="grid" style={{ gridTemplateColumns: compact ? 'minmax(0, 1fr)' : '300px minmax(0, 1fr)', gap: 14 }}>
         {/* ===== 필터 레일 ===== */}
         <aside className="filter-rail">
