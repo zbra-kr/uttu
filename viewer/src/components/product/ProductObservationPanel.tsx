@@ -34,10 +34,12 @@ function ValidObservation({ value }: { value: ProductObservationContext }) {
 
   React.useEffect(() => {
     let cancelled = false, authEventSeen = false;
+    const generationRef = generation;
+    const currentReadRef = currentRead;
     const identity = (userId: string | null) => {
       if (cancelled) return;
-      generation.current++;
-      currentRead.current?.abort();
+      generationRef.current++;
+      currentReadRef.current?.abort();
       setLoaded(null);
       setAuth(previous => ({ ready: true, userId, epoch: previous.epoch + 1 }));
     };
@@ -51,8 +53,8 @@ function ValidObservation({ value }: { value: ProductObservationContext }) {
     }).catch(() => { if (!authEventSeen) identity(null); });
     return () => {
       cancelled = true;
-      generation.current++;
-      currentRead.current?.abort();
+      generationRef.current++;
+      currentReadRef.current?.abort();
       subscription.unsubscribe();
     };
   }, []);
