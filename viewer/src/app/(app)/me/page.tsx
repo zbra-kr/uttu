@@ -3,7 +3,7 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileMeView from './MobileMeView';
-import { IcEdit, IcBell, IcShield } from '@/components/ui/icons';
+import { IcEdit, IcBell } from '@/components/ui/icons';
 import Link from 'next/link';
 import { fetchMyProfile, uploadAvatar, MyProfile, fetchMyRecentNotes, fetchMentionsForMe, MyNote, fetchBookmarks, removeBookmark, Bookmark, EntityType, fetchViewHistory, ViewHistoryRow, fetchAllSavedFilters, deleteSavedFilter, SavedFilter, fetchMyStats, MyStats, fetchMyAiQuota, MyAiQuota } from '@/lib/queries-me';
 import ProfileEditModal from '@/components/me/ProfileEditModal';
@@ -187,8 +187,7 @@ function MeDesktopView() {
             </div>
             <div className="row-flex gap-6" style={{ marginTop: 12 }}>
               <button className="btn sm" onClick={() => setEditOpen(true)}><IcEdit /> 프로필 편집</button>
-              <Link href="/settings" className="btn sm"><IcBell /> 알림 설정</Link>
-              <Link href="/settings" className="btn sm"><IcShield /> 2FA</Link>
+              <Link href="/me#notifications" className="btn sm"><IcBell /> 알림 설정</Link>
             </div>
           </div>
         </div>
@@ -449,9 +448,9 @@ function MeDesktopView() {
             )}
           </section>
 
-          <section className="panel">
+          <section id="notifications" className="panel" aria-labelledby="notifications-heading" tabIndex={-1} style={{ scrollMarginTop: 72 }}>
             <div className="sec-head">
-              <h3>알림 구독</h3>
+              <h3 id="notifications-heading">알림 구독</h3>
             </div>
             <SubscriptionMatrix isAdmin={isAdmin} />
           </section>

@@ -26,7 +26,6 @@ const BREADCRUMBS: Record<string, string[]> = {
   '/matching':        ['자사 매칭'],
   '/admin':           ['매핑', '회사 ↔ 브랜드'],
   '/admin/mapping':   ['매핑', 'Corp Code'],
-  '/settings':        ['설정'],
   '/me':              ['마이페이지'],
 };
 
@@ -44,7 +43,6 @@ const CONTEXTS: Record<string, string[]> = {
   '/today':     ['오늘의 매거진'],
   '/matching':  ['자사 매칭'],
   '/admin':     ['공시 매핑'],
-  '/settings':  ['설정'],
   '/me':        ['마이페이지'],
 };
 

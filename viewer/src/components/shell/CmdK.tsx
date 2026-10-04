@@ -41,7 +41,7 @@ const PAGES = [
   { label: '브랜드 랭킹', path: '/brand-ranking' },
   { label: '회사 목록',  path: '/companies' },
   { label: '매핑',       path: '/admin/mapping' },
-  { label: '설정',       path: '/settings' },
+  { label: '내 프로필',   path: '/me' },
 ];
 
 type ResultItem =
