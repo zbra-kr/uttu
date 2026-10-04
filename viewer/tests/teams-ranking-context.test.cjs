@@ -110,11 +110,16 @@ test('duplicates are canonically deduplicated without changing named filters', (
   assert.deepEqual(parse(serialize(value)).companies, ['Z']);
 });
 
-function renderRanking(query, mobile, savedFilters) {
+function renderRanking(query, mobile, savedFilters, rows) {
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
-  let drawer;
+  let drawer, emptyArrays = 0;
+  const react = rows ? { ...React, useState(initial) {
+    if (Array.isArray(initial) && initial.length === 0 && emptyArrays++ === 0) initial = rows;
+    return React.useState(initial);
+  } } : React;
   const Page = load('src/app/(app)/ranking/page.tsx', {
+    react: { __esModule: true, default: react, ...react },
     'next/navigation': { useRouter: () => ({ push() {}, replace() {} }), useSearchParams: () => new URLSearchParams(query) },
     // These assertions inspect the resolved view; performance mount tests cover the pending SSR/client gate.
     '@/hooks/useResolvedViewport': { useResolvedViewport: () => mobile ? 'mobile' : 'desktop' },
@@ -157,7 +162,7 @@ test('mobile source render retains full filters and exact memo drawer in a one-c
   assert.match(html, /class="grid ranking-layout compact"/);
   const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/styles/app.css'), 'utf8');
   assert.match(css, /\.ranking-layout\.compact\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);\s*\}/);
-  assert.match(html, /class="panel ranking-table-scroll" role="region"[^>]*tabindex="0"/);
+  assert.match(html, /class="ranking-table-scroll" role="region"[^>]*tabindex="0"/);
   assert.match(css, /\.ranking-table-scroll\s*\{\s*overflow-x:\s*auto;\s*\}/);
   assert.match(html, /브랜드 \/ A/);
 });
@@ -205,4 +210,38 @@ test('relative dates remain exactly seven KST calendar days throughout the day',
       assert.equal(drawer.sourceContext.resolvedToDate, to, now);
     }
   } finally { global.Date = OriginalDate; }
+});
+
+function paginationInsideScrollport(html) {
+  const stack = [];
+  for (const match of html.matchAll(/<\/?(?:div|section)\b[^>]*>/g)) {
+    const tag = match[0];
+    if (tag.startsWith('</')) stack.pop();
+    else {
+      if (tag.includes('data-ranking-pagination')) return stack.some(value => value.includes('ranking-table-scroll'));
+      stack.push(tag);
+    }
+  }
+  throw new Error('Pagination must render for more than 50 rows');
+}
+const layoutRows = Array.from({ length: 120 }, (_, i) => ({
+  snapshot_date: '2026-10-04', rank_position: i + 1, musinsa_no: String(i + 1),
+  product_name: 'Sample ' + i, brand_name: 'Brand', company_name: 'Company',
+  category_code: '000', gender_filter: 'A', age_filter: 'AGE_BAND_ALL',
+  is_own: false, final_price: 10000, list_price: 12000, discount_rate: 0,
+  rank_change: 0, review_score: 4.8, review_count: 100,
+}));
+test('desktop pagination stays outside the horizontal table scrollport with 120 rows', () => {
+  const { html } = renderRanking('', false, undefined, layoutRows);
+  assert.equal(paginationInsideScrollport(html), false);
+  assert.match(html, /role="region"[^>]*tabindex="0"/);
+  assert.match(html, /min-width:840px/);
+});
+test('mobile source-link pagination stays outside the scrollport and keeps full-width date columns', () => {
+  const query = serialize(context({ selectedCategory: '000', gender: 'A', age: 'AGE_BAND_ALL',
+    companies: [], brands: [], ownOnly: false, moverOnly: false, price: [0, 50], page: 1 }));
+  const { html } = renderRanking(query, true, undefined, layoutRows);
+  assert.equal(paginationInsideScrollport(html), false);
+  assert.match(html, /min-width:904px/);
+  assert.match(html, /class="grid ranking-layout compact"/);
 });

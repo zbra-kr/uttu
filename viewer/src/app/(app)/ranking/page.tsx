@@ -682,8 +682,10 @@ function RankingDesktopView({ sourceContext, sourceLink, compact, insights, onIn
             </div>
           )}
 
-          <section className="panel ranking-table-scroll" role="region" aria-label="상품 랭킹 표" tabIndex={0} style={{ padding: 0 }}>
-            <div className="tbl" style={{ border: 'none', borderRadius: 0, minWidth: 1000 }}>
+          <section className="panel" style={{ padding: 0 }}>
+            <div className="ranking-table-scroll" role="region" aria-label="상품 랭킹 표" tabIndex={0}>
+            {/* Fixed columns/gaps/padding use 744px; retain 96px for the product name. */}
+            <div className="tbl" style={{ border: 'none', borderRadius: 0, minWidth: multiDay ? 904 : 840 }}>
               {(() => {
                 const cols = multiDay
                   ? '54px 36px 44px 1fr 116px 60px 60px 88px 54px 46px 56px 56px'
@@ -820,8 +822,10 @@ function RankingDesktopView({ sourceContext, sourceLink, compact, insights, onIn
               )}
             </div>
 
+            </div>
+
             {totalPages > 1 && (
-              <div className="row-flex between center" style={{ padding: '10px 14px', borderTop: '0.5px solid var(--bs)' }}>
+              <div data-ranking-pagination className="row-flex between center" style={{ padding: '10px 14px', borderTop: '0.5px solid var(--bs)' }}>
                 <span className="mono dim" style={{ fontSize: 11 }}>
                   {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sorted.length)} / {sorted.length.toLocaleString()}
                 </span>

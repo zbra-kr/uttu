@@ -1,0 +1,1 @@
+export const useOnboarding=()=>({active:false,step:0,replay(){}});
