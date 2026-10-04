@@ -63,6 +63,12 @@ function drawer(initialProps = {}) {
   render();
   return {
     requests, flush,
+    alerts: () => nodes(tree, node => node.props?.role === 'alert'),
+    empty: () => nodes(tree, node => node.props?.msg === '이 화면의 가이드는 아직 준비되지 않았습니다.'),
+    retry() {
+      const button = nodes(tree, node => node.type === 'button' && node.props.children === '다시 시도')[0];
+      assert.ok(button); button.props.onClick(); render();
+    },
     update(next) { props = { ...props, ...next }; return render(); },
     body: () => nodes(tree, node => node.type === 'Renderer')[0]?.props.content ?? null,
     select(title) {
@@ -204,4 +210,38 @@ test('Tiptap content changes reinitialize the readonly editor; same content does
   assert.deepEqual(rendered(updated), updated); assert.equal(creations, 3);
   assert.deepEqual(rendered(first), first); assert.equal(creations, 4);
   assert.deepEqual(rendered(null), {}); assert.equal(creations, 5);
+});
+
+test('help request failure is distinct from missing content and can be retried', async () => {
+  const h = drawer();
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    h.requests[0].reject(new Error('offline')); await h.flush();
+    assert.equal(h.alerts().length, 1);
+    assert.equal(h.empty().length, 0);
+    h.retry();
+    assert.equal(h.requests.length, 2);
+    assert.equal(h.alerts().length, 0);
+    const recovered = article('recovered');
+    h.requests[1].resolve([recovered]); await h.flush();
+    assert.deepEqual(h.body(), recovered.content);
+    assert.equal(h.alerts().length, 0);
+    h.update({ open: false }); h.update({ open: true });
+    assert.equal(h.requests.length, 2);
+  } finally { console.error = originalError; h.dispose(); }
+});
+
+test('a successful empty result and another route do not inherit a failed guide state', async () => {
+  const h = drawer();
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    h.requests[0].reject(new Error('offline')); await h.flush();
+    h.update({ pagePath: '/reviews' });
+    assert.equal(h.alerts().length, 0);
+    h.requests[1].resolve([]); await h.flush();
+    assert.equal(h.alerts().length, 0);
+    assert.equal(h.empty().length, 1);
+  } finally { console.error = originalError; h.dispose(); }
 });

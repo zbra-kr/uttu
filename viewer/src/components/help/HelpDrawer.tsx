@@ -17,6 +17,9 @@ export default function HelpDrawer({ pagePath, open, onClose }: Props) {
   const [loaded, setLoaded] = React.useState<{ pagePath: string; articles: HelpArticle[] } | null>(null);
   const [loading,   setLoading]   = React.useState(false);
   const [activeIdx, setActiveIdx] = React.useState(0);
+  const [failedPath, setFailedPath] = React.useState<string | null>(null);
+  const [retry, setRetry] = React.useState(0);
+  const failed = failedPath === pagePath && pagePath !== null;
   const loadedPath = loaded?.pagePath;
   const articles = loaded?.pagePath === pagePath ? loaded.articles : [];
 
@@ -42,14 +45,17 @@ export default function HelpDrawer({ pagePath, open, onClose }: Props) {
 
     let cancelled = false;
     setLoading(true);
+    setFailedPath(null);
     fetchHelpByPath(pagePath)
       .then(a => {
         if (!cancelled) setLoaded({ pagePath, articles: a });
       })
-      .catch(error => { if (!cancelled) console.error(error); })
+      .catch(error => {
+        if (!cancelled) { setFailedPath(pagePath); console.error(error); }
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, pagePath, loadedPath]);
+  }, [open, pagePath, loadedPath, retry]);
 
   const active = articles[activeIdx] ?? null;
 
@@ -150,7 +156,14 @@ export default function HelpDrawer({ pagePath, open, onClose }: Props) {
           <EmptyState msg="페이지 경로를 감지할 수 없습니다." />
         )}
 
-        {!loading && pagePath && articles.length === 0 && (
+        {!loading && failed && (
+          <div role="alert" style={{ textAlign: 'center', paddingTop: 40, color: 'var(--f3)', fontSize: 'var(--fs-sm)' }}>
+            <p>가이드를 불러오지 못했습니다. 다시 시도해 주세요.</p>
+            <button type="button" className="btn sm" onClick={() => setRetry(value => value + 1)}>다시 시도</button>
+          </div>
+        )}
+
+        {!loading && !failed && pagePath && articles.length === 0 && (
           <EmptyState msg="이 화면의 가이드는 아직 준비되지 않았습니다." />
         )}
 
