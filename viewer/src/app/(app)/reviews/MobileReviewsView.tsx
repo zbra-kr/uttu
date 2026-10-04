@@ -223,7 +223,7 @@ export default function MobileReviewsView() {
             <p className="dim" style={{ margin: 0, fontSize: 11 }}>조회 중 자료가 바뀔 수 있습니다. 표시된 일부 리뷰를 전체 리뷰 분석으로 해석하지 마세요.</p>
             {current.error && <div role="alert">추가 리뷰를 불러오지 못했습니다.</div>}
             {current.loading && <div role="status">추가 리뷰를 불러오는 중…</div>}
-            {current.nextOffset < total || current.error || current.loading ? <button type="button" className="btn sm" aria-disabled={current.loading} onClick={event => {
+            {current.nextOffset < total || current.error || current.loading ? <button type="button" className="btn sm" aria-disabled={current.loading} onBlur={() => { focusEnd.current = false; }} onClick={event => {
               if (current.loading) return;
               focusEnd.current = document.activeElement === event.currentTarget;
               if (current.error) setRetry(value => value + 1);

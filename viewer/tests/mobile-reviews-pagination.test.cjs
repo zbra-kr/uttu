@@ -62,6 +62,24 @@ test('load-more action stays mounted while pending, blocks repeated activation a
   } finally { if (root) await React.act(async () => root.unmount()); }
 });
 
+test('last-page completion moves focus only when the paging action retained focus', async () => {
+  for (const tabAway of [false, true]) {
+    const f = fixture(); let root, focusCalls = 0;
+    const activeButton = {};
+    try {
+      await React.act(async () => { root = Renderer.create(React.createElement(f.View), { createNodeMock: node => node.props.role === 'status' ? { focus() { focusCalls++; } } : null }); });
+      await React.act(async () => f.brands[0].resolve([{ id: 'own', name: 'Own' }]));
+      await React.act(async () => f.reviews[0].resolve({ rows: Array.from({ length: 50 }, (_, i) => row(i)), total: 51 }));
+      const action = buttons(root).find(button => button.props['aria-disabled'] === false);
+      document.activeElement = activeButton;
+      await React.act(async () => action.props.onClick({ currentTarget: activeButton }));
+      if (tabAway) { document.activeElement = {}; await React.act(async () => action.props.onBlur()); }
+      await React.act(async () => f.reviews[1].resolve({ rows: [row(50)], total: 51 }));
+      assert.equal(focusCalls, tabAway ? 0 : 1);
+    } finally { document.activeElement = null; if (root) await React.act(async () => root.unmount()); }
+  }
+});
+
 test('same-batch account B event invalidates A brands before effect cleanup and prevents A-scoped reads', async () => {
   const f = fixture(); let root;
   try {
