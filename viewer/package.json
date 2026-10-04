@@ -15,6 +15,7 @@
     "test:ai-session": "node --test tests/ai-session-access.test.cjs",
     "test:ratings": "node --test tests/rating-format.test.cjs",
     "test:reviews-mobile": "node --test tests/mobile-reviews-*.test.cjs",
+    "test:review-stats": "node --test tests/review-stats-*.test.cjs",
     "test:matching": "node --test tests/matching-score.test.cjs",
     "test:collection-status": "node --test tests/collection-status.test.cjs",
     "test:briefing-evidence": "node --test tests/briefing-evidence.test.cjs",

@@ -167,7 +167,7 @@ export default function ShellClient({ children }: { children: React.ReactNode })
   const todayStr = kstToday().replace(/-/g, '.');
   const a       = shellStats?.anomalyCount ?? 0;
   const rv      = shellStats?.reviewTotal ?? 0;
-  const rvAvg   = shellStats ? shellStats.reviewAvgRating.toFixed(2) : null;
+  const rvAvg   = shellStats?.reviewAvgRating?.toFixed(2) ?? null;
   const rvLow   = shellStats?.reviewLowCount ?? 0;
   const snap    = shellStats?.snapNew7d ?? 0;
   const mag     = shellStats?.magazineNew7d ?? 0;

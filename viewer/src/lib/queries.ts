@@ -583,16 +583,19 @@ export async function fetchReviews(opts: {
   };
 }
 
-export async function fetchReviewStats(days = 30): Promise<{
+export interface ReviewStats {
   total: number; avgRating: number; lowCount: number; ratingDist: number[]; imageCount: number;
-}> {
+}
+
+export async function fetchReviewStats(days = 30, signal?: AbortSignal): Promise<ReviewStats> {
   const dateFilter = days !== 999
     ? kstDaysAgo(days)
     : null;
 
   const makeQ = () => {
     const q = supabase.from('reviews').select('*', { count: 'exact', head: true });
-    return dateFilter ? q.gte('review_date', dateFilter) : q;
+    const filtered = dateFilter ? q.gte('review_date', dateFilter) : q;
+    return signal ? filtered.abortSignal(signal) : filtered;
   };
 
   const [res5, res4, res3, res2, res1, imgRes] = await Promise.all([
@@ -603,6 +606,10 @@ export async function fetchReviewStats(days = 30): Promise<{
     makeQ().eq('rating', 1),
     makeQ().eq('has_image', true),
   ]);
+
+  if ([res5, res4, res3, res2, res1, imgRes].some(result =>
+    result.error || !Number.isSafeInteger(result.count) || result.count! < 0))
+    throw new Error('Review statistics unavailable');
 
   const ratingDist = [res5.count ?? 0, res4.count ?? 0, res3.count ?? 0, res2.count ?? 0, res1.count ?? 0];
   const total = ratingDist.reduce((s, c) => s + c, 0);
@@ -2168,9 +2175,9 @@ export interface CollectionJob {
 
 export interface ShellStats {
   anomalyCount: number;
-  reviewTotal: number;
-  reviewAvgRating: number;
-  reviewLowCount: number;
+  reviewTotal: number | null;
+  reviewAvgRating: number | null;
+  reviewLowCount: number | null;
   snapNew7d: number;
   magazineNew7d: number;
   promoActiveCount: number;
@@ -2193,9 +2200,9 @@ export async function fetchShellStats(): Promise<ShellStats> {
 
   return {
     anomalyCount:     anomalyRes.status === 'fulfilled' ? ((anomalyRes.value as any).count ?? 0) : 0,
-    reviewTotal:      reviewRes.status === 'fulfilled' ? reviewRes.value.total : 0,
-    reviewAvgRating:  reviewRes.status === 'fulfilled' ? reviewRes.value.avgRating : 0,
-    reviewLowCount:   reviewRes.status === 'fulfilled' ? reviewRes.value.lowCount : 0,
+    reviewTotal:      reviewRes.status === 'fulfilled' ? reviewRes.value.total : null,
+    reviewAvgRating:  reviewRes.status === 'fulfilled' ? reviewRes.value.avgRating : null,
+    reviewLowCount:   reviewRes.status === 'fulfilled' ? reviewRes.value.lowCount : null,
     snapNew7d:        snapRes.status === 'fulfilled' ? ((snapRes.value as any).count ?? 0) : 0,
     magazineNew7d:    magRes.status === 'fulfilled' ? ((magRes.value as any).count ?? 0) : 0,
     promoActiveCount: promoRes.status === 'fulfilled' ? ((promoRes.value as any).count ?? 0) : 0,

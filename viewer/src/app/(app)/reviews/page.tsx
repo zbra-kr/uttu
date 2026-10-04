@@ -3,13 +3,14 @@ import { formatFiveStarRating, isLowFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
 import Link from 'next/link';
 import { useResolvedViewport } from '@/hooks/useResolvedViewport';
+import { useReviewStats } from '@/hooks/useReviewStats';
 import MobileReviewsView from './MobileReviewsView';
 import NoteDrawer from '@/components/me/NoteDrawer';
 import { IcArrowUR, IcX } from '@/components/ui/icons';
 import { exportBrowseReviews, exportProductReviews } from '@/lib/excel-export';
 import { PeriodFilter, FilterBlock, CheckRow } from '@/components/ui/filters';
 import {
-  fetchReviews, fetchReviewStats, fetchOwnProducts, fetchOwnBrands,
+  fetchReviews, fetchOwnProducts, fetchOwnBrands,
   fetchCsAnomalies, fetchProductBrief, fetchOwnProductsWithPrices,
   CATEGORY_MAP,
   type ReviewRow, type OwnProduct, type CsAnomaly, type OwnProductWithPrice,
@@ -241,15 +242,9 @@ function ReviewsDesktopView() {
 // ===========================================================================
 function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
   const [days, setDays] = React.useState(30);
-  const [stats, setStats] = React.useState<{
-    total: number; avgRating: number; lowCount: number; ratingDist: number[]; imageCount: number;
-  } | null>(null);
+  const { state: statsState, stats, retry: retryStats } = useReviewStats(days);
   const [ownProducts, setOwnProducts] = React.useState<OwnProduct[]>([]);
   const [csAnomalies, setCsAnomalies] = React.useState<CsAnomaly[]>([]);
-
-  React.useEffect(() => {
-    fetchReviewStats(days).then(setStats).catch(console.error);
-  }, [days]);
 
   React.useEffect(() => {
     fetchOwnProducts(10).then(setOwnProducts).catch(console.error);
@@ -282,6 +277,12 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
           <button className={`btn sm ${days === 999 ? 'active' : ''}`} onClick={() => setDays(999)}>전체</button>
         </div>
       </div>
+
+      {statsState === 'error' ? <div role="alert" className="panel" style={{ padding: 12, marginTop: 8 }}>
+        리뷰 통계를 불러오지 못했습니다. <button type="button" className="btn sm" onClick={retryStats}>다시 조회</button>
+      </div> : statsState === 'loading' ? <p role="status" className="dim">리뷰 통계를 불러오는 중…</p>
+        : statsState === 'signedout' ? <p role="status" className="dim">로그인 후 리뷰 통계를 조회할 수 있습니다.</p>
+        : stats?.total === 0 && <p role="status" className="dim">이 기간에 일치하는 리뷰가 없습니다.</p>}
 
       {/* KPIs */}
       <div className="grid grid-5 gap-8">

@@ -24,7 +24,7 @@ fixtureModule._compile(fixturePrefix + '\nmodule.exports={createFixture,mount,un
 const { createFixture, mount, unmount, flush, React, Renderer, SSR } = fixtureModule.exports;
 const { act } = React;
 const plain = value => JSON.parse(JSON.stringify(value));
-const helperLedger = fixture => plain(fixture.helpers).map(x => ({ ...x, args: x.args.map(arg => { if (!arg || typeof arg !== 'object') return arg; const { signal, ...rest } = arg; return rest; }) }));
+const helperLedger = fixture => plain(fixture.helpers.map(x => ({ ...x, args: x.args.filter(arg => !(arg instanceof AbortSignal)).map(arg => { if (!arg || typeof arg !== 'object') return arg; const { signal, ...rest } = arg; return rest; }) })));
 const dispatchLedger = fixture => plain(fixture.requests).map(x => ({ ...x, ops: x.ops.filter(op => op[0] !== 'abortSignal') }));
 const beforeResolve = fixture => fixture.effects.slice(0, fixture.effects.indexOf('resolve-viewport'));
 const rankingHelpers = fixture => fixture.helpers.filter(call => call.name === 'fetchLatestRanking');
@@ -107,9 +107,24 @@ async function withPair(route, mobile, search, tab, operation) {
 
   for (const tab of ['dash', 'browse', 'product-browse', 'anomaly']) {
     await withPair('reviews', false, '', tab, async (a, b, ar, br) => {
-      assert.deepEqual(helperLedger(a), helperLedger(b));
-      assert.deepEqual(dispatchLedger(a), dispatchLedger(b));
-      assert.deepEqual(plain(ar.toJSON()), plain(br.toJSON()));
+      if (tab === 'dash') {
+        const sorted = entries => entries.sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)));
+        assert.deepEqual(sorted(helperLedger(a)), sorted(helperLedger(b)));
+        assert.deepEqual(sorted(dispatchLedger(a)), sorted(dispatchLedger(b)));
+        const tree = plain(br.toJSON());
+        const removeEmptyStatus = node => {
+          if (!node || typeof node !== 'object') return node;
+          if (Array.isArray(node)) return node.map(removeEmptyStatus).filter(Boolean);
+          if (node.type === 'p' && node.props.role === 'status' && node.children?.join('') === '이 기간에 일치하는 리뷰가 없습니다.') return null;
+          return { ...node, children: node.children?.map(removeEmptyStatus).filter(Boolean) ?? null };
+        };
+        assert.equal(br.root.findAll(x => x.type === 'p' && x.props.role === 'status' && x.children.join('') === '이 기간에 일치하는 리뷰가 없습니다.').length, 1);
+        assert.deepEqual(plain(ar.toJSON()), removeEmptyStatus(tree));
+      } else {
+        assert.deepEqual(helperLedger(a), helperLedger(b));
+        assert.deepEqual(dispatchLedger(a), dispatchLedger(b));
+        assert.deepEqual(plain(ar.toJSON()), plain(br.toJSON()));
+      }
       results.push({ case: `desktop reviews ${tab}: helper/dispatch/serialized settled host-tree parity`, queryDispatches: b.requests.length });
     });
   }

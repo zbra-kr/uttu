@@ -13,6 +13,7 @@ const live = {
   'ranking-context.ts': 'src/lib/notes/ranking-context.ts',
   'useViewport.ts': 'src/hooks/useViewport.ts',
   'useResolvedViewport.ts': 'src/hooks/useResolvedViewport.ts',
+  'useReviewStats.ts': 'src/hooks/useReviewStats.ts',
   'format.ts': 'src/lib/format.ts',
 };
 const provenance = JSON.parse(fs.readFileSync(path.join(baseline, 'provenance.json')));
