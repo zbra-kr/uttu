@@ -154,8 +154,11 @@ test('mobile source render retains full filters and exact memo drawer in a one-c
   const { html, drawer } = renderRanking(query, true);
   assert.deepEqual(drawer.sourceContext, validate(context()));
   assert.equal(drawer.entity_id, entity);
-  assert.match(html, /grid-template-columns:minmax\(0, 1fr\)/);
-  assert.match(html, /overflow-x:auto/);
+  assert.match(html, /class="grid ranking-layout compact"/);
+  const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/styles/app.css'), 'utf8');
+  assert.match(css, /\.ranking-layout\.compact\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);\s*\}/);
+  assert.match(html, /class="panel ranking-table-scroll" role="region"[^>]*tabindex="0"/);
+  assert.match(css, /\.ranking-table-scroll\s*\{\s*overflow-x:\s*auto;\s*\}/);
   assert.match(html, /브랜드 \/ A/);
 });
 
