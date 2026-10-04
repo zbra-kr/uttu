@@ -20,6 +20,7 @@ test('partial, duplicate, unknown and hostile observation contexts are invalid r
   q=>q.set('date','2026-02-30'),q=>q.set('category','invalid'),q=>q.set('gender','X'),
   q=>q.set('age','unknown'),q=>q.set('back','https://evil.invalid/'),
   q=>q.set('back','//evil.invalid/ranking?'+source),q=>q.set('back','/ranking?context=ranking-v1&unknown=1'),
+  q=>q.set('date','2026-10-04'),q=>q.set('category','001'),
   q=>q.set('extra','1'),
  ]){const q=new URLSearchParams(good);mutate(q);assert.equal(api.parseProductObservation(q).kind,'invalid',q.toString());}
  assert.throws(()=>api.productObservationHref({...value,store:'other'}));

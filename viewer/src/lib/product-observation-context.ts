@@ -22,10 +22,12 @@ function validProduct(value: string | null): value is string {
   return !!value && /^[1-9]\d{0,15}$/.test(value) && Number.isSafeInteger(Number(value));
 }
 
-function validBack(value: string): boolean {
+function validBack(value: string, date: string, category: string, gender: string, age: string): boolean {
   if (!value.startsWith('/ranking?') || value.length > 6009 || value.includes('#')) return false;
   const query = new URLSearchParams(value.slice('/ranking?'.length));
-  return rankingContextFromSearchParams(query) !== null;
+  const source = rankingContextFromSearchParams(query);
+  return !!source && source.resolvedFromDate === date && source.resolvedToDate === date
+    && source.selectedCategory === category && source.gender === gender && source.age === age;
 }
 
 export function parseProductObservation(params: URLSearchParams): ParsedProductObservation {
@@ -37,7 +39,7 @@ export function parseProductObservation(params: URLSearchParams): ParsedProductO
   if (params.get('obs') !== 'ranking-v1' || store !== DAILY_STORE || !validProduct(product)
     || !validDailyDate(date) || !category || !gender || !age
     || !validateDailyRequest({ categoryCode: category, genderFilter: gender, ageFilter: age, date })
-    || (back !== null && !validBack(back))) return { kind: 'invalid' };
+    || (back !== null && !validBack(back, date, category, gender, age))) return { kind: 'invalid' };
   return { kind: 'valid', value: { product, store, date, category, gender, age, ...(back ? { back } : {}) } };
 }
 
