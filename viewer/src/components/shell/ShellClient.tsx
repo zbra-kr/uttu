@@ -212,7 +212,7 @@ export default function ShellClient({ children }: { children: React.ReactNode })
 
   return (
     <>
-      <div className="shell">
+      <div className={`shell${presentationPathname === '/ranking' ? ' ranking-shell' : ''}`}>
         <Sidebar collapsed={sbCollapsed} onToggle={toggleSb} theme={theme} navCounts={navCounts} />
         <main className="main">
           <Topbar

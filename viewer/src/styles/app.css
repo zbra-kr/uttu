@@ -1280,3 +1280,13 @@ hr.hr-d { border: none; border-top: 1px dashed var(--bs); margin: 0; }
   .shell .main { display: block; overflow-y: auto; }
   .shell .main .main-body { padding: 13px; }
 }
+
+/* Ranking keeps page actions visible; wide data scrolls inside its table. */
+.shell.ranking-shell { min-width: 0; grid-template-columns: var(--sb-w) minmax(0, 1fr); }
+.ranking-title { flex-wrap: wrap; }
+.ranking-layout { grid-template-columns: 300px minmax(0, 1fr); }
+.ranking-layout.compact { grid-template-columns: minmax(0, 1fr); }
+.ranking-table-scroll { overflow-x: auto; }
+@media (min-width: 768px) and (max-width: 1100px) {
+  .ranking-layout { grid-template-columns: minmax(0, 1fr); }
+}

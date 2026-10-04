@@ -505,7 +505,7 @@ function RankingDesktopView({ sourceContext, sourceLink, compact, insights, onIn
           메모 작성 시 조회 범위: {pinnedRange.from}{pinnedRange.from !== pinnedRange.to ? ` ~ ${pinnedRange.to}` : ''} · 기간을 변경하면 현재 기준으로 조회합니다.
         </p>
       )}
-      <div className="page-title" style={compact ? { flexWrap: 'wrap', padding: '0 4px' } : undefined}>
+      <div className="page-title ranking-title" style={compact ? { flexWrap: 'wrap', padding: '0 4px' } : undefined}>
         <h1>상품 랭킹</h1>
         {snapshotDate && <span className="chip mono">{periodLabel} · {snapshotDate} 수집</span>}
         <span className="sub">전체 상품 랭킹 · 회사·브랜드·필터 적용</span>
@@ -523,7 +523,7 @@ function RankingDesktopView({ sourceContext, sourceLink, compact, insights, onIn
       </div>
 
       {insights}
-      <div className="grid" style={{ gridTemplateColumns: compact ? 'minmax(0, 1fr)' : '300px minmax(0, 1fr)', gap: 14 }}>
+      <div className={`grid ranking-layout${compact ? ' compact' : ''}`} style={{ gap: 14 }}>
         {/* ===== 필터 레일 ===== */}
         <aside className="filter-rail">
           <div className="frh">
@@ -682,8 +682,8 @@ function RankingDesktopView({ sourceContext, sourceLink, compact, insights, onIn
             </div>
           )}
 
-          <section className="panel" style={{ padding: 0, overflowX: compact ? 'auto' : undefined }}>
-            <div className="tbl" style={{ border: 'none', borderRadius: 0, minWidth: compact ? 1000 : undefined }}>
+          <section className="panel ranking-table-scroll" role="region" aria-label="상품 랭킹 표" tabIndex={0} style={{ padding: 0 }}>
+            <div className="tbl" style={{ border: 'none', borderRadius: 0, minWidth: 1000 }}>
               {(() => {
                 const cols = multiDay
                   ? '54px 36px 44px 1fr 116px 60px 60px 88px 54px 46px 56px 56px'
