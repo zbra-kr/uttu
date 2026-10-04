@@ -12,13 +12,20 @@ const query = new URL(productObservationHref(base), 'https://local.invalid').sea
 const row = { product: base.product, date: base.date, rank: 8, name: 'Observed jacket', brand: 'Observed brand', price: 39000, discount: 20, own: null };
 const Link = ({ href, children, ...props }) => React.createElement('a', { href, ...props }, children);
 
-function fixture() {
+function fixture({ lateIdentity = false } = {}) {
   const calls = [];
+  const listeners = new Set();
+  const identityCalls = [];
+  const client = { auth: {
+    onAuthStateChange(fn) { listeners.add(fn); return { data: { subscription: { unsubscribe() { listeners.delete(fn); } } } }; },
+    getUser() { return lateIdentity ? new Promise(resolve => identityCalls.push(resolve)) : Promise.resolve({ data: { user: { id: 'account-a' } } }); },
+  } };
   const Panel = load('src/components/product/ProductObservationPanel.tsx', {
     'next/link': { __esModule: true, default: Link },
+    '@/lib/supabase/client': { supabaseBrowser: () => client },
     '@/lib/queries-product-observation': { fetchProductObservation: (context, signal) => new Promise(resolve => calls.push({ context, signal, resolve })) },
   }).default;
-  return { Panel, calls };
+  return { Panel, calls, identityCalls, auth(event, id) { for (const fn of [...listeners]) fn(event, id ? { user: { id } } : null); } };
 }
 
 test('real observation panel loads an exact context and keeps unknown ownership unknown', async () => {
@@ -33,6 +40,8 @@ test('real observation panel loads an exact context and keeps unknown ownership 
     assert.match(html, /Observed jacket/);
     assert.match(html, /39,000/);
     assert.match(html, /미확인/);
+    assert.match(html, /현재 상품 레코드의 자사 분류/);
+    assert.match(html, /관측일 당시 분류는 확인되지 않습니다/);
   } finally { if (root) await React.act(async () => root.unmount()); }
 });
 
@@ -66,5 +75,45 @@ test('source note return survives the rendered Product panel', async () => {
     await React.act(async () => { root = Renderer.create(React.createElement(Panel, { query: observedQuery })); });
     assert.equal(calls.length, 1);
     assert.equal(root.root.findByType('a').props.href, back);
+  } finally { if (root) await React.act(async () => root.unmount()); }
+});
+
+test('same-URL account change clears settled observation; sign-out clears it and stops reads', async () => {
+  const f = fixture(); let root;
+  try {
+    await React.act(async () => { root = Renderer.create(React.createElement(f.Panel, { query })); });
+    assert.equal(f.calls.length, 1);
+    await React.act(async () => f.calls[0].resolve({ status: 'ready', row: { ...row, name: 'Account A observation' } }));
+    assert.match(JSON.stringify(root.toJSON()), /Account A observation/);
+    await React.act(async () => f.auth('SIGNED_IN', 'account-b'));
+    assert.equal(f.calls.length, 2);
+    assert.doesNotMatch(JSON.stringify(root.toJSON()), /Account A observation/);
+    await React.act(async () => f.calls[1].resolve({ status: 'ready', row: { ...row, name: 'Account B observation' } }));
+    assert.match(JSON.stringify(root.toJSON()), /Account B observation/);
+    await React.act(async () => f.auth('SIGNED_OUT', null));
+    assert.doesNotMatch(JSON.stringify(root.toJSON()), /Account B observation/);
+    assert.equal(f.calls.length, 2);
+  } finally { if (root) await React.act(async () => root.unmount()); }
+});
+
+test('late account A result and late getUser cannot republish after same-URL sign-out or account B', async () => {
+  const f = fixture({ lateIdentity: true }); let root;
+  try {
+    await React.act(async () => { root = Renderer.create(React.createElement(f.Panel, { query })); });
+    assert.equal(f.calls.length, 0);
+    await React.act(async () => f.auth('SIGNED_IN', 'account-a'));
+    assert.equal(f.calls.length, 1);
+    const old = f.calls[0];
+    await React.act(async () => f.auth('SIGNED_OUT', null));
+    assert.equal(old.signal.aborted, true);
+    await React.act(async () => old.resolve({ status: 'ready', row: { ...row, name: 'Stale account A' } }));
+    await React.act(async () => f.identityCalls[0]({ data: { user: { id: 'account-a' } } }));
+    assert.equal(f.calls.length, 1);
+    assert.doesNotMatch(JSON.stringify(root.toJSON()), /Stale account A/);
+    await React.act(async () => f.auth('SIGNED_IN', 'account-b'));
+    assert.equal(f.calls.length, 2);
+    await React.act(async () => f.calls[1].resolve({ status: 'ready', row: { ...row, name: 'Account B only' } }));
+    assert.match(JSON.stringify(root.toJSON()), /Account B only/);
+    assert.doesNotMatch(JSON.stringify(root.toJSON()), /Stale account A/);
   } finally { if (root) await React.act(async () => root.unmount()); }
 });

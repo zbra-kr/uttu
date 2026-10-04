@@ -6,6 +6,7 @@ import { Suspense } from 'react';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileProductDetailView from './MobileProductDetailView';
 import ProductObservationPanel from '@/components/product/ProductObservationPanel';
+import { parseProductObservation } from '@/lib/product-observation-context';
 import {
   LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot,
@@ -279,6 +280,9 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 function ProductPageRoot() {
   const isMobile = useIsMobile();
   const query = useSearchParams().toString();
+  // An explicitly malformed observation cannot fall through to parseInt-based legacy readers.
+  if (parseProductObservation(new URLSearchParams(query)).kind === 'invalid')
+    return <ProductObservationPanel query={query} />;
   if (isMobile) return <><ProductObservationPanel query={query} /><MobileProductDetailView /></>;
   return (
     <>
