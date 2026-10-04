@@ -7,11 +7,12 @@ import TeamsSetupClient from './TeamsSetupClient';
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Teams 연결 · UTTU' };
 
-export default async function TeamsSetupPage({ searchParams = {} }: {
-  searchParams?: { next?: string | string[]; error?: string | string[]; attempted?: string | string[] };
+export default async function TeamsSetupPage({ searchParams }: {
+  searchParams?: Promise<{ next?: string | string[]; error?: string | string[]; attempted?: string | string[] }>;
 }) {
-  const nextPath = safeTeamsSetupNext(searchParams.next);
-  const initialError = searchParams.error === 'oauth';
+  const query = await searchParams ?? {};
+  const nextPath = safeTeamsSetupNext(query.next);
+  const initialError = query.error === 'oauth';
   const context = await getTeamsSetupContext();
 
   if (!context.user) redirect(`/login?redirect=${encodeURIComponent(nextPath)}`);
@@ -26,6 +27,6 @@ export default async function TeamsSetupPage({ searchParams = {} }: {
     reason={context.decision.reason}
     canConnect={context.canConnect}
     initialError={initialError}
-    attempted={searchParams.attempted !== undefined}
+    attempted={query.attempted !== undefined}
   />;
 }

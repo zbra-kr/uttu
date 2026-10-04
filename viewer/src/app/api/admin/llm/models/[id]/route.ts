@@ -3,12 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { error, ss } = await requireAdmin();
   if (error) return error;
 
-  const { id } = params;
+  const { id } = await params;
   const patch = await req.json() as {
     is_active?:    boolean;
     is_default?:   boolean;
@@ -53,12 +53,12 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const { error, ss } = await requireAdmin();
   if (error) return error;
 
-  const { id } = params;
+  const { id } = await params;
 
   const { data: model } = await ss
     .from('ai_allowed_models')
