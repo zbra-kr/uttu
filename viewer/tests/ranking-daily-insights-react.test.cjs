@@ -57,3 +57,59 @@ test('actual route root retains the daily read across matching viewport changes 
  search='period=today&category=000&gender=A&age=AGE_BAND_ALL&notes=open';root=await mount(Page,{});const count=f.calls.length;search='period=today&category=000&gender=A&age=AGE_BAND_ALL';await update(root,Page,{});assert.equal(f.calls.length,count);
  }finally{if(root)await unmount(root);for(const [key,value]of Object.entries(saved)){if(value===undefined)delete global[key];else global[key]=value;}}
 });
+
+function noteRouteFixture({mobile=false,tableEmpty=false}={}){
+ const f=fixture(),listeners=new Set(),media={matches:mobile,addEventListener(_event,fn){listeners.add(fn)},removeEventListener(_event,fn){listeners.delete(fn)}};
+ const saved={window:global.window,document:global.document,localStorage:global.localStorage,IntersectionObserver:global.IntersectionObserver};let search='';const navigation=[];
+ global.window={matchMedia:()=>media,addEventListener(){},removeEventListener(){},dispatchEvent(){}};global.document={addEventListener(){},removeEventListener(){}};global.localStorage={getItem:()=>null,setItem(){}};global.IntersectionObserver=class{observe(){}disconnect(){}};
+ const router={push(href){navigation.push(href);search=new URL(href,'https://fixture.test').search.slice(1)},replace(href){navigation.push(href);search=new URL(href,'https://fixture.test').search.slice(1)}};
+ const next={'next/navigation':{useSearchParams:()=>new URLSearchParams(search),usePathname:()=>'/ranking',useRouter:()=>router}};
+ const actualHook=load('src/components/me/NoteDrawer.tsx',{...next,'@/lib/queries-me':{},'@/lib/supabase/client':{supabaseBrowser(){throw Error('Fixture must not read authentication')}},'./MentionAutocomplete':inert,'../ui/icons':inert,'@/lib/format':{fmtDateTime:()=>''}}).useSourceNoteDrawer;
+ const tableCalls=[];const tableRow={...row(1,1,'2026-10-02',{categoryCode:'000',genderFilter:'A',ageFilter:'AGE_BAND_ALL'}),company_name:null,list_price:10000,is_sold_out:false,review_count:0,review_score:100,is_own:false,product_id:null,rank_change:null,thumbnail_url:null};
+ const queries={...f.mocks['@/lib/queries'],fetchLatestRanking:async request=>{tableCalls.push(request);return tableEmpty||request.fromDate?[]:[tableRow]},fetchBrandOptions:async()=>[],fetchCompanyOptions:async()=>[]};
+ const mocks={...f.mocks,...next,'@/lib/queries':queries,'@/lib/queries-me':{fetchNoteCountForEntity:async()=>0,logView:async()=>{}},'@/components/me/NoteDrawer':{__esModule:true,default:props=>React.createElement('fixture-note-drawer',props),useSourceNoteDrawer:actualHook}};
+ for(const id of ['@/components/ui/filters','@/components/ui/icons','@/components/me/SavedFiltersDropdown','@/components/mobile/MobileFilterChips','@/components/mobile/MobileBottomSheet','@/components/mobile/MobileEmptyState','@/components/mobile/MobileSegmentBadge'])mocks[id]=inert;
+ const Page=load('src/app/(app)/ranking/page.tsx',mocks).default;
+ return{...f,Page,tableCalls,media,listeners,navigation,setSearch(value){search=value},getSearch:()=>search,navigate(href){router.push(href)},restore(){for(const[key,value]of Object.entries(saved)){if(value===undefined)delete global[key];else global[key]=value;}}};
+}
+const noteLink=root=>root.root.findAllByType('a').find(x=>x.props.children==='이 관측 메모');
+const drawer=root=>root.root.findByType('fixture-note-drawer').props;
+
+test('divergent latest table/insight dates keep ordinary notes on the table and explicit notes on strict pinned replay',async()=>{
+ const f=noteRouteFixture();let root;
+ try{root=await mount(f.Page,{});await React.act(async()=>f.calls[0].resolve(result(f.calls[0].request)));
+ assert.equal(drawer(root).sourceContext.resolvedToDate,'2026-10-02');assert.equal(drawer(root).open,false);
+ const generic=root.root.findAllByType('button').find(x=>x.props['data-tour']==='note-entry');await React.act(async()=>generic.props.onClick());assert.equal(drawer(root).open,true);assert.equal(drawer(root).sourceContext.resolvedToDate,'2026-10-02');await React.act(async()=>drawer(root).onClose());
+ const href=noteLink(root).props.href;const query=new URL(href,'https://fixture.test').searchParams;assert.equal(query.get('resolvedToDate'),'2026-10-04');assert.equal(query.get('notes'),'open');assert.equal(query.get('category'),'000');
+ f.navigate(href);await update(root,f.Page,{});assert.equal(f.calls.length,2);assert.equal(f.calls[1].request.date,'2026-10-04');assert.equal(drawer(root).open,true);assert.equal(drawer(root).sourceContext.resolvedToDate,'2026-10-04');assert.equal(drawer(root).saveBlockedReason,undefined);
+ assert.equal(f.tableCalls.at(-1).fromDate,'2026-10-04');assert.equal(root.root.findAllByType('tbody').flatMap(x=>x.findAllByType('tr')).length,0);
+ await React.act(async()=>f.calls[1].resolve(result(f.calls[1].request)));const settled=f.calls.length;
+ await React.act(async()=>drawer(root).onClose());await update(root,f.Page,{});assert.equal(drawer(root).open,false);assert.equal(new URLSearchParams(f.getSearch()).get('resolvedToDate'),'2026-10-04');assert.equal(f.calls.length,settled);
+ f.setSearch(query.toString());await update(root,f.Page,{});assert.equal(drawer(root).open,true);assert.equal(f.calls.length,settled); // Back
+ query.delete('notes');f.setSearch(query.toString());await update(root,f.Page,{});assert.equal(drawer(root).open,false);assert.equal(f.calls.length,settled); // Forward
+ }finally{if(root)await unmount(root);f.restore();}
+});
+
+test('empty table enrichment does not supply a latest table date but strict base observations still open an explicitly pinned note',async()=>{
+ const f=noteRouteFixture({tableEmpty:true});let root;
+ try{root=await mount(f.Page,{});assert.equal(drawer(root).sourceContext,undefined);assert.ok(drawer(root).saveBlockedReason);
+ const observed=result(f.calls[0].request);observed.current[0].products=null;observed.previous[0].products=null;await React.act(async()=>f.calls[0].resolve(observed));
+ assert.equal(drawer(root).sourceContext,undefined);f.navigate(noteLink(root).props.href);await update(root,f.Page,{});assert.equal(drawer(root).sourceContext.resolvedToDate,'2026-10-04');assert.equal(drawer(root).saveBlockedReason,undefined);assert.equal(drawer(root).open,true);
+ }finally{if(root)await unmount(root);f.restore();}
+});
+
+test('native mobile insight note replay opens the existing compact source drawer with the strict date',async()=>{
+ const f=noteRouteFixture({mobile:true,tableEmpty:true});let root;
+ try{root=await mount(f.Page,{});assert.equal(root.root.findAllByType('fixture-note-drawer').length,0);await React.act(async()=>f.calls[0].resolve(result(f.calls[0].request)));
+ f.navigate(noteLink(root).props.href);await update(root,f.Page,{});assert.equal(drawer(root).open,true);assert.equal(drawer(root).sourceContext.resolvedToDate,'2026-10-04');assert.equal(f.calls[1].request.date,'2026-10-04');assert.equal(drawer(root).saveBlockedReason,undefined);
+ }finally{if(root)await unmount(root);f.restore();}
+});
+
+test('rapid source scopes cannot expose a stale insight note link or substitute a different segment',async()=>{
+ const f=noteRouteFixture();let root;
+ try{root=await mount(f.Page,{});const a=f.calls[0];f.setSearch('period=today&category=001&gender=M&age=AGE_BAND_ALL');await update(root,f.Page,{});const b=f.calls.at(-1);
+ f.setSearch('period=today&category=002&gender=F&age=AGE_BAND_ALL');await update(root,f.Page,{});const c=f.calls.at(-1);assert.ok(a.signal.aborted&&b.signal.aborted);assert.equal(noteLink(root),undefined);
+ await React.act(async()=>{a.resolve(result(a.request));b.resolve(result(b.request));});assert.equal(noteLink(root),undefined);await React.act(async()=>c.resolve(result(c.request)));
+ const q=new URL(noteLink(root).props.href,'https://fixture.test').searchParams;assert.equal(q.get('category'),'002');assert.equal(q.get('gender'),'F');assert.equal(q.get('resolvedToDate'),'2026-10-04');
+ }finally{if(root)await unmount(root);f.restore();}
+});

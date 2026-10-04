@@ -63,6 +63,18 @@ export function pinDailyContext(context: RankingSourceContext, date: string): Ra
   return validateRankingSourceContext({ ...context, resolvedFromDate: date, resolvedToDate: date });
 }
 
+/** An insight note uses its own observed day, never the ordinary table's latest day. */
+export function dailyEvidenceContext(data: DailyData, scope: RankingSourceContext): RankingSourceContext | null {
+  const request = dailyRequest(scope);
+  if (!request || !validateDailyRequest(data.request) || !validDailyDate(data.date)
+    || request.categoryCode !== data.request.categoryCode || request.genderFilter !== data.request.genderFilter || request.ageFilter !== data.request.ageFilter
+    || (request.date !== undefined && request.date !== data.date) || (data.request.date !== undefined && data.request.date !== data.date)
+    || data.previousDate !== previousCalendarDate(data.date)
+    || data.current.length >= DAILY_READ_LIMIT || data.previous.length >= DAILY_READ_LIMIT
+    || !normalizeDay(data.current, data.request, data.date).clean.size) return null;
+  return pinDailyContext(scope, data.date);
+}
+
 function productKey(value: unknown): string | null {
   if (typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0)) return null;
   if (typeof value !== 'string' && typeof value !== 'number') return null;

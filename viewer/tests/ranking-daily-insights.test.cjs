@@ -58,6 +58,15 @@ test('calendar boundaries and pinned replay identify the exact comparison date a
  assert.equal(api.dailyRequest(restored).date,D);assert.equal(api.dailyRequest(restored).categoryCode,'001');assert.equal(restored.gender,'M');
 });
 
+test('explicit insight evidence pins only its own valid base observations, including absent optional enrichment',()=>{
+ const current=[row(1,1,D,{products:null})],previous=[row(1,10,P,{products:null})];
+ const evidence=api.dailyEvidenceContext(data(current,previous),scope());assert.equal(evidence.resolvedFromDate,D);assert.equal(evidence.resolvedToDate,D);
+ assert.equal(api.dailyEvidenceContext(data(current,[]),scope()).resolvedToDate,D);
+ for(const value of [data([],previous),data([row(1,1,D,{store_code:'beauty'})],previous),data([row(1,1),row(1,2)],previous),data(current,previous,{previousDate:'2026-10-02'}),data(Array.from({length:api.DAILY_READ_LIMIT},()=>row(1,1)),previous)])assert.equal(api.dailyEvidenceContext(value,scope()),null);
+ assert.equal(api.dailyEvidenceContext(data(current,previous),scope({selectedCategory:'001'})),null);
+ assert.equal(api.dailyEvidenceContext(data(current,previous),scope({resolvedFromDate:P,resolvedToDate:P})),null);
+});
+
 function readerFixture(response){const calls=[];const client={from(table){const call={table,ops:[]};const query=new Proxy({}, {get(_,method){if(method==='then')return(resolve,reject)=>{calls.push(call);return Promise.resolve(response(call)).then(resolve,reject)};return(...args)=>{call.ops.push([method,...args]);return query}}});return query}};return{calls,read:load('src/lib/queries-ranking-daily.ts',{'./supabase/client':{supabaseBrowser:()=>client}}).fetchRankingDaily};}
 test('reader executes at most three strict bounded requests, or two for a pinned date',async()=>{
  for(const pinned of [false,true]){

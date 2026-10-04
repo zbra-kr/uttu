@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { CATEGORY_MAP, AGE_MAP } from '@/lib/queries';
 import { kstDaysAgo } from '@/lib/format';
 import { rankingContextToSearchParams, type RankingSourceContext } from '@/lib/notes/ranking-context';
-import { compareDailyRanking, dailyRequest, pinDailyContext, DAILY_RANK_LIMIT, type DailyData } from '@/lib/ranking-daily-insights';
+import { compareDailyRanking, dailyRequest, pinDailyContext, dailyEvidenceContext, DAILY_RANK_LIMIT, type DailyData } from '@/lib/ranking-daily-insights';
 import { fetchRankingDaily } from '@/lib/queries-ranking-daily';
 
 export interface DailyLoad { key: string; loading: boolean; data: DailyData | null; error: boolean }
@@ -46,6 +46,11 @@ export default function RankingDailyInsights({ scope, load, compact }: {
   const comparison = React.useMemo(() => data ? compareDailyRanking(data, scope) : null, [data, scope]);
   const pinned = data?.date && scope ? pinDailyContext(scope, data.date) : null;
   const replayHref = pinned ? `/ranking?${rankingContextToSearchParams(pinned).toString()}` : null;
+  const evidenceContext = React.useMemo(() => data && scope && !load?.loading && !load?.error ? dailyEvidenceContext(data, scope) : null,
+    [data, scope, load?.loading, load?.error]);
+  const evidenceQuery = evidenceContext ? rankingContextToSearchParams(evidenceContext) : null;
+  evidenceQuery?.set('notes', 'open');
+  const evidenceNoteHref = evidenceQuery ? `/ranking?${evidenceQuery.toString()}` : null;
   const today = data?.date ? kstDaysAgo(0) : null;
   const partial = comparison?.status === 'partial';
   let message = '';
@@ -60,7 +65,10 @@ export default function RankingDailyInsights({ scope, load, compact }: {
     <section className="panel" aria-labelledby="ranking-daily-title" style={{ padding: compact ? 12 : 16, marginBottom: 14 }}>
       <div className="sec-head" style={{ flexWrap: 'wrap', gap: 8, padding: 0, marginBottom: 10 }}>
         <h3 id="ranking-daily-title" style={{ margin: 0 }}>{scope && dailyRequest(scope)?.date ? '지정 수집일 순위·할인 변화' : '최근 수집일 순위·할인 변화'}</h3>
-        {replayHref && <Link href={replayHref} className="btn sm">조건·날짜 다시보기</Link>}
+        <div className="row-flex gap-6" style={{ flexWrap: 'wrap' }}>
+          {replayHref && <Link href={replayHref} className="btn sm">조건·날짜 다시보기</Link>}
+          {evidenceNoteHref && <Link href={evidenceNoteHref} className="btn sm">이 관측 메모</Link>}
+        </div>
       </div>
       {scope && <p className="dim" style={{ fontSize: 11, margin: '0 0 8px' }}>
         Musinsa · {CATEGORY_MAP[scope.selectedCategory] || scope.selectedCategory} · {scope.gender === 'A' ? '전체 성별' : scope.gender === 'M' ? '남성' : '여성'} · {AGE_MAP[scope.age] || scope.age} · 순위 1–{DAILY_RANK_LIMIT} 관측 범위
@@ -94,6 +102,7 @@ export default function RankingDailyInsights({ scope, load, compact }: {
       <p className="dim" style={{ fontSize: 10, lineHeight: 1.6, margin: '10px 0 0' }}>
         확인 가능한 일치 관측의 상승 최대 5개입니다. 할인율 차이는 퍼센트포인트(%p)이며, 매출이나 원인을 뜻하지 않습니다.
         전체 수집 완료 여부는 확인되지 않습니다. 링크는 저장된 날짜·조건의 관측을 다시 조회하며 고정된 증빙이 아닙니다.
+        이 관측 메모는 위 조회 기준 날짜를 고정합니다. 일반 표 메모는 표의 조회 기준을 사용합니다.
       </p>
     </section>
   );
