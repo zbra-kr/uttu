@@ -46,6 +46,8 @@ export default function MobileReviewsView() {
   const [retry, setRetry] = useState(0);
   const [selected, setSelected] = useState<ReviewRow | null>(null);
   const identityRef = useRef<{ ready: boolean; userId: string | null }>({ ready: false, userId: null });
+  const endRef = useRef<HTMLDivElement>(null);
+  const focusEnd = useRef(false);
   const scope = JSON.stringify([auth.epoch, brandId, ratingFilter]);
   const current = page?.scope === scope ? page : null;
   const rows = current?.rows ?? [];
@@ -61,6 +63,7 @@ export default function MobileReviewsView() {
       setAuth(previous => ({ ready: true, userId, epoch: previous.epoch + 1 }));
       setBrands([]); setBrandId(''); setSelected(null); setPage(null); setOffset(0);
       setBrandError(false); setBrandsReady(false);
+      focusEnd.current = false;
     };
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
       eventSeen = true; identity(session?.user?.id ?? null);
@@ -73,21 +76,23 @@ export default function MobileReviewsView() {
   useEffect(() => {
     if (!auth.userId) return;
     let cancelled = false;
+    const requestIdentity = identityRef.current;
     const controller = new AbortController();
     setBrandError(false);
     setBrandsReady(false);
     fetchOwnBrands(controller.signal).then(bs => {
-      if (cancelled) return;
+      if (cancelled || requestIdentity !== identityRef.current) return;
       setBrands(bs);
       setBrandId(bs[0]?.id ?? '');
       setBrandsReady(true);
-    }).catch(() => { if (!cancelled) { setBrandError(true); setBrandsReady(true); } });
+    }).catch(() => { if (!cancelled && requestIdentity === identityRef.current) { setBrandError(true); setBrandsReady(true); } });
     return () => { cancelled = true; controller.abort(); };
   }, [auth.userId, auth.epoch, brandRetry]);
 
   useEffect(() => {
     if (!auth.userId || !brandId) return;
     let cancelled = false;
+    const requestIdentity = identityRef.current;
     const controller = new AbortController();
     setPage(previous => previous?.scope === scope && offset > 0
       ? { ...previous, loading: true, error: false }
@@ -98,25 +103,33 @@ export default function MobileReviewsView() {
       ratingMax: ratingFilter === 'low' ? 2 : ratingFilter === 'high' ? 5 : 5,
       sort: 'recent', limit: PAGE_SIZE, offset, signal: controller.signal, requireExactCount: true, stableOrder: true,
     }).then(({ rows: data, total: count }) => {
-      if (cancelled) return;
+      if (cancelled || requestIdentity !== identityRef.current) return;
       if (!Number.isSafeInteger(count) || count < 0 || (data.length === 0 && offset < count)) throw Error('Incomplete review page');
       setPage(previous => {
+        if (requestIdentity !== identityRef.current) return previous;
         const kept = offset > 0 && previous?.scope === scope ? previous.rows : [];
         const seen = new Set(kept.map(row => row.id));
         return { scope, rows: [...kept, ...data.filter(row => !seen.has(row.id) && !!seen.add(row.id))],
           total: count, nextOffset: offset + data.length, loading: false, error: false };
       });
     }).catch(() => {
-      if (!cancelled) setPage(previous => previous?.scope === scope
+      if (!cancelled && requestIdentity === identityRef.current) setPage(previous => previous?.scope === scope
         ? { ...previous, loading: false, error: true }
         : { scope, rows: [], total: 0, nextOffset: 0, loading: false, error: true });
     });
     return () => { cancelled = true; controller.abort(); };
   }, [auth.userId, brandId, ratingFilter, scope, offset, retry]);
 
-  const changeBrand = (value: string) => { if (value === brandId) return; setBrandId(value); setSelected(null); setPage(null); setOffset(0); };
-  const changeRating = (value: string) => { if (value === ratingFilter) return; setRatingFilter(value); setSelected(null); setPage(null); setOffset(0); };
-  const refresh = () => { setSelected(null); setPage(null); setOffset(0); setRetry(value => value + 1); };
+  useEffect(() => {
+    if (focusEnd.current && current && !current.loading && !current.error && current.nextOffset >= current.total) {
+      endRef.current?.focus();
+      focusEnd.current = false;
+    }
+  }, [current]);
+
+  const changeBrand = (value: string) => { if (value === brandId) return; focusEnd.current = false; setBrandId(value); setSelected(null); setPage(null); setOffset(0); };
+  const changeRating = (value: string) => { if (value === ratingFilter) return; focusEnd.current = false; setRatingFilter(value); setSelected(null); setPage(null); setOffset(0); };
+  const refresh = () => { focusEnd.current = false; setSelected(null); setPage(null); setOffset(0); setRetry(value => value + 1); };
 
   const brandChips = brands.map(b => ({ value: b.id, label: b.name }));
 
@@ -208,10 +221,15 @@ export default function MobileReviewsView() {
             })}
             <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--f4)' }}>{rows.length}개 표시 · 최근 조회 기준 {total}개 일치</div>
             <p className="dim" style={{ margin: 0, fontSize: 11 }}>조회 중 자료가 바뀔 수 있습니다. 표시된 일부 리뷰를 전체 리뷰 분석으로 해석하지 마세요.</p>
-            {current.error ? <div role="alert">추가 리뷰를 불러오지 못했습니다. <button type="button" className="btn sm" onClick={() => setRetry(value => value + 1)}>다시 시도</button></div>
-              : current.loading ? <div role="status">추가 리뷰를 불러오는 중…</div>
-              : current.nextOffset < total ? <button type="button" className="btn sm" onClick={() => setOffset(current.nextOffset)}>리뷰 더 보기</button>
-              : <div role="status">{rows.length !== total ? '중복 또는 자료 변경으로 표시 리뷰 수와 최근 일치 건수가 다릅니다.' : '현재 조회 결과의 마지막 페이지입니다.'}</div>}
+            {current.error && <div role="alert">추가 리뷰를 불러오지 못했습니다.</div>}
+            {current.loading && <div role="status">추가 리뷰를 불러오는 중…</div>}
+            {current.nextOffset < total || current.error || current.loading ? <button type="button" className="btn sm" aria-disabled={current.loading} onClick={event => {
+              if (current.loading) return;
+              focusEnd.current = document.activeElement === event.currentTarget;
+              if (current.error) setRetry(value => value + 1);
+              else setOffset(current.nextOffset);
+            }}>{current.error ? '다시 시도' : '리뷰 더 보기'}</button>
+              : <div ref={endRef} role="status" tabIndex={-1}>{rows.length !== total ? '중복 또는 자료 변경으로 표시 리뷰 수와 최근 일치 건수가 다릅니다.' : '현재 조회 결과의 마지막 페이지입니다.'}</div>}
             <button type="button" className="btn sm" disabled={current.loading} onClick={refresh}>처음부터 새로 조회</button>
           </>
         )}

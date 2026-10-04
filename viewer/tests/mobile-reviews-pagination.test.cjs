@@ -2,12 +2,13 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const React = require('react'), Renderer = require('react-test-renderer');
 const load = require('./helpers/load-source.cjs');
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+globalThis.document = { activeElement: null };
 function deferred() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
-function fixture() {
-  const brands = [], reviews = [], listeners = new Set();
+function fixture({ lateIdentity = false } = {}) {
+  const brands = [], reviews = [], listeners = new Set(), identities = [];
   let user = 'account-a';
   const client = { auth: { onAuthStateChange(fn) { listeners.add(fn); return { data: { subscription: { unsubscribe() { listeners.delete(fn); } } } }; },
-    getUser() { return Promise.resolve({ data: { user: user ? { id: user } : null } }); } } };
+    getUser() { if (!lateIdentity) return Promise.resolve({ data: { user: user ? { id: user } : null } }); const d = deferred(); identities.push(d); return d.promise; } } };
   const Chips = ({ items, onChange }) => React.createElement('div', {}, items.map(item => React.createElement('button', { key: item.value, 'data-chip': item.value, onClick: () => onChange(item.value) }, item.label)));
   const View = load('src/app/(app)/reviews/MobileReviewsView.tsx', {
     '@/lib/queries': { fetchOwnBrands: signal => { const d = deferred(); brands.push({ ...d, signal }); return d.promise; }, fetchReviews: opts => { const d = deferred(); reviews.push({ ...d, opts }); return d.promise; }, normImgUrl: x => x },
@@ -16,11 +17,11 @@ function fixture() {
     '@/components/mobile/MobileEmptyState': { __esModule: true, default: () => React.createElement('div', { 'data-empty': true }, 'empty') },
     '@/components/mobile/ReviewDetailSheet': { __esModule: true, default: ({ review }) => React.createElement('div', { 'data-detail': review.id }) },
   }).default;
-  return { View, brands, reviews, auth(id) { user = id; for (const fn of listeners) fn(id ? 'SIGNED_IN' : 'SIGNED_OUT', id ? { user: { id } } : null); } };
+  return { View, brands, reviews, identities, auth(id) { user = id; for (const fn of listeners) fn(id ? 'SIGNED_IN' : 'SIGNED_OUT', id ? { user: { id } } : null); } };
 }
 const row = id => ({ id: `review-${id}`, rating: 5, review_date: '2026-10-04', review_text: `Text ${id}`, product_name: 'Jacket', has_image: false, image_urls: [], helpful_count: 0 });
 const buttons = root => root.root.findAllByType('button');
-const clickText = async (root, label) => { const button = buttons(root).find(b => JSON.stringify(b.children).includes(label)); assert.ok(button, `button ${label}`); await React.act(async () => button.props.onClick()); };
+const clickText = async (root, label) => { const button = buttons(root).find(b => JSON.stringify(b.children).includes(label)); assert.ok(button, `button ${label}`); await React.act(async () => button.props.onClick({ currentTarget: {} })); };
 const content = root => JSON.stringify(root.toJSON());
 const countText = root => root.root.findAllByType('div').map(node => node.children.filter(x => typeof x === 'string').join('')).find(value => /^\d+개 표시 · 최근 조회 기준 \d+개 일치$/.test(value));
 
@@ -41,6 +42,67 @@ test('over 200 matches page through all rows, dedup overlap, and stop at the tru
     assert.doesNotMatch(content(root), /리뷰 더 보기/);
     assert.equal(f.reviews.length, 5);
   } finally { if (root) await React.act(async () => root.unmount()); }
+});
+
+test('load-more action stays mounted while pending, blocks repeated activation and becomes retry in place', async () => {
+  const f = fixture(); let root;
+  try {
+    await React.act(async () => { root = Renderer.create(React.createElement(f.View)); });
+    await React.act(async () => f.brands[0].resolve([{ id: 'own', name: 'Own' }]));
+    await React.act(async () => f.reviews[0].resolve({ rows: Array.from({ length: 50 }, (_, i) => row(i)), total: 51 }));
+    const action = buttons(root).find(button => button.children.includes('리뷰 더 보기'));
+    await clickText(root, '리뷰 더 보기');
+    assert.equal(buttons(root).find(button => button.children.includes('리뷰 더 보기')), action);
+    assert.equal(action.props['aria-disabled'], true);
+    await React.act(async () => action.props.onClick({ currentTarget: {} }));
+    assert.equal(f.reviews.length, 2);
+    await React.act(async () => f.reviews[1].reject(Error('offline')));
+    assert.equal(buttons(root).find(button => button.children.includes('다시 시도')), action);
+    assert.equal(action.props['aria-disabled'], false);
+  } finally { if (root) await React.act(async () => root.unmount()); }
+});
+
+test('same-batch account B event invalidates A brands before effect cleanup and prevents A-scoped reads', async () => {
+  const f = fixture(); let root;
+  try {
+    await React.act(async () => { root = Renderer.create(React.createElement(f.View)); });
+    assert.equal(f.brands.length, 1);
+    await React.act(async () => {
+      f.auth('account-b');
+      f.brands[0].resolve([{ id: 'a-only', name: 'Private A' }]);
+      await Promise.resolve();
+    });
+    assert.doesNotMatch(content(root), /Private A/);
+    assert.equal(f.reviews.length, 0);
+    assert.equal(f.brands.length, 2);
+  } finally { if (root) await React.act(async () => root.unmount()); }
+});
+
+test('same-batch account B event invalidates A review result; late getUser cannot undo SIGNED_OUT', async () => {
+  const f = fixture(); let root;
+  try {
+    await React.act(async () => { root = Renderer.create(React.createElement(f.View)); });
+    await React.act(async () => f.brands[0].resolve([{ id: 'a-only', name: 'Private A' }]));
+    await React.act(async () => {
+      f.auth('account-b');
+      f.reviews[0].resolve({ rows: [row('private-a')], total: 1 });
+      await Promise.resolve();
+    });
+    assert.doesNotMatch(content(root), /Text private-a|Private A/);
+    assert.equal(f.reviews.length, 1);
+  } finally { if (root) await React.act(async () => root.unmount()); }
+  const late = fixture({ lateIdentity: true }); let lateRoot;
+  try {
+    await React.act(async () => { lateRoot = Renderer.create(React.createElement(late.View)); });
+    await React.act(async () => {
+      late.auth(null);
+      late.identities[0].resolve({ data: { user: { id: 'account-a' } } });
+      await Promise.resolve();
+    });
+    assert.equal(late.brands.length, 0);
+    assert.equal(late.reviews.length, 0);
+    assert.match(content(lateRoot), /로그인 후 리뷰/);
+  } finally { if (lateRoot) await React.act(async () => lateRoot.unmount()); }
 });
 
 test('251 distinct matches are reachable beyond the old cap; reselecting active chips preserves loaded rows', async () => {
