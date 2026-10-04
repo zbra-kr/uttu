@@ -27,6 +27,25 @@ const articles=root=>root.root.findAllByType('article');
 const noteLink=root=>root.root.findAllByType('a').find(x=>x.props.children==='이 관측 메모');
 const drawer=root=>root.root.findByType('fixture-note-drawer').props;
 
+test('refresh after settled REAL ShellClient resize replaces the observation in both shell directions',async()=>{
+ const f=fixture();let root;try{root=await mount(f);
+ for(const mobile of [true,false]){await f.resize(root,mobile);const before=f.calls.length;
+ const refresh=root.root.findAllByType('button').find(x=>x.props.children==='다시 조회');
+ await React.act(async()=>refresh.props.onClick());assert.equal(f.calls.length,before+3);assert.equal(articles(root).length,1);}
+ }finally{await cleanup(f,root);}
+});
+
+test('refresh after pending REAL ShellClient resize aborts the previous request and ignores its late result',async()=>{
+ const f=fixture({pending:true});let root;try{root=await mount(f);const old=f.calls[0];
+ for(const mobile of [true,false])await f.resize(root,mobile);
+ const refresh=root.root.findAllByType('button').find(x=>x.props.children==='다시 조회');
+ await React.act(async()=>refresh.props.onClick());assert.equal(f.calls.length,2);assert.ok(old.signal.aborted);assert.equal(articles(root).length,0);
+ await React.act(async()=>old.resolve(f.response(old)));assert.equal(f.calls.length,2);
+ const fresh=f.calls[1];await React.act(async()=>fresh.resolve(f.response(fresh)));assert.equal(f.calls.length,4);
+ await React.act(async()=>{for(const call of f.calls.slice(2))call.resolve(f.response(call));});assert.equal(articles(root).length,1);
+ }finally{await cleanup(f,root);}
+});
+
 test('REAL ShellClient settled desktop/mobile remounts share exactly three strict reads for the same latest scope',async()=>{
  const f=fixture();let root;try{root=await mount(f);assert.equal(f.calls.length,3);assert.equal(articles(root).length,1);
  for(const mobile of [true,false,true,false]){await f.resize(root,mobile);assert.equal(f.calls.length,3);assert.equal(articles(root).length,1);}
