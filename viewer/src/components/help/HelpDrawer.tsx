@@ -27,7 +27,7 @@ export default function HelpDrawer({ pagePath, open, onClose }: Props) {
 
   // Keep opening/closing focus separate from reads and route changes.
   React.useEffect(() => {
-    if (!open || typeof document === 'undefined') return;
+    if (!open || typeof document === 'undefined' || typeof HTMLElement === 'undefined') return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
     return () => {
