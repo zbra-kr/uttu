@@ -1,6 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const load = require('./helpers/load-source.cjs');
+const React = require('react');
+const Renderer = require('react-test-renderer');
+const { renderToString } = require('react-dom/server');
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { helpPagePath } = load('src/lib/help-page-path.ts');
 
 for (const path of [
@@ -36,12 +40,28 @@ for (const path of [
 
 test('unknown pathname remains null', () => assert.equal(helpPagePath(null), null));
 
-test('HelpButton passes the normalized pathname to the drawer', () => {
+test('HelpButton defers help until mount, then passes normalized and updated paths to the drawer', async () => {
+  let pathname = '/me/notes/12345678-abcd-4abc-8abc-1234567890ab';
+  let serverPath;
   const { default: Button } = load('src/components/help/HelpButton.tsx', {
-    react: { useState: () => [false, () => {}] },
-    'next/navigation': { usePathname: () => '/me/notes/12345678-abcd-4abc-8abc-1234567890ab' },
+    'next/navigation': { usePathname: () => pathname },
     '../ui/icons': { IcHelp: 'HelpIcon' },
-    './HelpDrawer': { __esModule: true, default: 'Drawer' },
+    './HelpDrawer': { __esModule: true, default: props => {
+      serverPath = props.pagePath;
+      return React.createElement('fixture-drawer', props);
+    } },
   });
-  assert.equal(Button().props.children.find(node => node.type === 'Drawer').props.pagePath, '/me/notes/[id]');
+  renderToString(React.createElement(Button));
+  assert.equal(serverPath, null);
+  let root;
+  await React.act(async () => { root = Renderer.create(React.createElement(Button)); });
+  assert.equal(root.root.findByType('fixture-drawer').props.pagePath, '/me/notes/[id]');
+  await React.act(async () => root.root.findByType('button').props.onClick());
+  assert.equal(root.root.findByType('fixture-drawer').props.open, true);
+  pathname = '/ranking';
+  await React.act(async () => root.update(React.createElement(Button)));
+  assert.equal(root.root.findByType('fixture-drawer').props.pagePath, '/ranking');
+  await React.act(async () => root.root.findByType('fixture-drawer').props.onClose());
+  assert.equal(root.root.findByType('fixture-drawer').props.open, false);
+  await React.act(async () => root.unmount());
 });
