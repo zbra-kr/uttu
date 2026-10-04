@@ -74,7 +74,7 @@ test('explicit refresh and freshness expiry acquire a new observation; a recent 
 test('observed account/session changes hide old results, sign-out aborts pending reads, and late getUser cannot restore an old account',async()=>{
  const f=fixture({pending:true,lateIdentity:true});let root;try{root=await mount(f);assert.equal(f.calls.length,0);await React.act(async()=>f.auth('SIGNED_IN','account-a'));assert.equal(f.calls.length,1);const a=f.calls[0];await React.act(async()=>f.auth('SIGNED_OUT',null));assert.ok(a.signal.aborted);assert.equal(articles(root).length,0);
  await React.act(async()=>f.identityCalls[0]({data:{user:{id:'account-a'}}}));assert.equal(f.calls.length,1);await React.act(async()=>a.resolve(f.response(a)));assert.equal(f.calls.length,1);
- f.setPending(false);await React.act(async()=>f.auth('SIGNED_IN','account-b'));assert.equal(f.calls.length,4);assert.equal(articles(root)[0].findByType('a').props.href,'/product?no=2');await React.act(async()=>f.auth('USER_UPDATED','account-b'));assert.equal(f.calls.length,7);
+ f.setPending(false);await React.act(async()=>f.auth('SIGNED_IN','account-b'));assert.equal(f.calls.length,4);const productLink=articles(root)[0].findByType('a').props.href;assert.equal(new URL(productLink,'https://local.invalid').searchParams.get('no'),'2');assert.equal(new URL(productLink,'https://local.invalid').searchParams.get('obs'),'ranking-v1');await React.act(async()=>f.auth('USER_UPDATED','account-b'));assert.equal(f.calls.length,7);
  }finally{await cleanup(f,root);}
 });
 test('route exit and provider unmount abort pending work; re-entry never reuses the earlier route result',async()=>{

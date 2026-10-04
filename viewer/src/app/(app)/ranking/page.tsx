@@ -224,7 +224,6 @@ function RankingPageRoot() {
   const query = params.toString();
   const [insightsScope, setInsightsScope] = React.useState<RankingSourceContext | null>(null);
   const dailyLoad = useRankingDailyInsights(insightsScope);
-  const insights = <RankingDailyInsights scope={insightsScope} load={dailyLoad} compact={isMobile} />;
   const sourceContext = React.useMemo(() => {
     const modern = rankingContextFromSearchParams(new URLSearchParams(query));
     if (modern) return modern;
@@ -233,6 +232,8 @@ function RankingPageRoot() {
     old.delete('note'); old.delete('notes');
     return rankingSourceFromEntity(old.toString());
   }, [query]);
+  const insights = <RankingDailyInsights scope={insightsScope} load={dailyLoad} compact={isMobile}
+    sourceBack={sourceContext ? `/ranking?${query}` : undefined} />;
   const hasSourceLink = params.has('context') || params.has('note') || params.get('notes') === 'open'
     || ['age', 'category', 'gender', 'period'].some(key => params.has(key));
   // Reinitialize filters for a different source URL. Closing the memo removes only

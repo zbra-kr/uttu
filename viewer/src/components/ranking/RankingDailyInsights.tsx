@@ -3,7 +3,8 @@ import React from 'react';
 import Link from 'next/link';
 import { CATEGORY_MAP, AGE_MAP } from '@/lib/queries';
 import { kstDaysAgo } from '@/lib/format';
-import { rankingContextToSearchParams, type RankingSourceContext } from '@/lib/notes/ranking-context';
+import { rankingContextToSearchParams, rankingContextFromSearchParams, type RankingSourceContext } from '@/lib/notes/ranking-context';
+import { productObservationHref } from '@/lib/product-observation-context';
 import { compareDailyRanking, dailyRequest, pinDailyContext, dailyEvidenceContext, displayDiscountDirection, DAILY_RANK_LIMIT, type DailyData, type DailyRiser } from '@/lib/ranking-daily-insights';
 import { fetchRankingDaily } from '@/lib/queries-ranking-daily';
 import { useRankingDailySession } from './RankingDailyProvider';
@@ -78,8 +79,8 @@ function SalesPlanningCheck({ item }: { item: DailyRiser }) {
   </p>;
 }
 
-export default function RankingDailyInsights({ scope, load, compact }: {
-  scope: RankingSourceContext | null; load: DailyLoad | null; compact: boolean;
+export default function RankingDailyInsights({ scope, load, compact, sourceBack }: {
+  scope: RankingSourceContext | null; load: DailyLoad | null; compact: boolean; sourceBack?: string;
 }) {
   const data = load?.data;
   const comparison = React.useMemo(() => data ? compareDailyRanking(data, scope) : null, [data, scope]);
@@ -90,6 +91,19 @@ export default function RankingDailyInsights({ scope, load, compact }: {
   const evidenceQuery = evidenceContext ? rankingContextToSearchParams(evidenceContext) : null;
   evidenceQuery?.set('notes', 'open');
   const evidenceNoteHref = evidenceQuery ? `/ranking?${evidenceQuery.toString()}` : null;
+  const originalSource = sourceBack?.startsWith('/ranking?')
+    ? rankingContextFromSearchParams(new URLSearchParams(sourceBack.slice('/ranking?'.length))) : null;
+  const backToObservation = originalSource && evidenceContext
+    && rankingContextToSearchParams(originalSource).toString() === rankingContextToSearchParams(evidenceContext).toString()
+    ? sourceBack : evidenceNoteHref;
+  const productHref = (item: DailyRiser): string | null => {
+    if (!data?.date || !backToObservation) return null;
+    try {
+      return productObservationHref({ product: item.current.product, store: 'musinsa', date: data.date,
+        category: data.request.categoryCode, gender: data.request.genderFilter, age: data.request.ageFilter,
+        back: backToObservation });
+    } catch { return null; }
+  };
   const today = data?.date ? kstDaysAgo(0) : null;
   const partial = comparison?.status === 'partial';
   let message = '';
@@ -124,9 +138,11 @@ export default function RankingDailyInsights({ scope, load, compact }: {
           {partial && ` · 판별 불가/중복 ${comparison.invalidRows + comparison.ambiguousRows}행 · 전일 판별 불가 ${comparison.ambiguousPairs}개 · 필터 확인 불가 ${comparison.unknownFilterRows}개 · 가격/할인 미확인 ${comparison.unknownMetrics}개`}
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: compact ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(210px, 1fr))', gap: 8 }}>
-          {comparison.risers.map(item => <article key={item.current.product} style={{ background: 'var(--snk)', border: '0.5px solid var(--bs)', borderRadius: 6, padding: 12, minWidth: 0 }}>
+          {comparison.risers.map(item => { const observedHref = productHref(item); return <article key={item.current.product} style={{ background: 'var(--snk)', border: '0.5px solid var(--bs)', borderRadius: 6, padding: 12, minWidth: 0 }}>
             <div className="row-flex gap-6" style={{ justifyContent: 'space-between', alignItems: 'start' }}>
-              <Link href={`/product?no=${encodeURIComponent(item.current.product)}`} style={{ fontSize: 12, fontWeight: 500, overflowWrap: 'anywhere' }}>{item.current.name}</Link>
+              {observedHref
+                ? <Link href={observedHref} style={{ fontSize: 12, fontWeight: 500, overflowWrap: 'anywhere' }}>{item.current.name}</Link>
+                : <span style={{ fontSize: 12, fontWeight: 500, overflowWrap: 'anywhere' }}>{item.current.name}</span>}
               <span className="mono" style={{ color: 'var(--tu)', fontSize: 12, flexShrink: 0 }}>↑{item.rise}</span>
             </div>
             {item.current.brand && <p className="dim" style={{ fontSize: 10, margin: '4px 0' }}>{item.current.brand}</p>}
@@ -137,7 +153,7 @@ export default function RankingDailyInsights({ scope, load, compact }: {
               <div className="dim">할인율 차이 {item.discountPoints === null ? '미확인' : `${item.discountPoints > 0 ? '+' : ''}${number.format(item.discountPoints)}%p`}</div>
             </dl>
             <SalesPlanningCheck item={item} />
-          </article>)}
+          </article>; })}
         </div>
       </>}
       <p className="dim" style={{ fontSize: 10, lineHeight: 1.6, margin: '10px 0 0' }}>

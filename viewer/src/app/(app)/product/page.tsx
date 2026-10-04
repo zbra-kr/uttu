@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileProductDetailView from './MobileProductDetailView';
+import ProductObservationPanel from '@/components/product/ProductObservationPanel';
 import {
   LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot,
@@ -277,11 +278,15 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 function ProductPageRoot() {
   const isMobile = useIsMobile();
-  if (isMobile) return <MobileProductDetailView />;
+  const query = useSearchParams().toString();
+  if (isMobile) return <><ProductObservationPanel query={query} /><MobileProductDetailView /></>;
   return (
-    <Suspense fallback={<div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>로딩 중…</div>}>
-      <ProductPageInner />
-    </Suspense>
+    <>
+      <ProductObservationPanel query={query} />
+      <Suspense fallback={<div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>로딩 중…</div>}>
+        <ProductPageInner />
+      </Suspense>
+    </>
   );
 }
 
