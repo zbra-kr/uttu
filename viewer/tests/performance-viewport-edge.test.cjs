@@ -115,11 +115,20 @@ async function withPair(route, mobile, search, tab, operation) {
         const removeEmptyStatus = node => {
           if (!node || typeof node !== 'object') return node;
           if (Array.isArray(node)) return node.map(removeEmptyStatus).filter(Boolean);
-          if (node.type === 'p' && node.props.role === 'status' && node.children?.join('') === '이 기간에 일치하는 리뷰가 없습니다.') return null;
+          if (node.props['data-review-stats-state']) return null;
           return { ...node, children: node.children?.map(removeEmptyStatus).filter(Boolean) ?? null };
         };
         assert.equal(br.root.findAll(x => x.type === 'p' && x.props.role === 'status' && x.children.join('') === '이 기간에 일치하는 리뷰가 없습니다.').length, 1);
-        assert.deepEqual(plain(ar.toJSON()), removeEmptyStatus(tree));
+        assert.equal(br.root.findAllByProps({ className: 'val' })[1].children.join(''), '—');
+        const baselineTree = plain(ar.toJSON());
+        const replaceZeroMean = node => {
+          if (!node || typeof node !== 'object') return;
+          if (node.props?.className === 'val' && node.children?.join('') === '★ 0.00') node.children = ['—'];
+          if (Array.isArray(node)) node.forEach(replaceZeroMean);
+          else node.children?.forEach(replaceZeroMean);
+        };
+        replaceZeroMean(baselineTree);
+        assert.deepEqual(baselineTree, removeEmptyStatus(tree));
       } else {
         assert.deepEqual(helperLedger(a), helperLedger(b));
         assert.deepEqual(dispatchLedger(a), dispatchLedger(b));

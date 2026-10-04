@@ -33,10 +33,31 @@ test('real desktop route renders error/retry distinctly from a successful zero-c
     assert.equal(root.root.findAllByProps({ role: 'alert' }).length, 0);
     await React.act(async () => f.calls[1].resolve(stats(0)));
     assert.equal(values(root)[0], '0');
+    assert.equal(values(root)[1], '—');
+    assert.equal(values(root)[2], '0');
+    assert.equal(values(root)[3], '0');
     assert.match(text(root), /이 기간에 일치하는 리뷰가 없습니다/);
     assert.equal(root.root.findAllByProps({ role: 'alert' }).length, 0);
   } finally { if (root) await React.act(async () => root.unmount()); }
 });
+test('retry action remains mounted through pending, repeated error and success without duplicate reads', async () => {
+  const f = fixture(); let root;
+  const action = () => root.root.findAllByType('button').find(node => node.children.join('') === '다시 조회');
+  try {
+    await React.act(async () => { root = Renderer.create(React.createElement(f.Page)); });
+    await React.act(async () => f.calls[0].reject(Error('offline')));
+    const button = action();
+    await click(root, '다시 조회');
+    assert.equal(action(), button); assert.equal(button.props['aria-disabled'], true);
+    await click(root, '다시 조회'); assert.equal(f.calls.length, 2);
+    await React.act(async () => f.calls[1].reject(Error('still offline')));
+    assert.equal(action(), button); assert.equal(button.props['aria-disabled'], false);
+    await click(root, '다시 조회');
+    await React.act(async () => f.calls[2].resolve(stats(5)));
+    assert.equal(action(), button); assert.equal(values(root)[1], '★ 4.00');
+  } finally { if (root) await React.act(async () => root.unmount()); }
+});
+
 test('period changes clear values immediately and ignore delayed prior-period success or failure', async () => {
   const f = fixture(); let root;
   try {

@@ -278,17 +278,21 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
         </div>
       </div>
 
-      {statsState === 'error' ? <div role="alert" className="panel" style={{ padding: 12, marginTop: 8 }}>
-        리뷰 통계를 불러오지 못했습니다. <button type="button" className="btn sm" onClick={retryStats}>다시 조회</button>
-      </div> : statsState === 'loading' ? <p role="status" className="dim">리뷰 통계를 불러오는 중…</p>
+      <div data-review-stats-state={statsState} className="row-flex gap-8" style={{ marginTop: 8 }}>
+        {statsState === 'error' ? <p role="alert" className="dim">리뷰 통계를 불러오지 못했습니다.</p>
+          : statsState === 'loading' ? <p role="status" className="dim">리뷰 통계를 불러오는 중…</p>
         : statsState === 'signedout' ? <p role="status" className="dim">로그인 후 리뷰 통계를 조회할 수 있습니다.</p>
         : stats?.total === 0 && <p role="status" className="dim">이 기간에 일치하는 리뷰가 없습니다.</p>}
+        <button type="button" className="btn sm" aria-disabled={statsState === 'loading' || statsState === 'signedout'} onClick={() => {
+          if (statsState === 'ready' || statsState === 'error') retryStats();
+        }}>다시 조회</button>
+      </div>
 
       {/* KPIs */}
       <div className="grid grid-5 gap-8">
         {([
           ['신규 리뷰',    stats ? total.toLocaleString() : '…',    days === 999 ? '전체 기간' : `최근 ${days}일`],
-          ['평균 평점',    stats ? `★ ${avgRating.toFixed(2)}` : '…', '자사 전체'],
+          ['평균 평점',    stats ? total > 0 ? `★ ${avgRating.toFixed(2)}` : '—' : '…', '자사 전체'],
           ['저점 (★1~2)', stats ? lowCount.toLocaleString() : '…',   `${days === 999 ? '전체' : days + '일'} 내`],
           ['이미지 리뷰',  stats ? imageCount.toLocaleString() : '…', '이미지 첨부'],
           ['CS 이상탐지',  stats ? `H:${highAnomaly} M:${medAnomaly}` : '…', '최근 탐지'],
