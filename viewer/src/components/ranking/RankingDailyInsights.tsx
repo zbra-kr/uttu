@@ -6,19 +6,38 @@ import { kstDaysAgo } from '@/lib/format';
 import { rankingContextToSearchParams, type RankingSourceContext } from '@/lib/notes/ranking-context';
 import { compareDailyRanking, dailyRequest, pinDailyContext, dailyEvidenceContext, DAILY_RANK_LIMIT, type DailyData } from '@/lib/ranking-daily-insights';
 import { fetchRankingDaily } from '@/lib/queries-ranking-daily';
+import { useRankingDailySession } from './RankingDailyProvider';
+import { EMPTY_DAILY_SESSION, dailySessionKey } from '@/lib/ranking-daily-session';
 
-export interface DailyLoad { key: string; loading: boolean; data: DailyData | null; error: boolean }
+export interface DailyLoad { key: string; loading: boolean; data: DailyData | null; error: boolean; refresh?: () => void }
+const subscribeEmpty = () => () => {};
+const getEmptySession = () => EMPTY_DAILY_SESSION;
 
-/** Kept in the route root so drawers and viewport remounts do not restart reads. */
+/** The authenticated shell provider owns shared reads; isolated mounts remain cancellable. */
 export function useRankingDailyInsights(scope: RankingSourceContext | null): DailyLoad | null {
+  const session = useRankingDailySession();
+  const shared = React.useSyncExternalStore(session?.subscribe ?? subscribeEmpty,
+    session?.getSnapshot ?? getEmptySession, session?.getServerSnapshot ?? getEmptySession);
   const parsed = dailyRequest(scope);
   const category = parsed?.categoryCode, gender = parsed?.genderFilter, age = parsed?.ageFilter, date = parsed?.date;
   const supported = !!parsed;
+  const unsupported = scope !== null && !supported;
   const request = React.useMemo(() => supported ? { categoryCode: category!, genderFilter: gender!, ageFilter: age!, ...(date ? { date } : {}) } : null,
     [supported, category, gender, age, date]);
   const key = request ? JSON.stringify(request) : '';
   const [state, setState] = React.useState<DailyLoad>({ key: '', loading: true, data: null, error: false });
+  const [refreshIndex, setRefreshIndex] = React.useState(0);
+  const refresh = React.useCallback(() => {
+    if (!request) return;
+    if (session) session.acquire(request, true);
+    else setRefreshIndex(value => value + 1);
+  }, [session, request]);
   React.useEffect(() => {
+    if (session) {
+      if (request) session.acquire(request);
+      else if (unsupported) session.clearScope();
+      return; // Subscriber remounts do not cancel the provider-owned read.
+    }
     if (!request) return;
     const controller = new AbortController();
     let obsolete = false;
@@ -30,9 +49,13 @@ export function useRankingDailyInsights(scope: RankingSourceContext | null): Dai
       if (!obsolete && !controller.signal.aborted) setState({ key: requestKey, loading: false, data: null, error: true });
     });
     return () => { obsolete = true; controller.abort(); };
-  }, [request]);
+  }, [request, session, shared.active, shared.ready, shared.epoch, refreshIndex, unsupported]);
   if (!request) return null;
-  return state.key === key ? state : { key, loading: true, data: null, error: false };
+  if (session) {
+    if (shared.entry?.key === dailySessionKey(request)) return { ...shared.entry, refresh };
+    return { key, loading: !shared.ready || shared.hasAccount, data: null, error: shared.ready && !shared.hasAccount, refresh };
+  }
+  return state.key === key ? { ...state, refresh } : { key, loading: true, data: null, error: false, refresh };
 }
 
 const number = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
@@ -66,6 +89,7 @@ export default function RankingDailyInsights({ scope, load, compact }: {
       <div className="sec-head" style={{ flexWrap: 'wrap', gap: 8, padding: 0, marginBottom: 10 }}>
         <h3 id="ranking-daily-title" style={{ margin: 0 }}>{scope && dailyRequest(scope)?.date ? '지정 수집일 순위·할인 변화' : '최근 수집일 순위·할인 변화'}</h3>
         <div className="row-flex gap-6" style={{ flexWrap: 'wrap' }}>
+          {load?.refresh && <button type="button" className="btn sm" onClick={load.refresh}>다시 조회</button>}
           {replayHref && <Link href={replayHref} className="btn sm">조건·날짜 다시보기</Link>}
           {evidenceNoteHref && <Link href={evidenceNoteHref} className="btn sm">이 관측 메모</Link>}
         </div>
