@@ -12,6 +12,8 @@ interface Props {
 }
 
 export default function HelpDrawer({ pagePath, open, onClose }: Props) {
+  const drawerRef = React.useRef<HTMLElement>(null);
+  const closeRef = React.useRef<HTMLButtonElement>(null);
   const isMobile = useIsMobile();
   const tour = useOnboarding();
   const [loaded, setLoaded] = React.useState<{ pagePath: string; articles: HelpArticle[] } | null>(null);
@@ -22,6 +24,23 @@ export default function HelpDrawer({ pagePath, open, onClose }: Props) {
   const failed = failedPath === pagePath && pagePath !== null;
   const loadedPath = loaded?.pagePath;
   const articles = loaded?.pagePath === pagePath ? loaded.articles : [];
+
+  // Keep opening/closing focus separate from reads and route changes.
+  React.useEffect(() => {
+    if (!open || typeof document === 'undefined') return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeRef.current?.focus();
+    return () => {
+      if (previous?.isConnected && (drawerRef.current?.contains(document.activeElement)
+          || document.activeElement === document.body)) previous.focus();
+    };
+  }, [open]);
+
+  const handleRetry = (event: React.MouseEvent<HTMLButtonElement>) => {
+    // The retry button disappears during loading; preserve keyboard position.
+    if (typeof document !== 'undefined' && document.activeElement === event.currentTarget) closeRef.current?.focus();
+    setRetry(value => value + 1);
+  };
 
   // ESC로 닫기
   React.useEffect(() => {
@@ -61,6 +80,9 @@ export default function HelpDrawer({ pagePath, open, onClose }: Props) {
 
   return (
     <aside
+      ref={drawerRef}
+      inert={!open}
+      aria-hidden={!open}
       aria-label="화면 가이드"
       style={{
         position: 'fixed',
@@ -96,6 +118,7 @@ export default function HelpDrawer({ pagePath, open, onClose }: Props) {
             </div>
           </div>
           <button
+            ref={closeRef}
             onClick={onClose}
             title="닫기 (ESC)"
             style={isMobile ? {
@@ -159,7 +182,7 @@ export default function HelpDrawer({ pagePath, open, onClose }: Props) {
         {!loading && failed && (
           <div role="alert" style={{ textAlign: 'center', paddingTop: 40, color: 'var(--f3)', fontSize: 'var(--fs-sm)' }}>
             <p>가이드를 불러오지 못했습니다. 다시 시도해 주세요.</p>
-            <button type="button" className="btn sm" onClick={() => setRetry(value => value + 1)}>다시 시도</button>
+            <button type="button" className="btn sm" onClick={handleRetry}>다시 시도</button>
           </div>
         )}
 
