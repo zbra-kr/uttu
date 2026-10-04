@@ -117,3 +117,50 @@ test('late account A result and late getUser cannot republish after same-URL sig
     assert.doesNotMatch(JSON.stringify(root.toJSON()), /Stale account A/);
   } finally { if (root) await React.act(async () => root.unmount()); }
 });
+
+test('planning check uses only one resolved observation and describes current classification without inferred metrics', async () => {
+  const f = fixture(); let root;
+  const checks = () => root.root.findAllByProps({ 'data-testid': 'observed-product-planning-check' });
+  try {
+    await React.act(async () => { root = Renderer.create(React.createElement(f.Panel, { query })); });
+    assert.equal(checks().length, 0);
+    for (const [own, phrase] of [[true, '현재 자사 상품으로 분류됩니다'], [false, '현재 자사 상품으로 분류되지 않습니다'], [null, '현재 자사 분류가 확인되지 않습니다']]) {
+      const call = f.calls.at(-1);
+      await React.act(async () => call.resolve({ status: 'ready', row: { ...row, own } }));
+      assert.equal(checks().length, 1);
+      const copy = JSON.stringify(root.toJSON());
+      assert.match(copy, new RegExp(phrase));
+      assert.match(copy, /원자료에서 확인하세요/);
+      assert.match(copy, /판매량·재고·수요는 알 수 없습니다/);
+      assert.doesNotMatch(copy, /경쟁사|포지셔닝|가격을 인하|생산량을/);
+      await React.act(async () => f.auth('SIGNED_IN', `account-${own}`));
+      assert.equal(checks().length, 0);
+    }
+    for (const status of ['missing', 'ambiguous', 'capped', 'error']) {
+      await React.act(async () => f.calls.at(-1).resolve({ status }));
+      assert.equal(checks().length, 0);
+      await React.act(async () => f.auth('SIGNED_IN', `next-${status}`));
+    }
+    await React.act(async () => f.auth('SIGNED_OUT', null));
+    assert.equal(checks().length, 0);
+    assert.equal(f.calls.length, 8);
+  } finally { if (root) await React.act(async () => root.unmount()); }
+});
+
+test('planning check is absent for invalid and legacy URLs and cannot cross a context change', async () => {
+  const f = fixture(); let root;
+  const checks = () => root.root.findAllByProps({ 'data-testid': 'observed-product-planning-check' });
+  try {
+    await React.act(async () => { root = Renderer.create(React.createElement(f.Panel, { query })); });
+    await React.act(async () => f.calls[0].resolve({ status: 'ready', row }));
+    assert.equal(checks().length, 1);
+    const changed = query.replace('date=2026-10-05', 'date=2026-10-04');
+    await React.act(async () => root.update(React.createElement(f.Panel, { query: changed })));
+    assert.equal(checks().length, 0);
+    assert.equal(f.calls[0].signal.aborted, true);
+    await React.act(async () => root.update(React.createElement(f.Panel, { query: 'no=1e3&obs=ranking-v1' })));
+    assert.equal(checks().length, 0);
+    await React.act(async () => root.update(React.createElement(f.Panel, { query: 'no=6796676' })));
+    assert.equal(checks().length, 0);
+  } finally { if (root) await React.act(async () => root.unmount()); }
+});

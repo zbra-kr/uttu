@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { parseProductObservation, type ProductObservationContext } from '@/lib/product-observation-context';
 import { fetchProductObservation, type ObservedProductResult } from '@/lib/queries-product-observation';
+import { observationPlanningCheck } from '@/lib/product-observation-planning';
 
 const number = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
 
@@ -82,6 +83,9 @@ function ValidObservation({ value }: { value: ProductObservationContext }) {
         <div>당시 순위 #{result.row.rank} · 표시 가격 {result.row.price === null ? '미확인' : `${number.format(result.row.price)}원`}
           {' '}· 표시 할인율 {result.row.discount === null ? '미확인' : `${number.format(result.row.discount)}%`}</div>
         <p className="dim" style={{ margin: '4px 0 0' }}>현재 상품 레코드의 자사 분류: {result.row.own === null ? '미확인' : result.row.own ? '자사' : '자사 아님'} · 관측일 당시 분류는 확인되지 않습니다.</p>
+        <p data-testid="observed-product-planning-check" style={{ margin: '8px 0 0', color: 'var(--f2)' }}>
+          <strong>관측 상품 기획 확인</strong> · {observationPlanningCheck(result)}
+        </p>
       </div>
       : <div role={result.status === 'error' ? 'alert' : 'status'} style={{ fontSize: 12 }}>
         {result.status === 'missing' ? '이 날짜·조건의 상품 관측행이 없습니다.'
