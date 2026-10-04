@@ -19,6 +19,18 @@ test('discount changes are percentage points, retaining both observed prices and
  assert.equal(r.risers[0].discountPoints,2.25);assert.equal(r.risers[0].previous.price,8000);assert.equal(r.risers[0].current.price,7000);
  for(const value of [undefined,null,NaN,Infinity,-1,'0']){const q=api.compareDailyRanking(data([row(1,1,D,{final_price:value,discount_rate:value})],[row(1,2,P)]));assert.equal(q.risers[0].current.price,null);assert.equal(q.risers[0].current.discount,null);}
 });
+test('sales check uses original validated rates even when display points round to zero',()=>{
+ const current=[row(1,1,D,{discount_rate:10.004}),row(2,2,D,{discount_rate:10}),
+  row(3,3,D,{discount_rate:9}),row(4,4,D,{discount_rate:null})];
+ const previous=[row(1,11,P),row(2,12,P),row(3,13,P),row(4,14,P)];
+ const compared=api.compareDailyRanking(data(current,previous));
+ assert.deepEqual(compared.risers.map(item=>api.displayDiscountDirection(item)),
+  ['increased','unchanged','decreased','unknown']);
+ assert.equal(compared.risers[0].discountPoints,0);
+ assert.equal(compared.risers[3].discountPoints,null);
+ assert.equal(compared.status,'partial');
+ assert.deepEqual(compared.risers.map(item=>item.current.product),['1','2','3','4']);
+});
 test('same-rank and same-product ambiguities are excluded from both days and counted',()=>{
  const r=api.compareDailyRanking(data([row(1,1),row(2,1),row(3,2),row(3,3),row(4,4),row(5,5)],
   [row(1,10,P),row(2,11,P),row(3,12,P),row(4,20,P),row(6,20,P),row(5,30,P)]));

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { CATEGORY_MAP, AGE_MAP } from '@/lib/queries';
 import { kstDaysAgo } from '@/lib/format';
 import { rankingContextToSearchParams, type RankingSourceContext } from '@/lib/notes/ranking-context';
-import { compareDailyRanking, dailyRequest, pinDailyContext, dailyEvidenceContext, DAILY_RANK_LIMIT, type DailyData } from '@/lib/ranking-daily-insights';
+import { compareDailyRanking, dailyRequest, pinDailyContext, dailyEvidenceContext, displayDiscountDirection, DAILY_RANK_LIMIT, type DailyData, type DailyRiser } from '@/lib/ranking-daily-insights';
 import { fetchRankingDaily } from '@/lib/queries-ranking-daily';
 import { useRankingDailySession } from './RankingDailyProvider';
 import { EMPTY_DAILY_SESSION, dailySessionKey } from '@/lib/ranking-daily-session';
@@ -61,6 +61,22 @@ export function useRankingDailyInsights(scope: RankingSourceContext | null): Dai
 const number = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
 const price = (value: number | null) => value === null ? '미확인' : `${number.format(value)}원`;
 const discount = (value: number | null) => value === null ? '미확인' : `${number.format(value)}%`;
+
+const salesCheck = {
+  increased: '표시 할인율 상승 · 가격과 행사 기간·적용 조건을 확인하세요.',
+  unchanged: '표시 할인율 같음 · 상품 노출·품절 상태와 카테고리 조건을 확인하세요.',
+  decreased: '표시 할인율 하락 · 가격과 행사 종료·적용 조건을 확인하세요.',
+  unknown: '표시 할인율 비교 불가 · 양일의 가격·할인 자료를 확인하세요.',
+};
+
+function SalesPlanningCheck({ item }: { item: DailyRiser }) {
+  const direction = displayDiscountDirection(item);
+  return <p data-discount-direction={direction} style={{ fontSize: 11, lineHeight: 1.6, margin: '8px 0 0', color: 'var(--f2)' }}>
+    <strong>영업기획 확인 포인트</strong> · {salesCheck[direction]}
+    {item.discountPoints === 0 && (direction === 'increased' || direction === 'decreased') &&
+      ' 원자료의 작은 차이가 표시 반올림으로 같게 보일 수 있습니다.'}
+  </p>;
+}
 
 export default function RankingDailyInsights({ scope, load, compact }: {
   scope: RankingSourceContext | null; load: DailyLoad | null; compact: boolean;
@@ -120,6 +136,7 @@ export default function RankingDailyInsights({ scope, load, compact }: {
               <div><dt style={{ display: 'inline', color: 'var(--f3)' }}>할인율 </dt><dd className="mono" style={{ display: 'inline', margin: 0 }}>{discount(item.previous.discount)} → {discount(item.current.discount)}</dd></div>
               <div className="dim">할인율 차이 {item.discountPoints === null ? '미확인' : `${item.discountPoints > 0 ? '+' : ''}${number.format(item.discountPoints)}%p`}</div>
             </dl>
+            <SalesPlanningCheck item={item} />
           </article>)}
         </div>
       </>}

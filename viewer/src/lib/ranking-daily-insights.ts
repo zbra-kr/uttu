@@ -23,6 +23,14 @@ export interface DailyRow {
   price: number | null; discount: number | null; own: boolean | null;
 }
 export interface DailyRiser { current: DailyRow; previous: DailyRow; rise: number; discountPoints: number | null }
+export type DisplayDiscountDirection = 'increased' | 'unchanged' | 'decreased' | 'unknown';
+
+/** Classify the validated pair's original rates; rounded display points can hide a change. */
+export function displayDiscountDirection(riser: DailyRiser): DisplayDiscountDirection {
+  const before = riser.previous.discount, after = riser.current.discount;
+  if (before === null || after === null || !Number.isFinite(before) || !Number.isFinite(after)) return 'unknown';
+  return after > before ? 'increased' : after < before ? 'decreased' : 'unchanged';
+}
 export interface DailyComparison {
   status: 'ready' | 'partial' | 'missing-current' | 'missing-previous' | 'capped';
   risers: DailyRiser[]; matched: number; missingPrevious: number; invalidRows: number;
