@@ -7,11 +7,18 @@ const React = require('react');
 const Renderer = require('react-test-renderer');
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-function load(file, role = 'viewer') {
+function load(file, role = 'viewer', options = {}) {
   const pushed = [];
+  let resolveProfile;
+  const listeners = new Map();
+  const url = new URL(options.href || 'https://fixture.test/me');
+  const browser = { location: { href: url.href, hash: url.hash }, addEventListener(type, listener) {
+    if (!listeners.has(type)) listeners.set(type, new Set());
+    listeners.get(type).add(listener);
+  }, removeEventListener(type, listener) { listeners.get(type)?.delete(listener); } };
   const profile = { id: 'fixture-user', email: 'viewer@example.test', full_name: 'Fixture', role, created_at: '2026-01-01' };
   const query = new Proxy({}, { get(_, name) {
-    if (name === 'fetchMyProfile') return async () => profile;
+    if (name === 'fetchMyProfile') return () => options.delayed ? new Promise(resolve => { resolveProfile = resolve; }) : Promise.resolve(profile);
     if (name === 'fetchMyStats' || name === 'fetchMyAiQuota') return async () => null;
     if (String(name).startsWith('fetch') || String(name).startsWith('search')) return async () => [];
     return () => { throw Error('Unexpected mutation: ' + String(name)); };
@@ -29,9 +36,30 @@ function load(file, role = 'viewer') {
     if (id.endsWith('/SubscriptionMatrix')) return { __esModule: true, default: props => React.createElement('div', { 'data-subscriptions': true, 'data-admin': props.isAdmin }) };
     return new Proxy({ __esModule: true, default: () => null }, { get: (target, key) => target[key] ?? (() => null) });
   };
-  new Function('exports', 'require', 'window', code)(exports, requireFixture, { addEventListener() {}, removeEventListener() {} });
-  return { Component: exports.default, pushed };
+  new Function('exports', 'require', 'window', code)(exports, requireFixture, browser);
+  return { Component: exports.default, pushed, browser, listeners, resolveProfile: () => resolveProfile(profile), dispatch: type => listeners.get(type)?.forEach(listener => listener()) };
 }
+
+test('delayed notification target is handled once, with no focus after unrelated navigation or interaction', async () => {
+  for (const scenario of ['target', 'no hash', 'hash away', 'interaction', 'URL change']) {
+    const f = load('app/(app)/me/page.tsx', 'viewer', { delayed: true, href: 'https://fixture.test/me' + (scenario === 'no hash' ? '' : '#notifications') });
+    const calls = [];
+    let root;
+    await React.act(async () => { root = Renderer.create(React.createElement(f.Component), { createNodeMock: element => element.props.id === 'notifications' ? {
+      focus: options => calls.push(['focus', options]), scrollIntoView: options => calls.push(['scroll', options]),
+    } : null }); });
+    assert.equal(calls.length, 0);
+    if (scenario === 'hash away') { f.browser.location.href = 'https://fixture.test/me#other'; f.browser.location.hash = '#other'; f.dispatch('hashchange'); }
+    if (scenario === 'interaction') f.dispatch('keydown');
+    if (scenario === 'URL change') f.browser.location.href = 'https://fixture.test/me?other=1#notifications';
+    await React.act(async () => f.resolveProfile());
+    assert.deepEqual(calls, scenario === 'target' ? [['focus', { preventScroll: true }], ['scroll', { block: 'start' }]] : []);
+    assert.equal([...f.listeners.values()].reduce((total, set) => total + set.size, 0), 0);
+    await React.act(async () => root.update(React.createElement(f.Component)));
+    assert.equal(calls.length, scenario === 'target' ? 2 : 0);
+    await React.act(async () => root.unmount());
+  }
+});
 
 test('profile notification shortcut targets a labelled focusable section without dead security links', async () => {
   for (const role of ['viewer', 'admin']) {

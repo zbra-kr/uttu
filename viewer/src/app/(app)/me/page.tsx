@@ -91,6 +91,26 @@ function MeDesktopView() {
   const [avatarTs, setAvatarTs] = React.useState(Date.now());
   const [avatarError, setAvatarError] = React.useState<string | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const notificationsRef = React.useRef<HTMLElement>(null);
+  const notificationTargetRequest = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (loading) {
+      notificationTargetRequest.current = window.location.hash === '#notifications' ? window.location.href : null;
+      if (!notificationTargetRequest.current) return;
+      const cancel = () => { notificationTargetRequest.current = null; };
+      const events = ['hashchange', 'popstate', 'pointerdown', 'keydown', 'wheel'] as const;
+      events.forEach(event => window.addEventListener(event, cancel));
+      return () => { events.forEach(event => window.removeEventListener(event, cancel)); };
+    }
+    const requestedURL = notificationTargetRequest.current;
+    notificationTargetRequest.current = null;
+    const section = notificationsRef.current;
+    if (section && requestedURL === window.location.href) {
+      section.focus({ preventScroll: true });
+      section.scrollIntoView({ block: 'start' });
+    }
+  }, [loading]);
 
   React.useEffect(() => {
     fetchMyProfile().then(p => { setProfile(p); setLoading(false); });
@@ -448,7 +468,7 @@ function MeDesktopView() {
             )}
           </section>
 
-          <section id="notifications" className="panel" aria-labelledby="notifications-heading" tabIndex={-1} style={{ scrollMarginTop: 72 }}>
+          <section ref={notificationsRef} id="notifications" className="panel" aria-labelledby="notifications-heading" tabIndex={-1} style={{ scrollMarginTop: 72 }}>
             <div className="sec-head">
               <h3 id="notifications-heading">알림 구독</h3>
             </div>
