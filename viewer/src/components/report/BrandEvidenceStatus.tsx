@@ -1,9 +1,10 @@
 import type { BrandEvidence } from '@/lib/report-brand-evidence';
 
-export default function BrandEvidenceStatus({ source, rankingDate, showRows = false }: {
+export default function BrandEvidenceStatus({ source, rankingDate, showRows = false, retry }: {
   source: { state: 'loading' | 'signedout' | 'error' | 'ready'; data: BrandEvidence | null };
   rankingDate?: string;
   showRows?: boolean;
+  retry?: () => void;
 }) {
   const value = source.data;
   return <div data-report-source="brand-ranking" data-state={source.state} role="status" style={{ fontSize: 12, color: 'var(--f3)', marginBottom: 8 }}>
@@ -16,6 +17,8 @@ export default function BrandEvidenceStatus({ source, rankingDate, showRows = fa
         <br />전체 카테고리 / 전체 성별 / 전체 연령 · 조회 {value.sampledRows}행 (최대 400행), 최신일 TOP {value.rows.length}
         {value.atLimit ? ' · 조회 상한 도달, 이전 날짜와 브랜드 포함 범위가 제한될 수 있습니다.' : ' · 전체 수집 완료 여부는 이 조회로 확인하지 않습니다.'}
       </>}
+    {retry && source.state !== 'signedout' && <button type="button" className="btn sm" aria-label="브랜드 순위 다시 조회"
+      aria-disabled={source.state === 'loading'} onClick={() => { if (source.state !== 'loading') retry(); }} style={{ marginLeft: 8 }}>다시 조회</button>}
     {showRows && source.state === 'ready' && value?.rows.map(row => <div key={row.brandName}>#{row.rank} {row.brandName}</div>)}
   </div>;
 }

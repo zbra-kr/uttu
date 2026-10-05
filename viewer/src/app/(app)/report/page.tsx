@@ -3,7 +3,7 @@ import { useDailyReport } from '@/hooks/useDailyReport';
 import BrandEvidenceStatus from '@/components/report/BrandEvidenceStatus';
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useIsMobile } from '@/hooks/useViewport';
+import { useResolvedViewport } from '@/hooks/useResolvedViewport';
 import MobileReportView from './MobileReportView';
 import {
   type OwnBrandSummary,
@@ -193,13 +193,14 @@ function DemoCard({ row }: { row: DemoRow }) {
 
 // ── 메인 페이지 ───────────────────────────────────────────────────────────────
 export default function ReportPage() {
-  const isMobile = useIsMobile();
-  if (isMobile) return <MobileReportView />;
+  const viewport = useResolvedViewport();
+  if (!viewport) return <div role="status">리포트 화면 준비 중…</div>;
+  if (viewport === 'mobile') return <MobileReportView />;
   return <ReportDesktopView />;
 }
 
 function ReportDesktopView() {
-  const { core, brand, data } = useDailyReport();
+  const { core, brand, data, retryBrand } = useDailyReport();
   const loading = core.state === 'loading';
   const [showAllRanking, setShowAllRanking] = useState(false);
   const [rankingExpanded, setRankingExpanded] = useState(false);
@@ -209,7 +210,7 @@ function ReportDesktopView() {
       <div className="main">
         <div className="tb"><div className="bc"><span className="crumb last">일일 리포트</span></div></div>
         <div className="main-body" style={{ alignItems: 'center', justifyContent: 'center', color: 'var(--f4)', fontSize: 13 }}>
-          데이터 로딩 중…<BrandEvidenceStatus source={brand} showRows />
+          데이터 로딩 중…<BrandEvidenceStatus source={brand} retry={retryBrand} showRows />
         </div>
       </div>
     );
@@ -219,7 +220,7 @@ function ReportDesktopView() {
     return (
       <div className="main">
         <div className="tb"><div className="bc"><span className="crumb last">일일 리포트</span></div></div>
-        <div className="main-body" style={{ color: 'var(--f4)', fontSize: 13 }}>{core.state === 'error' ? '리포트를 확인하지 못했습니다.' : core.state === 'signedout' ? '로그인이 필요합니다.' : '랭킹 데이터가 없습니다.'}<BrandEvidenceStatus source={brand} showRows /></div>
+        <div className="main-body" style={{ color: 'var(--f4)', fontSize: 13 }}>{core.state === 'error' ? '리포트를 확인하지 못했습니다.' : core.state === 'signedout' ? '로그인이 필요합니다.' : '랭킹 데이터가 없습니다.'}<BrandEvidenceStatus source={brand} retry={retryBrand} showRows /></div>
       </div>
     );
   }
@@ -255,7 +256,7 @@ function ReportDesktopView() {
       </div>
 
       <div className="main-body">
-        <BrandEvidenceStatus source={brand} rankingDate={kpi.latestDate} />
+        <BrandEvidenceStatus source={brand} retry={retryBrand} rankingDate={kpi.latestDate} />
 
         {/* ── 리포트 헤더 ──────────────────────────────────────────── */}
         <div className="panel" style={{
@@ -562,7 +563,7 @@ function ReportDesktopView() {
         {/* ── 5. 브랜드 랭킹 ──────────────────────────────────────── */}
         <div>
           <SectionHead num="5" title={`브랜드 랭킹 TOP ${brandRanking.length}`} />
-          <BrandEvidenceStatus source={brand} rankingDate={kpi.latestDate} />
+          <BrandEvidenceStatus source={brand} retry={retryBrand} rankingDate={kpi.latestDate} />
           <div className="tbl">
             <div className="row head" style={{ gridTemplateColumns: '40px 1fr 60px 50px' }}>
               <span>#</span><span>브랜드</span>

@@ -35,11 +35,11 @@ function Section({ title, children, defaultOpen = false }: {
 }
 
 export default function MobileReportView() {
-  const { core, brand, data } = useDailyReport();
+  const { core, brand, data, retryBrand } = useDailyReport();
   const loading = core.state === 'loading';
 
-  if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...<BrandEvidenceStatus source={brand} showRows /></div>;
-  if (!data) return <><MobileEmptyState icon="📋" title={core.state === 'error' ? '리포트 조회 실패' : core.state === 'signedout' ? '로그인이 필요합니다' : '리포트 데이터가 없습니다'} /><BrandEvidenceStatus source={brand} showRows /></>;
+  if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...<BrandEvidenceStatus source={brand} retry={retryBrand} showRows /></div>;
+  if (!data) return <><MobileEmptyState icon="📋" title={core.state === 'error' ? '리포트 조회 실패' : core.state === 'signedout' ? '로그인이 필요합니다' : '리포트 데이터가 없습니다'} /><BrandEvidenceStatus source={brand} retry={retryBrand} showRows /></>;
 
   const {
     kpi, ownBrands, competitors, brandRanking, demoGrid,
@@ -49,7 +49,7 @@ export default function MobileReportView() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
-      <BrandEvidenceStatus source={brand} rankingDate={kpi.latestDate} />
+      <BrandEvidenceStatus source={brand} retry={retryBrand} rankingDate={kpi.latestDate} />
       {/* KPI 요약 */}
       <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
         <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>{kpi.latestDate} 기준</div>
