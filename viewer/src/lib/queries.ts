@@ -62,7 +62,7 @@ export async function fetchLatestRanking(opts: {
   const queryDate = async (date: string, comparisonOnly: boolean) => {
     let query = supabase
       .from('ranking_snapshots')
-      .select(comparisonOnly ? 'rank_position, musinsa_no, products!inner(id)' : `rank_position, musinsa_no, product_name, brand_name,
+      .select(comparisonOnly ? 'rank_position, musinsa_no, products!inner(is_own)' : `rank_position, musinsa_no, product_name, brand_name,
         category_code, gender_filter, age_filter,
         list_price, final_price, discount_rate,
         is_sold_out, review_count, review_score, snapshot_date,

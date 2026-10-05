@@ -21,7 +21,7 @@ function load(file, deferred=false){
   const ar=await a.fn(opts),br=await b.fn({...opts,signal:ctl.signal});
   assert.equal(JSON.stringify(ar),JSON.stringify(br));
   const expected=JSON.parse(JSON.stringify(a.ledger));
-  expected.find(call=>call.ops.find(op=>op[0]==='select')?.[1]!=='snapshot_date').ops.find(op=>op[0]==='select')[1]='rank_position, musinsa_no, products!inner(id)';
+  expected.find(call=>call.ops.find(op=>op[0]==='select')?.[1]!=='snapshot_date').ops.find(op=>op[0]==='select')[1]='rank_position, musinsa_no, products!inner(is_own)';
   assert.equal(JSON.stringify(b.ledger),JSON.stringify(expected));checks.push({scenario:opts.fromDate||'latest',queryAndResultParity:true,requests:b.ledger.length});
  }
  const a=load('abort-candidate/queries.ts',true),ctl=new AbortController();const waiting=a.fn({fromDate:'2026-07-06',toDate:'2026-10-03',signal:ctl.signal});for(let i=0;i<10;i++)await Promise.resolve();assert.equal(a.ledger.length,91);ctl.abort();await assert.rejects(waiting,/aborted/);assert.ok(a.ledger.every(x=>x.aborted));checks.push({scenario:'superseded 90-day request',issued:91,mockRequestsReceivingAbort:91,claim:'HTTP mock only; no evidence of database query cancellation'});

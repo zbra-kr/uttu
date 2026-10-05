@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const { readSource }=require('./performance-source.cjs');
 const { fixture }=require('./helpers/ranking-projection-fixture.cjs');
 const baseline=readSource('source/queries.ts');
-const minimal='rank_position,musinsa_no,products!inner(id)';
+const minimal='rank_position,musinsa_no,products!inner(is_own)';
 const range={fromDate:'2026-07-08',toDate:'2026-10-05',categoryCode:'001',genderFilter:'M',ageFilter:'AGE_BAND_25',limit:300};
 for(const[name,options,input,count]of [
  ['90 days',{},range,91],['single date',{}, {...range,fromDate:range.toDate},2],['latest',{}, {},3],

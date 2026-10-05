@@ -26,7 +26,7 @@ function load(file,mode){
   assert.equal(JSON.stringify(await read(a)),JSON.stringify(await read(b)));
 
   const expected=JSON.parse(JSON.stringify(a.calls));
-  expected.find(call=>call.ops.find(op=>op[0]==='select')?.[1]!=='snapshot_date').ops.find(op=>op[0]==='select')[1]='rank_position, musinsa_no, products!inner(id)';
+  expected.find(call=>call.ops.find(op=>op[0]==='select')?.[1]!=='snapshot_date').ops.find(op=>op[0]==='select')[1]='rank_position, musinsa_no, products!inner(is_own)';
   assert.equal(JSON.stringify(b.calls),JSON.stringify(expected));checks.push({case:'optional signal absent: '+mode,resultErrorAndRequestShapeParity:true});
  }
  for(const explicit of [false,true]){

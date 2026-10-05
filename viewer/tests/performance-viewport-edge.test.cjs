@@ -29,7 +29,7 @@ const dispatchLedger = (fixture, comparisonProjection = false) => {
   const ledger = plain(fixture.requests).map(x => ({ ...x, ops: x.ops.filter(op => op[0] !== 'abortSignal') }));
   if (comparisonProjection) {
     const prior = ledger.find(call => call.table === 'ranking_snapshots' && call.ops.find(op => op[0] === 'select')?.[1] !== 'snapshot_date');
-    if (prior) prior.ops.find(op => op[0] === 'select')[1] = 'rank_position, musinsa_no, products!inner(id)';
+    if (prior) prior.ops.find(op => op[0] === 'select')[1] = 'rank_position, musinsa_no, products!inner(is_own)';
   }
   return ledger;
 };
