@@ -211,7 +211,7 @@ function ArticleDetailSheet({ article, scope, listState, onClose }: { article: M
             {/* 연결 상품 */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>
-                연결 상품 {products.length}개
+                연결 상품 {detail.loaded ? `${products.length}개${detail.error || detail.loading || listState.error ? ' (이전 조회)' : ''}` : detail.error ? '확인 불가' : '확인 중'}
                 {boosts.length > 0 && ` · 랭킹 변동 ${boosts.length}건 감지`}
               </div>
 

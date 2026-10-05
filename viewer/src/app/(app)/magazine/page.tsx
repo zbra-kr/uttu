@@ -207,7 +207,8 @@ function MagazinePage() {
   }), [scope.key, rows]);
   React.useEffect(() => { if (jumpId && read.loaded) { const index = rows.findIndex(r => r.id === jumpId); setDrawerIdx(index >= 0 ? index : null); } }, [jumpId, read.loaded, rows, setDrawerIdx]);
   const categoryReader = React.useCallback((signal: AbortSignal) => fetchMagazineCategories(signal), []);
-  const categoryRead = useBriefingRead(scope, categoryReader);
+  const categoryScope = useBriefingScope('magazine-categories');
+  const categoryRead = useBriefingRead(categoryScope, categoryReader);
   const cats = categoryRead.value ?? [];
 
   // 랭킹 효과 분석
@@ -475,18 +476,16 @@ function MagazinePage() {
           })}
         </div>
 
-        {total > PAGE_SIZE && (
-          <div className="row-flex between center" style={{ padding: '8px 14px', borderTop: '0.5px solid var(--bs)' }}>
+        <div className="row-flex between center" style={{ padding: '8px 14px', borderTop: '0.5px solid var(--bs)' }}>
             <span className="mono dim" style={{ fontSize: 11 }}>
-              {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} / {total.toLocaleString()}
+              {read.loaded ? total === 0 ? '조회 결과 0건' : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} / ${total.toLocaleString()}` : read.error ? '전체 건수 확인 불가' : '전체 건수 확인 중'}
             </span>
             <div className="row-flex gap-4">
-              <button className="btn sm icon" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}><IcChevL /></button>
-              <span className="mono dim" style={{ fontSize: 11 }}>{page + 1} / {Math.ceil(total / PAGE_SIZE)}</span>
-              <button className="btn sm icon" onClick={() => setPage(p => p + 1)} disabled={(page + 1) * PAGE_SIZE >= total}><IcChevR /></button>
+              <button className="btn sm icon" aria-label="이전 페이지" aria-disabled={page === 0} onClick={() => { if (page > 0) setPage(p => p - 1); }}><IcChevL /></button>
+              <span className="mono dim" style={{ fontSize: 11 }}>{page + 1} / {read.loaded ? Math.max(1, Math.ceil(total / PAGE_SIZE)) : '?'}</span>
+              <button className="btn sm icon" aria-label="다음 페이지" aria-disabled={read.loading || !read.loaded || (page + 1) * PAGE_SIZE >= total} onClick={() => { if (!read.loading && read.loaded && (page + 1) * PAGE_SIZE < total) setPage(p => p + 1); }}><IcChevR /></button>
             </div>
           </div>
-        )}
       </section>
 
       <MagazineReadStatus state={boostRead} label="랭킹 효과" />
