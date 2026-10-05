@@ -1,5 +1,6 @@
 'use client';
 import DailyReportBoundary from '@/components/report/DailyReportBoundary';
+import CSDailyReviewBoundary from '@/components/briefing/CSDailyReviewBoundary';
 import React from 'react';
 import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
@@ -252,5 +253,5 @@ function ShellContent({ children }: { children: React.ReactNode }) {
 
 export default function ShellClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  return <DailyReportBoundary active={pathname === '/report'}><ShellContent>{children}</ShellContent></DailyReportBoundary>;
+  return <CSDailyReviewBoundary active={pathname === '/today'}><DailyReportBoundary active={pathname === '/report'}><ShellContent>{children}</ShellContent></DailyReportBoundary></CSDailyReviewBoundary>;
 }

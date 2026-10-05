@@ -9,6 +9,9 @@ import StaffBriefingView from '@/components/briefing/StaffBriefingView';
 import CSBriefingView from '@/components/briefing/CSBriefingView';
 import MobileTodayView from '@/components/briefing/mobile/MobileTodayView';
 import { useIsMobile } from '@/hooks/useViewport';
+import { useCSDailyReviewState } from '@/lib/cs-daily-review-context';
+import CSDailyReviewCheck from '@/components/briefing/CSDailyReviewCheck';
+import { csReviewDate, validCSDate } from '@/lib/cs-daily-review-check';
 
 type Tab = 'executive' | 'staff' | 'cs';
 const VALID_TABS: Tab[] = ['executive', 'staff', 'cs'];
@@ -49,8 +52,15 @@ function TodayContent() {
 
   const today = kstToday();
   const rawDate = searchParams.get('date');
-  const activeDate = (rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) ? rawDate : today;
-  const isFuture = activeDate > today;
+  const activeDate = activeTab === 'cs' ? rawDate ?? today
+    : (rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) ? rawDate : today;
+  const validDate = validCSDate(activeDate);
+  const isFuture = validDate && activeDate > today;
+  const ownedReviews = useCSDailyReviewState();
+  const reviewDate = csReviewDate(activeDate, today);
+  const csReviews = ownedReviews?.briefingDate === activeDate && ownedReviews.reviewDate === reviewDate && ownedReviews.status !== 'inactive' ? ownedReviews
+    : { status: !reviewDate ? 'invalid-date' as const : 'loading' as const, scope: activeDate,
+      briefingDate: activeDate, reviewDate, result: null, retry: () => {} };
 
   const [data, setData] = useState<AllBriefings | null>(null);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -63,6 +73,7 @@ function TodayContent() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!validDate) { setData(null); setKpiData(null); setLoading(false); return; }
     setLoading(true);
     setKpiData(null);
     Promise.all([
@@ -75,7 +86,7 @@ function TodayContent() {
       setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [activeDate, isFuture]);
+  }, [activeDate, isFuture, validDate]);
 
   function handleTabSelect(tab: Tab) {
     const params = new URLSearchParams(searchParams.toString());
@@ -102,6 +113,8 @@ function TodayContent() {
         availableDates={availableDates}
         isFuture={isFuture}
         onDateChange={handleDateChange}
+        csReviews={csReviews}
+        invalidDate={!validDate}
       />
     );
   }
@@ -138,7 +151,8 @@ function TodayContent() {
         flexDirection: 'column',
         gap: 14,
       }}>
-        {loading ? (
+        {activeTab === 'cs' && <CSDailyReviewCheck key={csReviews.scope} state={csReviews} />}
+        {!validDate ? <p role="status">유효한 브리핑 날짜를 선택하세요.</p> : loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 20px', color: 'var(--f4)', fontSize: 13 }}>
             불러오는 중...
           </div>

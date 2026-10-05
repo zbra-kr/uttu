@@ -63,7 +63,8 @@ test('empty insight arrays render no fabricated insight on desktop or mobile', (
 });
 test('briefing regressions are wired into CI without dropping prior suites', () => {
  const pkg = JSON.parse(read('package.json'));
- assert.equal(pkg.scripts['test:briefing-evidence'], 'node --test tests/briefing-evidence.test.cjs');
+ assert.ok(pkg.scripts['test:briefing-evidence'].includes('tests/briefing-evidence.test.cjs'));
+ assert.ok(pkg.scripts['test:briefing-evidence'].includes('tests/cs-daily-review-*.test.cjs'));
  const workflow = fs.readFileSync(path.join(root, '../.github/workflows/ci.yml'), 'utf8');
  assert.match(workflow, /npm run test:briefing-evidence/);
  for (const name of ['auth', 'teams', 'ai-session', 'ratings', 'matching', 'collection-status', 'weekly-reviews']) {

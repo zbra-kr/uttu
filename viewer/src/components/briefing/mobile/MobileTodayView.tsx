@@ -7,6 +7,8 @@ import MobileBriefingHeadline from './MobileBriefingHeadline';
 import MobileBriefingCard from './MobileBriefingCard';
 import MobileBriefingInsight from './MobileBriefingInsight';
 import MobileNewsPickList from './MobileNewsPickList';
+import CSDailyReviewCheck from '../CSDailyReviewCheck';
+import type { CSDailyReviewState } from '@/hooks/useCSDailyReviewCheck';
 
 type AudienceKey = 'executive' | 'staff' | 'cs';
 
@@ -109,6 +111,8 @@ export interface MobileTodayViewProps {
   availableDates: string[];
   isFuture: boolean;
   onDateChange: (date: string) => void;
+  csReviews?: CSDailyReviewState;
+  invalidDate?: boolean;
 }
 
 export default function MobileTodayView({
@@ -120,6 +124,8 @@ export default function MobileTodayView({
   availableDates,
   isFuture,
   onDateChange,
+  csReviews,
+  invalidDate,
 }: MobileTodayViewProps) {
   const activeBriefing = data ? data[activeTab] : null;
 
@@ -140,7 +146,8 @@ export default function MobileTodayView({
         padding: '12px 12px 16px',
         display: 'flex', flexDirection: 'column', gap: 10,
       }}>
-        {loading ? (
+        {activeTab === 'cs' && csReviews && <CSDailyReviewCheck key={csReviews.scope} state={csReviews} />}
+        {invalidDate ? <p role="status">유효한 브리핑 날짜를 선택하세요.</p> : loading ? (
           <div style={{
             display: 'flex', justifyContent: 'center',
             padding: '60px 16px', color: 'var(--f4)', fontSize: 13,

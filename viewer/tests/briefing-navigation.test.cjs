@@ -50,6 +50,9 @@ function harness(initialUrl, mobile = true, detail = false) {
     react: { __esModule: true, ...react, default: react },
     'next/navigation': { useSearchParams: () => new URLSearchParams(url.search), useRouter: () => ({ push, back() { if (historyIndex) { url = new URL(history[--historyIndex]); dirty = true; } } }) },
     '@/hooks/useViewport': { useIsMobile: () => mobile },
+    // This harness isolates existing URL/briefing navigation; the new source
+    // reader's SDK ownership and responsive lifecycle have their own tests.
+    '@/lib/cs-daily-review-context': { useCSDailyReviewState: () => null },
     '@/lib/queries-briefing': {
       kstToday: () => TODAY, fetchAvailableBriefingDates: () => Promise.resolve([TODAY, '2026-10-02']),
       fetchAllBriefings: date => new Promise(resolve => requests.push({ date, resolve })),
