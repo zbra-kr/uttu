@@ -12,6 +12,9 @@ import {
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
 import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
 import ReviewDetailSheet from '@/components/mobile/ReviewDetailSheet';
+import ProductReviewMode from '@/components/product/ProductReviewMode';
+import { parseProductObservation } from '@/lib/product-observation-context';
+import { useObservationReviewState } from '@/lib/observation-review-context';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceDot } from 'recharts';
 
 function fmtPrice(v: number | null): string {
@@ -60,6 +63,8 @@ export default function MobileProductDetailView() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const no = searchParams.get('no') ?? '';
+  const query = searchParams.toString();
+  const reviewMode = useObservationReviewState();
   const { noteDrawerOpen, setNoteDrawerOpen } = useSourceNoteDrawer(no);
 
   const [detail,         setDetail]         = useState<ProductDetail | null>(null);
@@ -72,6 +77,7 @@ export default function MobileProductDetailView() {
   const [loading,        setLoading]        = useState(true);
   const [stateProductNo, setStateProductNo] = useState(no);
   const [selectedReview, setSelectedReview] = useState<ReviewRow | null>(null);
+  useEffect(() => { setSelectedReview(null); }, [query, reviewMode?.active]);
 
   useEffect(() => {
     if (!no) return;
@@ -480,8 +486,8 @@ export default function MobileProductDetailView() {
       )}
 
       {/* ── 리뷰 ── */}
-      {reviews.length > 0 && (
-        <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
+      {(reviews.length > 0 || (detail.is_own && parseProductObservation(searchParams).kind === 'valid')) && (
+        <ProductReviewMode query={query} detail={detail}>
           <div style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>
             {detail.is_own ? `최근 리뷰 (${reviews.length}건)` : '최근 리뷰'}
           </div>
@@ -535,7 +541,7 @@ export default function MobileProductDetailView() {
               전체 리뷰 →
             </div>
           )}
-        </div>
+        </ProductReviewMode>
       )}
       {!detail.is_own && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, fontSize: 12, color: 'var(--f4)' }}>

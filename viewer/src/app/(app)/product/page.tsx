@@ -6,6 +6,7 @@ import { Suspense } from 'react';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileProductDetailView from './MobileProductDetailView';
 import ProductObservationPanel from '@/components/product/ProductObservationPanel';
+import ProductReviewMode from '@/components/product/ProductReviewMode';
 import { parseProductObservation } from '@/lib/product-observation-context';
 import {
   LineChart, Line,
@@ -919,7 +920,7 @@ function ProductPageInner() {
             )}
 
             {/* Reviews — 자사 상품만 */}
-            <section className="panel">
+            <ProductReviewMode query={params.toString()} detail={detail}>
               <div className="sec-head"><h3>최근 리뷰 <span className="sub">{detail.is_own ? '최신 10건' : '자사 상품만 수집'}</span></h3></div>
               {!detail.is_own ? (
                 <div style={{ fontSize: 12, color: 'var(--f4)', padding: '16px 0' }}>경쟁사 상품 — 리뷰 수집 대상이 아닙니다.</div>
@@ -976,7 +977,7 @@ function ProductPageInner() {
                   ))}
                 </div>
               )}
-            </section>
+            </ProductReviewMode>
           </div>
         </div>
       )}

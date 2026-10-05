@@ -29,7 +29,7 @@ function shellMocks(f, pathname, lazy) {
   global.document = { documentElement: { setAttribute(){}, style:{setProperty(){}} } };
   global.window = { addEventListener(){}, removeEventListener(){}, matchMedia:()=>({addEventListener(){},removeEventListener(){}}) };
   const hidden = { __esModule:true, default:()=>null };
-  return { ...f.mocks, react:{...React,lazy}, 'next/navigation':{usePathname:()=>pathname},
+  return { ...f.mocks, react:{...React,lazy}, 'next/navigation':{usePathname:()=>pathname,useSearchParams:()=>new URLSearchParams()},
     '@/hooks/useViewport':{useIsMobile:()=>false}, '@/lib/queries':{fetchShellStats:async()=>({})},
     '@/components/onboarding/OnboardingProvider':{useOnboarding:()=>({active:false,step:0})},
     './Sidebar':hidden,'./Topbar':hidden,'./AiPanel':hidden,'./CmdK':hidden,'./MobileShell':hidden };
@@ -50,7 +50,7 @@ test('stable Shell preserves stats, chrome state and navigation while owner code
  const hook=load('src/hooks/useDailyReport.ts',f.mocks);let resolve,imports=0,stats=0,chromeMounts=0,chromeUnmounts=0,path='/',sidebar,topbar;
  const code=new Promise(r=>resolve=r);
  const mocks=shellMocks(f,path,()=>React.lazy(()=>{imports++;return code}));
- mocks['next/navigation']={usePathname:()=>path};mocks['@/lib/report-owner-context']=context;
+ mocks['next/navigation']={usePathname:()=>path,useSearchParams:()=>new URLSearchParams()};mocks['@/lib/report-owner-context']=context;
  mocks['@/lib/queries']={fetchShellStats:async()=>{stats++;return {}}};
  mocks['./Sidebar']={__esModule:true,default:props=>{sidebar=props;React.useEffect(()=>{chromeMounts++;return()=>chromeUnmounts++},[]);return React.createElement('nav',null,'Navigation')}};
  mocks['./Topbar']={__esModule:true,default:props=>{topbar=props;return null}};
