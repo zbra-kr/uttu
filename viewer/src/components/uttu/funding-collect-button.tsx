@@ -6,6 +6,7 @@ import {
   pollFundingJob,
   type FundingJob,
 } from '@/lib/queries-funding';
+import { useFundingScope } from './use-funding-scope';
 import { fmtDate } from '@/lib/format';
 
 interface Props {
@@ -20,74 +21,82 @@ function is7dFresh(iso: string | null): boolean {
   return diffMs < 7 * 24 * 60 * 60 * 1000;
 }
 
-export function FundingCollectButton({ companyId, fundingLastCollectedAt, onDone }: Props) {
-  const [job,       setJob]       = React.useState<FundingJob | null>(null);
-  const [busy,      setBusy]      = React.useState(false);
-  const [msg,       setMsg]       = React.useState<string | null>(null);
-  const [cached,    setCached]    = React.useState<string | null>(null);  // collectedAt
+export function FundingCollectButton(props: Props) {
+  const scope = useFundingScope(props.companyId);
+  return <FundingCollectControl key={scope.key ?? props.companyId} {...props} scope={scope} />;
+}
+
+function FundingCollectControl({ companyId, fundingLastCollectedAt, onDone, scope }: Props & { scope: ReturnType<typeof useFundingScope> }) {
+  const { key, isCurrent } = scope;
+  const [job, setJob] = React.useState<FundingJob | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState<string | null>(null);
+  const [cached, setCached] = React.useState<string | null>(null);
   const [forceMode, setForceMode] = React.useState(false);
-
+  const [statusError, setStatusError] = React.useState(false);
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const operation = React.useRef(0);
+  const reading = React.useRef(false);
+  const completed = React.useRef(new Set<string>());
+  const onDoneRef = React.useRef(onDone); onDoneRef.current = onDone;
   const isFresh = !forceMode && is7dFresh(fundingLastCollectedAt);
-
-  // 잡 폴링
-  const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const stopPolling = React.useCallback(() => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  const stop = React.useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
   }, []);
 
-  const startPolling = React.useCallback((compId: string) => {
-    stopPolling();
-    timerRef.current = setInterval(async () => {
-      const latest = await pollFundingJob(compId);
-      if (!latest) return;
-      setJob(latest);
-      if (latest.status === 'done' || latest.status === 'failed') {
-        stopPolling();
-        setBusy(false);
-        if (latest.status === 'done' && onDone) onDone();
+  const readStatus = React.useCallback(async (expectedJob?: FundingJob) => {
+    if (!key || !isCurrent(key) || reading.current) return;
+    stop(); const version = ++operation.current;
+    const valid = () => isCurrent(key) && version === operation.current;
+    setBusy(true); setMsg(null); setStatusError(false);
+    const check = async (tracked: FundingJob | undefined, attempt: number): Promise<void> => {
+      reading.current = true;
+      try {
+        const next = tracked ? await pollFundingJob(companyId, tracked.id) : await getLatestFundingJob(companyId);
+        if (!valid()) return;
+        if (next && (next.company_id !== companyId || (tracked && next.id !== tracked.id))) throw new Error('Unexpected job');
+        if (!next && tracked) throw new Error('Job unavailable');
+        setJob(next);
+        if (next?.status === 'pending' || next?.status === 'running') {
+          if (attempt >= 75) throw new Error('Polling paused');
+          timer.current = setTimeout(() => { timer.current = null; void check(next, attempt + 1); }, 4000);
+        } else if (tracked && next?.status === 'done' && !completed.current.has(next.id)) {
+          completed.current.add(next.id); onDoneRef.current?.();
+        }
+      } catch {
+        if (valid()) { stop(); setStatusError(true); setMsg('수집 상태를 확인하지 못했습니다. 상태를 다시 조회해 주세요.'); }
+      } finally {
+        if (valid()) { reading.current = false; setBusy(false); }
       }
-    }, 4000);
-  }, [stopPolling, onDone]);
+    };
+    await check(expectedJob, 1);
+  }, [companyId, key, isCurrent, stop]);
 
-  // 마운트 시 진행 중인 잡 복원 — 다른 페이지 갔다 와도 수집중 상태 유지
   React.useEffect(() => {
-    getLatestFundingJob(companyId).then((latest) => {
-      if (!latest) return;
-      if (latest.status === 'pending' || latest.status === 'running') {
-        setJob(latest);
-        setBusy(true);
-        startPolling(companyId);
-      }
-    });
-  }, [companyId, startPolling]);
-
-  React.useEffect(() => () => stopPolling(), [stopPolling]);
+    void readStatus();
+    const counter = operation, activeRead = reading;
+    return () => { counter.current++; activeRead.current = false; stop(); };
+  }, [readStatus, stop]);
 
   const handleCollect = async () => {
-    if (busy) return;
-    setBusy(true);
-    setMsg(null);
-    setJob(null);
-    setCached(null);
-
-    const result = await createFundingJob(companyId, forceMode);
-
-    if (result.type === 'cached') {
-      setCached(result.collectedAt);
-      setBusy(false);
-      return;
-    }
-
-    if (result.type === 'error') {
-      setMsg(`오류: ${result.message}`);
-      setBusy(false);
-      return;
-    }
-
-    if (result.type === 'created') {
-      setJob(result.job);
-      startPolling(companyId);
+    const key = scope.key;
+    if (busy || statusError || !key || !scope.isCurrent(key)) return;
+    stop(); const version = ++operation.current;
+    const valid = () => scope.isCurrent(key) && version === operation.current;
+    setBusy(true); setMsg(null); setJob(null); setCached(null);
+    try {
+      const result = await createFundingJob(companyId, forceMode);
+      if (!valid()) return;
+      if (result.type === 'cached') setCached(result.collectedAt);
+      else if (result.type === 'error') setMsg('수집 요청을 처리하지 못했습니다.');
+      else if (result.job.company_id === companyId) {
+        setJob(result.job); void readStatus(result.job);
+      } else { setStatusError(true); setMsg('수집 상태를 확인하지 못했습니다.'); }
+    } catch {
+      if (valid()) setMsg('수집 요청을 처리하지 못했습니다.');
+    } finally {
+      if (valid()) setBusy(false);
     }
   };
 
@@ -111,7 +120,7 @@ export function FundingCollectButton({ companyId, fundingLastCollectedAt, onDone
 
   const cachedNotice = cached ? (
     <span style={{ fontSize: 11, color: 'var(--f3)' }}>
-      7일 내 수집 완료 ({fmtDate(cached)})
+      저장된 최근 수집 기록 ({fmtDate(cached)})
       {!forceMode && (
         <>
           {' '}·{' '}
@@ -134,7 +143,7 @@ export function FundingCollectButton({ companyId, fundingLastCollectedAt, onDone
       <button
         className="btn sm"
         onClick={handleCollect}
-        disabled={busy || isRunning}
+        disabled={busy || isRunning || statusError || !scope.key}
         style={{
           opacity: (busy || isRunning) ? 0.6 : 1,
           cursor:  (busy || isRunning) ? 'not-allowed' : 'pointer',
@@ -146,7 +155,7 @@ export function FundingCollectButton({ companyId, fundingLastCollectedAt, onDone
       {/* 최근 수집일 안내 (초기 상태, 캐시 있을 때) */}
       {!job && !cached && !msg && isFresh && fundingLastCollectedAt && (
         <span style={{ fontSize: 11, color: 'var(--f4)' }}>
-          최근 수집 {fmtDate(fundingLastCollectedAt)}
+          저장된 수집 기록 {fmtDate(fundingLastCollectedAt)}
           {' '}·{' '}
           <button
             onClick={() => setForceMode(true)}
@@ -164,7 +173,11 @@ export function FundingCollectButton({ companyId, fundingLastCollectedAt, onDone
       {statusLine}
 
       {/* 오류 메시지 */}
-      {msg && <span style={{ fontSize: 12, color: 'var(--shf)' }}>{msg}</span>}
+      {msg && <span role="status" style={{ fontSize: 12, color: 'var(--shf)' }}>{msg}</span>}
+      {scope.key && <button type="button" className="btn sm" aria-disabled={busy} onClick={() => { if (!busy) void readStatus(job ?? undefined); }}>수집 상태 다시 조회</button>}
+      {scope.authError && <span role="status">로그인 상태를 확인하지 못했습니다.</span>}
+      {scope.authError && <button type="button" className="btn sm" onClick={scope.retryAuth}>로그인 상태 다시 조회</button>}
+      {scope.signedOut && <span role="status">로그인 후 수집 상태를 조회할 수 있습니다.</span>}
     </div>
   );
 }

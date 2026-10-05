@@ -31,6 +31,16 @@ export interface FundingJob {
 
 // ── 쿼리 함수 ──────────────────────────────────────────────────────────
 
+function readJob(data: unknown, companyId: string, jobId?: string): FundingJob | null {
+  if (data === null) return null;
+  const job = data as FundingJob | undefined;
+  if (!job || typeof job.id !== 'string' || job.company_id !== companyId
+    || (jobId && job.id !== jobId) || !['pending', 'running', 'done', 'failed'].includes(job.status)) {
+    throw new Error('수집 상태를 불러오지 못했습니다.');
+  }
+  return job;
+}
+
 /** 회사의 투자 라운드 목록 (announced_date DESC) */
 export async function getFundingRounds(
   companyId: string,
@@ -46,11 +56,10 @@ export async function getFundingRounds(
     .order('announced_date', { ascending: false, nullsFirst: false })
     .limit(limit);
 
-  if (error) {
-    console.error('[getFundingRounds] failed', error);
-    return [];
+  if (error || !Array.isArray(data) || data.some(row => row.company_id !== companyId)) {
+    throw new Error('투자정보를 불러오지 못했습니다.');
   }
-  return (data ?? []) as FundingRound[];
+  return data as FundingRound[];
 }
 
 /** 회사의 최신 수집 잡 1건 */
@@ -69,17 +78,22 @@ export async function getLatestFundingJob(
     .maybeSingle();
 
   if (error) {
-    console.error('[getLatestFundingJob] failed', error);
-    return null;
+    throw new Error('수집 상태를 불러오지 못했습니다.');
   }
-  return data as FundingJob | null;
+  return readJob(data, companyId);
 }
 
 /** pollFundingJob — 4초마다 호출하는 상태 조회 */
 export async function pollFundingJob(
   companyId: string,
+  jobId: string,
 ): Promise<FundingJob | null> {
-  return getLatestFundingJob(companyId);
+  const { data, error } = await supabaseBrowser()
+    .from('funding_collection_jobs')
+    .select('id, company_id, status, requested_by, started_at, finished_at, rounds_found, error, created_at')
+    .eq('company_id', companyId).eq('id', jobId).maybeSingle();
+  if (error) throw new Error('수집 상태를 불러오지 못했습니다.');
+  return readJob(data, companyId, jobId);
 }
 
 // ── createFundingJob ───────────────────────────────────────────────────

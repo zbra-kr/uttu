@@ -28,9 +28,9 @@ import {
   type CompanyProductsBasic,
   type CompanyChild,
 } from '@/lib/queries';
-import { getFundingRounds, type FundingRound } from '@/lib/queries-funding';
+import { useFundingRounds, type FundingRoundsState } from '@/components/uttu/use-funding-rounds';
 import { FundingCollectButton } from '@/components/uttu/funding-collect-button';
-import { FundingTimeline } from '@/components/uttu/funding-timeline';
+import { FundingRoundsView } from '@/components/uttu/funding-rounds-view';
 import { FundingBrief } from '@/components/uttu/funding-brief';
 
 // ── 상수 ──────────────────────────────────────────────────────────────
@@ -1017,14 +1017,14 @@ function TabDisclosure({ disclosures }: { disclosures: DartDisclosure[] }) {
 function TabFunding({
   companyId,
   fundingLastCollectedAt,
-  rounds,
+  funding,
   briefMd,
   briefAt,
   onRefresh,
 }: {
   companyId: string;
   fundingLastCollectedAt: string | null;
-  rounds: FundingRound[];
+  funding: FundingRoundsState;
   briefMd: string | null;
   briefAt: string | null;
   onRefresh: () => void;
@@ -1043,8 +1043,8 @@ function TabFunding({
         </div>
       </SecPanel>
 
-      <SecPanel title={`투자 라운드 타임라인${rounds.length > 0 ? ` (${rounds.length}건)` : ''}`}>
-        <FundingTimeline rounds={rounds} />
+      <SecPanel title={`투자 라운드 타임라인${funding.rounds.length > 0 ? ` (${funding.rounds.length}건)` : ''}`}>
+        <FundingRoundsView funding={funding} />
       </SecPanel>
 
       <SecPanel title="AI 투자 브리핑">
@@ -1087,7 +1087,7 @@ function CompanyPageInner() {
   const [productDist,   setProductDist]   = React.useState<CompanyProductDist | null>(null);
   const [brandTrend,    setBrandTrend]    = React.useState<BrandTrendRow[]>([]);
   const [productsBasic, setProductsBasic] = React.useState<CompanyProductsBasic | null>(null);
-  const [fundingRounds, setFundingRounds] = React.useState<FundingRound[]>([]);
+  const funding = useFundingRounds(idFromUrl);
   const [childCompanies, setChildCompanies] = React.useState<CompanyChild[]>([]);
   const [parentCompany,  setParentCompany]  = React.useState<{ id: string; corp_name: string } | null>(null);
   const [loading,        setLoading]        = React.useState(!!idFromUrl);
@@ -1105,18 +1105,17 @@ function CompanyPageInner() {
     setInfo(null);
     setLoading(true);
     setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]); setProductsBasic(null);
-    setFundingRounds([]); setChildCompanies([]); setParentCompany(null);
+    setChildCompanies([]); setParentCompany(null);
     Promise.all([
       fetchCompanyInfo(idFromUrl),
       fetchCompanyBrands(idFromUrl),
       fetchCompanyFinancials(idFromUrl),
       fetchCompanyDisclosures(idFromUrl),
-      getFundingRounds(idFromUrl, 50),
       fetchChildCompanies(idFromUrl),
-    ]).then(async ([ci, cb, cf, cd, fr, children]) => {
+    ]).then(async ([ci, cb, cf, cd, children]) => {
       if (!active) return;
       setInfo(ci); setBrands(cb); setFinancials(cf); setDisclosures(cd);
-      setFundingRounds(fr); setChildCompanies(children);
+      setChildCompanies(children);
       if (ci?.parent_company_id) {
         fetchParentCompany(ci.parent_company_id).then(value => { if (active) setParentCompany(value); }).catch(() => {});
       }
@@ -1162,9 +1161,7 @@ function CompanyPageInner() {
   }, [idFromUrl, info?.corp_name]);
 
   // 투자정보 수집 완료 후 라운드 목록 갱신
-  const handleFundingDone = React.useCallback(() => {
-    getFundingRounds(idFromUrl, 50).then(setFundingRounds).catch(() => {});
-  }, [idFromUrl]);
+  const handleFundingDone = funding.refresh;
 
   const handleSelectCompany = React.useCallback((id: string) => {
     router.push(`/company?id=${id}`);
@@ -1245,7 +1242,7 @@ function CompanyPageInner() {
           ['ranking',     '랭킹·상품', rankStats?.sku_count ? `${rankStats.sku_count} SKU` : productsBasic?.total_count ? `${productsBasic.total_count}개` : null],
           ['financial',   '재무',     financials.length ? `${financials.length}개년` : null],
           ['disclosure',  '공시',     disclosures.length || null],
-          ['funding',     '투자정보',  fundingRounds.length || null],
+          ['funding',     '투자정보',  funding.rounds.length || null],
         ] as [string, string, string | number | null][]).map(([key, label, badge]) => (
           <button type="button" key={key} className={`tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key as any)}>
             {label}
@@ -1264,7 +1261,7 @@ function CompanyPageInner() {
           {tab === 'ranking'     && <TabRanking rankStats={rankStats} top100Trend={top100Trend} brandTrend={brandTrend} productDist={productDist} productsBasic={productsBasic} rankLoading={rankLoading} brands={brands} />}
           {tab === 'financial'   && <TabFinancial financials={financials} top100Trend={top100Trend} rankStats={rankStats} />}
           {tab === 'disclosure'  && <TabDisclosure disclosures={disclosures} />}
-          {tab === 'funding'     && <TabFunding companyId={idFromUrl} fundingLastCollectedAt={info.funding_last_collected_at ?? null} rounds={fundingRounds} briefMd={info.funding_brief_md ?? null} briefAt={info.funding_brief_at ?? null} onRefresh={handleFundingDone} />}
+          {tab === 'funding'     && <TabFunding companyId={idFromUrl} fundingLastCollectedAt={info.funding_last_collected_at ?? null} funding={funding} briefMd={info.funding_brief_md ?? null} briefAt={info.funding_brief_at ?? null} onRefresh={handleFundingDone} />}
         </>
       )}
     </div>

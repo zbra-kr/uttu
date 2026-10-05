@@ -12,9 +12,9 @@ import {
   type CompanyRankStats, type CompanyProductDist, type BrandTrendRow, type CompanyChild,
   type CompanyProductsBasic,
 } from '@/lib/queries';
-import { getFundingRounds, type FundingRound } from '@/lib/queries-funding';
+import { useFundingRounds, type FundingRoundsState } from '@/components/uttu/use-funding-rounds';
 import { FundingCollectButton } from '@/components/uttu/funding-collect-button';
-import { FundingTimeline } from '@/components/uttu/funding-timeline';
+import { FundingRoundsView } from '@/components/uttu/funding-rounds-view';
 import { FundingBrief } from '@/components/uttu/funding-brief';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
 import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
@@ -838,14 +838,14 @@ function TabDisclosure({ disclosures }: { disclosures: DartDisclosure[] }) {
 function TabFundingMobile({
   companyId,
   fundingLastCollectedAt,
-  rounds,
+  funding,
   briefMd,
   briefAt,
   onRefresh,
 }: {
   companyId: string;
   fundingLastCollectedAt: string | null;
-  rounds: FundingRound[];
+  funding: FundingRoundsState;
   briefMd: string | null;
   briefAt: string | null;
   onRefresh: () => void;
@@ -865,9 +865,9 @@ function TabFundingMobile({
         </div>
       </Section>
 
-      <Section title={`투자 라운드 타임라인${rounds.length > 0 ? ` (${rounds.length}건)` : ''}`}>
+      <Section title={`투자 라운드 타임라인${funding.rounds.length > 0 ? ` (${funding.rounds.length}건)` : ''}`}>
         <div style={{ overflowX: 'auto' }}>
-          <FundingTimeline rounds={rounds} />
+          <FundingRoundsView funding={funding} />
         </div>
       </Section>
 
@@ -894,7 +894,7 @@ export default function MobileCompanyDetailView() {
   const [productDist,   setProductDist]   = useState<CompanyProductDist | null>(null);
   const [brandTrend,    setBrandTrend]    = useState<BrandTrendRow[]>([]);
   const [productsBasic, setProductsBasic] = useState<CompanyProductsBasic | null>(null);
-  const [fundingRounds,  setFundingRounds]  = useState<FundingRound[]>([]);
+  const funding = useFundingRounds(companyId);
   const [childCompanies, setChildCompanies] = useState<CompanyChild[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [rankLoading,   setRankLoading]   = useState(false);
@@ -906,18 +906,17 @@ export default function MobileCompanyDetailView() {
     setInfo(null);
     setLoading(true);
     setRankStats(null); setTop100Trend([]); setProductDist(null); setBrandTrend([]); setProductsBasic(null);
-    setFundingRounds([]); setChildCompanies([]);
+    setChildCompanies([]);
     Promise.all([
       fetchCompanyInfo(companyId),
       fetchCompanyBrands(companyId),
       fetchCompanyFinancials(companyId),
       fetchCompanyDisclosures(companyId),
-      getFundingRounds(companyId, 50),
       fetchChildCompanies(companyId),
-    ]).then(async ([ci, cb, cf, cd, fr, children]) => {
+    ]).then(async ([ci, cb, cf, cd, children]) => {
       if (!active) return;
       setInfo(ci); setBrands(cb); setFinancials(cf); setDisclosures(cd);
-      setFundingRounds(fr); setChildCompanies(children);
+      setChildCompanies(children);
       setLoading(false);
 
       const childBrands = children.flatMap((c: CompanyChild) => c.brands);
@@ -951,7 +950,7 @@ export default function MobileCompanyDetailView() {
     { key: 'ranking', label: '랭킹·상품', badge: rankStats?.sku_count ? `${rankStats.sku_count} SKU` : null },
     { key: 'financial', label: '재무', badge: financials.length ? `${financials.length}개년` : null },
     { key: 'disclosure', label: '공시', badge: disclosures.length || null },
-    { key: 'funding', label: '투자정보', badge: fundingRounds.length || null },
+    { key: 'funding', label: '투자정보', badge: funding.rounds.length || null },
   ];
 
   return (
@@ -1025,12 +1024,10 @@ export default function MobileCompanyDetailView() {
         <TabFundingMobile
           companyId={companyId}
           fundingLastCollectedAt={info.funding_last_collected_at ?? null}
-          rounds={fundingRounds}
+          funding={funding}
           briefMd={info.funding_brief_md ?? null}
           briefAt={info.funding_brief_at ?? null}
-          onRefresh={() => {
-            getFundingRounds(companyId, 50).then(setFundingRounds).catch(() => {});
-          }}
+          onRefresh={funding.refresh}
         />
       )}
     </div>
