@@ -1,5 +1,8 @@
 'use client';
 import React from 'react';
+import { useBriefingScope, useBriefingRead, type BriefingScope, type BriefingReadState } from '@/hooks/useBriefingRead';
+import MagazineReadStatus from '@/components/magazine/MagazineReadStatus';
+import { magazineSourceUrl } from '@/lib/magazine-source';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileMagazineView from './MobileMagazineView';
 import { useSearchParams } from 'next/navigation';
@@ -15,40 +18,34 @@ import { IcDownload } from '@/components/ui/icons';
 import { fetchNoteCountForEntity } from '@/lib/queries-me';
 
 const PAGE_SIZE = 50;
+const EMPTY_ROWS: MagazineRow[] = [];
 const MUSINSA_ARTICLE_URL = (articleId: string) =>
   `https://www.musinsa.com/app/contents/detail/${articleId}`;
 
 // ── 드로어 ────────────────────────────────────────────────────────────────────
 function MagazineDrawer({
-  item, onClose, onPrev, onNext,
+  item, scope, listState, onClose, onPrev, onNext,
 }: {
   item: MagazineRow;
+  scope: BriefingScope;
+  listState: BriefingReadState;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
 }) {
   const [noteOpen, setNoteOpen] = React.useState(false);
   const [noteCount, setNoteCount] = React.useState(0);
-  const [products, setProducts] = React.useState<MagazineArticleProduct[]>([]);
-  const [brandIds, setBrandIds] = React.useState<Record<string, string>>({});
-  const [loadingProducts, setLoadingProducts] = React.useState(true);
-
-  React.useEffect(() => {
-    setNoteOpen(false);
-    setProducts([]);
-    setBrandIds({});
-    setLoadingProducts(true);
-
-    fetchNoteCountForEntity('magazine', item.id).then(setNoteCount);
-
-    fetchMagazineProducts(item.article_id).then(async prods => {
-      setProducts(prods);
-      setLoadingProducts(false);
-    });
-
-    fetchBrandIdsByNames(item.brand_names).then(setBrandIds);
-  // item.id 변경 시에만 재조회 — article_id·brand_names는 항상 item.id와 함께 변경됨
-  }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reader = React.useCallback(async (signal: AbortSignal) => {
+    const [products, brandIds, count] = await Promise.all([
+      fetchMagazineProducts(item.article_id, signal), fetchBrandIdsByNames(item.brand_names), fetchNoteCountForEntity('magazine', item.id),
+    ]);
+    return { products, brandIds, count };
+  }, [item]);
+  const detail = useBriefingRead(scope, reader);
+  const products = detail.value?.products ?? [], brandIds = detail.value?.brandIds ?? {};
+  const loadingProducts = detail.loading && !detail.loaded;
+  const sourceUrl = magazineSourceUrl(item.landing_url);
+  React.useEffect(() => { if (detail.value) setNoteCount(detail.value.count); }, [detail.value]);
 
   const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
@@ -56,6 +53,8 @@ function MagazineDrawer({
     <>
       <div aria-hidden="true" className="drawer-overlay" onClick={onClose} />
       <aside className="drawer" style={{ width: 400 }}>
+        <MagazineReadStatus state={detail} label="매거진 상세" />
+        {listState.error && <p role="status">이전에 조회한 같은 조회 조건의 기사입니다.</p>}
         <div className="drawer-head">
           <span className="chip">{item.category ?? '—'}</span>
           {item.sub_category && <span className="chip">{item.sub_category}</span>}
@@ -88,12 +87,12 @@ function MagazineDrawer({
             <span className="mono dim" style={{ fontSize: 11 }}>{item.published_at.slice(0, 10)}</span>
             <span className="mono dim" style={{ fontSize: 11 }}>조회 {fmt(item.view_count)}</span>
             <span className="mono dim" style={{ fontSize: 11 }}>댓글 {item.comment_count}</span>
-            {item.landing_url && (
-              <a href={item.landing_url} target="_blank" rel="noreferrer"
+            {sourceUrl ? (
+              <a href={sourceUrl} target="_blank" rel="noopener noreferrer"
                 style={{ fontSize: 11, color: 'var(--hs)', display: 'flex', alignItems: 'center', gap: 2, marginLeft: 'auto' }}>
                 무신사 원문 <IcArrowUR size={10} />
               </a>
-            )}
+            ) : <span role="status">원문 링크를 사용할 수 없습니다.</span>}
           </div>
 
           {item.brand_names.length > 0 && (
@@ -118,11 +117,11 @@ function MagazineDrawer({
 
           <div>
             <div className="sec-tag" style={{ marginBottom: 6 }}>
-              연결 상품 {loadingProducts ? '…' : `${products.length}건`}
+              연결 상품 {!detail.loaded ? '…' : `${products.length}건`}
             </div>
             {loadingProducts ? (
               <div className="dim" style={{ fontSize: 12 }}>로딩 중…</div>
-            ) : products.length === 0 ? (
+            ) : !detail.loaded ? null : products.length === 0 ? (
               <div className="dim" style={{ fontSize: 12 }}>연결 상품 없음</div>
             ) : (
               <div className="col-flex gap-4">
@@ -184,10 +183,6 @@ function MagazinePage() {
   const params = useSearchParams();
   const jumpId = params.get('id') ?? '';
 
-  const [rows, setRows] = React.useState<MagazineRow[]>([]);
-  const [total, setTotal] = React.useState(0);
-  const [loading, setLoading] = React.useState(true);
-  const [cats, setCats] = React.useState<string[]>([]);
   const [category, setCategory] = React.useState('all');
   const [keyword, setKeyword] = React.useState('');
   const [kwInput, setKwInput] = React.useState('');
@@ -195,52 +190,34 @@ function MagazinePage() {
   const [dateTo, setDateTo] = React.useState('');
   const [sort, setSort] = React.useState<'published_at' | 'view_count' | 'comment_count'>('published_at');
   const [page, setPage] = React.useState(0);
-  const [drawerIdx, setDrawerIdx] = React.useState<number | null>(null);
-  const [sel, setSel] = React.useState(new Set<string>());
+  const scope = useBriefingScope(JSON.stringify(['magazine', category, keyword, dateFrom, dateTo, sort, page, jumpId]));
+  const reader = React.useCallback((signal: AbortSignal) => fetchMagazineArticles({ category: category === 'all' ? undefined : category, keyword, dateFrom, dateTo, sort, limit: PAGE_SIZE, offset: page * PAGE_SIZE, signal }), [category, keyword, dateFrom, dateTo, sort, page]);
+  const read = useBriefingRead(scope, reader);
+  const rows = read.value?.rows ?? EMPTY_ROWS, total = read.value?.total ?? 0, loading = read.loading && !read.loaded;
+  const [selection, setSelection] = React.useState<{ key: string | null; ids: Set<string> }>({ key: null, ids: new Set() });
+  const sel = selection.key === scope.key ? selection.ids : new Set<string>();
+  const setSel = (next: Set<string> | ((old: Set<string>) => Set<string>)) => setSelection(old => ({ key: scope.key, ids: typeof next === 'function' ? next(old.key === scope.key ? old.ids : new Set()) : next }));
+  const [drawer, setDrawer] = React.useState<{ key: string | null; id: string | null }>({ key: null, id: null });
+  const foundIndex = drawer.key === scope.key ? rows.findIndex(r => r.id === drawer.id) : -1;
+  const drawerIdx = foundIndex >= 0 ? foundIndex : null;
+  const setDrawerIdx = React.useCallback((next: number | null | ((old: number | null) => number | null)) => setDrawer(old => {
+    const previous = old.key === scope.key ? rows.findIndex(r => r.id === old.id) : -1;
+    const index = typeof next === 'function' ? next(previous >= 0 ? previous : null) : next;
+    return { key: scope.key, id: index === null ? null : rows[index]?.id ?? null };
+  }), [scope.key, rows]);
+  React.useEffect(() => { if (jumpId && read.loaded) { const index = rows.findIndex(r => r.id === jumpId); setDrawerIdx(index >= 0 ? index : null); } }, [jumpId, read.loaded, rows, setDrawerIdx]);
+  const categoryReader = React.useCallback((signal: AbortSignal) => fetchMagazineCategories(signal), []);
+  const categoryRead = useBriefingRead(scope, categoryReader);
+  const cats = categoryRead.value ?? [];
 
   // 랭킹 효과 분석
-  const [boosts, setBoosts] = React.useState<MagazineBoostAnomaly[]>([]);
-  const [boostTotal, setBoostTotal] = React.useState(0);
   const [boostSev, setBoostSev] = React.useState<string>('');
   const [ownOnly, setOwnOnly] = React.useState(false);
-  const [boostLoading, setBoostLoading] = React.useState(true);
-
-  React.useEffect(() => {
-    fetchMagazineCategories().then(setCats).catch(console.error);
-  }, []);
-
-  React.useEffect(() => {
-    setBoostLoading(true);
-    const articleIds = sel.size > 0 ? rows.filter(r => sel.has(r.id)).map(r => r.article_id) : undefined;
-    fetchMagazineBoostAnomalies({ limit: 200, severity: boostSev || undefined, ownOnly, articleIds })
-      .then(({ rows: r, total }) => {
-        setBoosts(r);
-        setBoostTotal(articleIds ? r.length : total);
-      })
-      .catch(console.error)
-      .finally(() => setBoostLoading(false));
-  // 필터 3종 변경 시에만 재조회. setters·articleIds(sel에서 파생) 안정 참조
-  }, [boostSev, ownOnly, sel]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  React.useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetchMagazineArticles({ category: category === 'all' ? undefined : category, keyword, dateFrom, dateTo, sort, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
-      .then(({ rows: r, total: t }) => {
-        if (cancelled) return;
-        setRows(r);
-        setTotal(t);
-        if (jumpId) {
-          const idx = r.findIndex(row => row.id === jumpId);
-          if (idx >= 0) setDrawerIdx(idx);
-        } else {
-          setDrawerIdx(null);
-        }
-      })
-      .catch(console.error)
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [category, keyword, dateFrom, dateTo, sort, page]);
+  const selectedIds = JSON.stringify(rows.filter(r => sel.has(r.id)).map(r => r.article_id));
+  const boostScope = useBriefingScope(JSON.stringify(['magazine-boosts', scope.key, boostSev, ownOnly, selectedIds]));
+  const boostReader = React.useCallback((signal: AbortSignal) => fetchMagazineBoostAnomalies({ limit: 200, severity: boostSev || undefined, ownOnly, articleIds: JSON.parse(selectedIds).length ? JSON.parse(selectedIds) : undefined, signal }), [boostSev, ownOnly, selectedIds]);
+  const boostRead = useBriefingRead(boostScope, boostReader, read.loaded);
+  const boosts = boostRead.value?.rows ?? [], boostTotal = sel.size ? boosts.length : boostRead.value?.total ?? 0, boostLoading = boostRead.loading;
 
   const toggle = (id: string) =>
     setSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -356,7 +333,7 @@ function MagazinePage() {
   return (
     <>
       {drawerIdx !== null && rows[drawerIdx] && (
-        <MagazineDrawer
+        <MagazineDrawer key={JSON.stringify([scope.key, rows[drawerIdx]])} scope={scope} listState={read}
           item={rows[drawerIdx]}
           onClose={() => setDrawerIdx(null)}
           onPrev={() => setDrawerIdx(i => Math.max(0, (i ?? 0) - 1))}
@@ -366,7 +343,7 @@ function MagazinePage() {
 
       <div className="page-title">
         <h1>매거진</h1>
-        <span className="chip mono">{total.toLocaleString()}건 수집</span>
+        <span className="chip mono">{read.loaded ? `${total.toLocaleString()}건 수집` : '수집 건수 확인 중'}</span>
         <span className="sub">무신사 매거진 발행물 · 클릭해서 상세/메모</span>
       </div>
 
@@ -420,12 +397,14 @@ function MagazinePage() {
         </div>
       </section>
 
+      <MagazineReadStatus state={read} />
+      <MagazineReadStatus state={categoryRead} label="카테고리" />
       {/* 마스터 그리드 */}
       <section className="panel" style={{ padding: 0 }}>
         <div className="row-flex between center" style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
           <div className="row-flex center gap-8">
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 500 }}>마스터 그리드</h3>
-            <span className="sec-tag">{loading ? '…' : `${total.toLocaleString()}건`}</span>
+            <span className="sec-tag">{!read.loaded ? '…' : `${total.toLocaleString()}건`}</span>
             {sel.size > 0 && <span className="mono dim" style={{ fontSize: 11 }}>· {sel.size} 선택</span>}
           </div>
           <div className="row-flex gap-4 center">
@@ -455,7 +434,7 @@ function MagazinePage() {
                 ))}
               </div>
             ))
-          ) : rows.map((row, i) => {
+          ) : read.loaded && rows.length === 0 ? <p role="status">조회 조건에 맞는 매거진 데이터가 없습니다.</p> : rows.map((row, i) => {
             const on = sel.has(row.id);
             return (
               <div key={row.id}
@@ -510,6 +489,7 @@ function MagazinePage() {
         )}
       </section>
 
+      <MagazineReadStatus state={boostRead} label="랭킹 효과" />
       {/* 분석 패널 — 항상 표시, 선택 없으면 안내 */}
       <div className="grid" style={{ gridTemplateColumns: '1.6fr 1fr', gap: 14 }}>
 
@@ -669,7 +649,7 @@ function MagazinePage() {
           <div className="row-flex center gap-8">
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 500 }}>매거진 → 랭킹 효과</h3>
             <span className="sec-tag">
-              {boostLoading ? '…' : `${boostTotal}건 탐지`} · 발행 후 3일 이내 순위 변동
+              {!boostRead.loaded ? '탐지 건수 확인 중' : `${boostTotal}건 탐지`} · 발행 후 3일 이내 순위 변동
             </span>
             {sel.size > 0 && (
               <span style={{ fontSize: 11, color: 'var(--hs)', fontWeight: 500 }}>
@@ -709,7 +689,7 @@ function MagazinePage() {
                 ))}
               </div>
             ))
-          ) : boosts.length === 0 ? (
+          ) : !boostRead.loaded ? null : boosts.length === 0 ? (
             <div style={{ padding: '24px 14px', fontSize: 12, color: 'var(--f4)' }}>
               탐지된 랭킹 효과 없음
             </div>

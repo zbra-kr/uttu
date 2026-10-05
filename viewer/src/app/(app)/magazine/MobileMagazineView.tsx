@@ -1,10 +1,13 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
+import { useBriefingScope, useBriefingRead, type BriefingScope, type BriefingReadState } from '@/hooks/useBriefingRead';
+import MagazineReadStatus from '@/components/magazine/MagazineReadStatus';
+import { mobileMagazineSourceUrl } from '@/lib/magazine-source';
 import { useRouter } from 'next/navigation';
 import {
   fetchMagazineArticles, fetchMagazineProducts, fetchMagazineBoostAnomalies,
   fetchBrandIdsByNames,
-  type MagazineRow, type MagazineArticleProduct, type MagazineBoostAnomaly,
+  type MagazineRow,
 } from '@/lib/queries';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
@@ -61,26 +64,17 @@ function fmtViews(n: number): string {
 }
 
 // ── 매거진 상세 바텀시트 ────────────────────────────────────────────────
-function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClose: () => void }) {
+function ArticleDetailSheet({ article, scope, listState, onClose }: { article: MagazineRow; scope: BriefingScope; listState: BriefingReadState; onClose: () => void }) {
   const router = useRouter();
-  const [products, setProducts] = useState<MagazineArticleProduct[]>([]);
-  const [boosts, setBoosts] = useState<MagazineBoostAnomaly[]>([]);
-  const [brandIds, setBrandIds] = useState<Record<string, string>>({});
-  const [detailLoading, setDetailLoading] = useState(true);
-
-  useEffect(() => {
-    setDetailLoading(true);
-    Promise.all([
-      fetchMagazineProducts(article.article_id),
-      fetchMagazineBoostAnomalies({ articleIds: [article.article_id], limit: 100 }),
-      fetchBrandIdsByNames(article.brand_names),
-    ]).then(([prods, { rows: bRows }, ids]) => {
-      setProducts(prods);
-      setBoosts(bRows);
-      setBrandIds(ids);
-      setDetailLoading(false);
-    }).catch(() => setDetailLoading(false));
-  }, [article.article_id]);
+  const reader = useCallback(async (signal: AbortSignal) => {
+    const [products, { rows: boosts }, brandIds] = await Promise.all([
+      fetchMagazineProducts(article.article_id, signal), fetchMagazineBoostAnomalies({ articleIds: [article.article_id], limit: 100, signal }), fetchBrandIdsByNames(article.brand_names),
+    ]);
+    return { products, boosts, brandIds };
+  }, [article]);
+  const detail = useBriefingRead(scope, reader);
+  const products = detail.value?.products ?? [], boosts = detail.value?.boosts ?? [], brandIds = detail.value?.brandIds ?? {};
+  const detailLoading = detail.loading && !detail.loaded;
 
   // 부스트 정보를 musinsa_no 기준으로 맵핑
   const boostMap = new Map(boosts.map(b => [b.meta?.musinsa_no, b]));
@@ -100,8 +94,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
     return 0;
   });
 
-  const musinsaUrl = article.landing_url
-    ?? `https://www.musinsa.com/app/contents/detail/${article.article_id}`;
+  const musinsaUrl = mobileMagazineSourceUrl(article.landing_url, article.article_id);
 
   return (
     <>
@@ -116,6 +109,8 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
         boxShadow: '0 -8px 32px rgba(0,0,0,0.2)',
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
       }}>
+        <MagazineReadStatus state={detail} label="매거진 상세" />
+        {listState.error && <p role="status">이전에 조회한 같은 조회 조건의 기사입니다.</p>}
         {/* handle */}
         <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, paddingBottom: 4, flexShrink: 0 }}>
           <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--bs)' }} />
@@ -252,7 +247,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
 
               {detailLoading ? (
                 <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 12, color: 'var(--f4)' }}>불러오는 중...</div>
-              ) : sorted.length === 0 ? (
+              ) : !detail.loaded ? null : sorted.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '16px 0', fontSize: 12, color: 'var(--f4)' }}>연결된 상품이 없습니다</div>
               ) : (
                 sorted.map((p, i) => {
@@ -347,7 +342,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
 
         {/* 하단 버튼 */}
         <div style={{ padding: '12px 16px', paddingBottom: 'max(12px, env(safe-area-inset-bottom))', borderTop: '1px solid var(--bs)', flexShrink: 0 }}>
-          <a
+          {musinsaUrl ? <a
             href={musinsaUrl}
             target="_blank"
             rel="noopener noreferrer"
@@ -358,7 +353,7 @@ function ArticleDetailSheet({ article, onClose }: { article: MagazineRow; onClos
             }}
           >
             무신사에서 보기 ↗
-          </a>
+          </a> : <span role="status">원문 링크를 사용할 수 없습니다.</span>}
         </div>
       </div>
     </>
@@ -375,23 +370,20 @@ const SORT_CHIPS: { value: SortKey; label: string }[] = [
 
 // ── 메인 ─────────────────────────────────────────────────────────────────
 export default function MobileMagazineView() {
-  const [rows, setRows] = useState<MagazineRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [cat, setCat] = useState('');
   const [sort, setSort] = useState<SortKey>('published_at');
-  const [selected, setSelected] = useState<MagazineRow | null>(null);
+  const [selection, setSelection] = useState<{ key: string | null; id: string } | null>(null);
   const [datePreset, setDatePreset] = useState<DatePreset>('3m');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
 
-  useEffect(() => {
-    if (datePreset === 'custom' && (!customFrom || !customTo)) return;
-    const { from, to } = getDateRange(datePreset, customFrom, customTo);
-    setLoading(true);
-    fetchMagazineArticles({ category: cat || undefined, sort, limit: 100, dateFrom: from, dateTo: to })
-      .then(({ rows: data }) => { setRows(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [cat, sort, datePreset, customFrom, customTo]);
+  const { from, to } = getDateRange(datePreset, customFrom, customTo);
+  const enabled = datePreset !== 'custom' || !!(customFrom && customTo && customFrom <= customTo);
+  const scope = useBriefingScope(JSON.stringify(['mobile-magazine', cat, sort, datePreset, from, to]));
+  const reader = useCallback((signal: AbortSignal) => fetchMagazineArticles({ category: cat || undefined, sort, limit: 100, dateFrom: from, dateTo: to, signal }), [cat, sort, from, to]);
+  const read = useBriefingRead(scope, reader, enabled);
+  const rows = read.value?.rows ?? [], loading = read.loading && !read.loaded;
+  const selected = selection?.key === scope.key ? rows.find(r => r.id === selection.id) : undefined;
 
   return (
     <>
@@ -444,15 +436,18 @@ export default function MobileMagazineView() {
           </div>
         )}
 
+        {enabled ? <MagazineReadStatus state={read} /> : <p role="status">시작일과 종료일을 순서대로 선택해 주세요.</p>}
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>
-        ) : rows.length === 0 ? (
+        ) : read.loaded && rows.length === 0 ? (
           <MobileEmptyState icon="📰" title="매거진 데이터가 없습니다" />
         ) : (
           rows.map(r => (
             <div
               key={r.id}
-              onClick={() => setSelected(r)}
+              role="button" tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelection({ key: scope.key, id: r.id }); } }}
+              onClick={() => setSelection({ key: scope.key, id: r.id })}
               style={{
                 display: 'flex', gap: 12, padding: '12px 13px',
                 background: 'var(--sur)', border: '1px solid var(--bd)',
@@ -493,7 +488,7 @@ export default function MobileMagazineView() {
       </div>
 
       {selected && (
-        <ArticleDetailSheet article={selected} onClose={() => setSelected(null)} />
+        <ArticleDetailSheet key={JSON.stringify([scope.key, selected])} scope={scope} listState={read} article={selected} onClose={() => setSelection(null)} />
       )}
     </>
   );

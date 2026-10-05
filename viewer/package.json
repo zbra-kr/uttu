@@ -21,6 +21,7 @@
     "test:matching": "node --test tests/matching-score.test.cjs",
     "test:collection-status": "node --test tests/collection-status.test.cjs",
     "test:funding-viewer": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/funding-viewer.test.cjs tests/funding-read-deadline.test.cjs",
+    "test:magazine-viewer": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/magazine-read-state.test.cjs",
     "test:briefing-evidence": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/briefing-evidence.test.cjs tests/briefing-read-state.test.cjs tests/cs-daily-review-*.test.cjs",
     "test:briefing-navigation": "node --test tests/briefing-navigation.test.cjs",
     "test:weekly-reviews": "node --test tests/weekly-review*.test.cjs",

@@ -103,6 +103,10 @@ jobs:
         run: npm run test:funding-viewer
         working-directory: viewer
 
+      - name: Magazine viewer correctness regression tests
+        run: npm run test:magazine-viewer
+        working-directory: viewer
+
       - name: Weekly review workspace regression tests
         run: npm run test:weekly-reviews
         working-directory: viewer

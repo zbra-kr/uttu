@@ -296,6 +296,7 @@ export async function fetchMagazineArticles(opts: {
   sort?: 'published_at' | 'view_count' | 'comment_count';
   limit?: number;
   offset?: number;
+  signal?: AbortSignal;
 }): Promise<{ rows: MagazineRow[]; total: number }> {
   const { category, keyword, dateFrom, dateTo, sort = 'published_at', limit = 50, offset = 0 } = opts;
 
@@ -310,28 +311,43 @@ export async function fetchMagazineArticles(opts: {
   if (dateFrom) q = q.gte('published_at', dateFrom);
   if (dateTo) q = q.lte('published_at', dateTo + 'T23:59:59');
 
+  if (opts.signal) q = q.abortSignal(opts.signal);
   const { data, error, count } = await q;
   if (error) throw error;
-  return { rows: (data ?? []) as MagazineRow[], total: count ?? 0 };
+  if (!Array.isArray(data) || !Number.isSafeInteger(count) || count! < 0 || data.some(r =>
+    !r || typeof r.id !== 'string' || !r.id || typeof r.article_id !== 'string' || !r.article_id || typeof r.title !== 'string' ||
+    typeof r.published_at !== 'string' || !Number.isFinite(Date.parse(r.published_at)) ||
+    !Array.isArray(r.brand_names) || r.brand_names.some((b: unknown) => typeof b !== 'string') ||
+    (['category', 'sub_category', 'thumbnail_url', 'summary', 'landing_url'] as const).some(k => r[k] !== null && typeof r[k] !== 'string') ||
+    !Number.isSafeInteger(r.view_count) || r.view_count < 0 || !Number.isSafeInteger(r.comment_count) || r.comment_count < 0)) throw new Error('Magazine data unavailable');
+  return { rows: data as MagazineRow[], total: count! };
 }
 
-export async function fetchMagazineCategories(): Promise<string[]> {
-  const { data } = await supabase
+export async function fetchMagazineCategories(signal?: AbortSignal): Promise<string[]> {
+  let q = supabase
     .from('magazine_articles')
     .select('category')
     .not('category', 'is', null)
     .order('category');
-  const cats = [...new Set((data ?? []).map((r: any) => r.category).filter(Boolean))];
+  if (signal) q = q.abortSignal(signal);
+  const { data, error } = await q;
+  if (error) throw error;
+  if (!Array.isArray(data) || data.some(r => typeof r.category !== 'string')) throw new Error('Magazine categories unavailable');
+  const cats = [...new Set(data.map(r => r.category).filter(Boolean))];
   return cats;
 }
 
-export async function fetchMagazineProducts(articleId: string): Promise<MagazineArticleProduct[]> {
-  const { data } = await supabase
+export async function fetchMagazineProducts(articleId: string, signal?: AbortSignal): Promise<MagazineArticleProduct[]> {
+  let q = supabase
     .from('magazine_article_products')
     .select('musinsa_no, product_id, products(name, is_own, brands(name))')
     .eq('article_id', articleId)
     .limit(30);
-  return ((data ?? []) as any[]).map(r => ({
+  if (signal) q = q.abortSignal(signal);
+  const { data, error } = await q;
+  if (error) throw error;
+  if (!Array.isArray(data)) throw new Error('Magazine products unavailable');
+  return (data as any[]).map(r => ({
     musinsa_no: r.musinsa_no,
     product_id: r.product_id,
     name: r.products?.name ?? '(stub)',
@@ -435,6 +451,7 @@ export async function fetchMagazineBoostAnomalies(opts: {
   severity?: string;
   ownOnly?: boolean;
   articleIds?: string[];
+  signal?: AbortSignal;
 }): Promise<{ rows: MagazineBoostAnomaly[]; total: number }> {
   const { limit = 50, offset = 0, severity, ownOnly, articleIds } = opts;
   let q = supabase
@@ -446,9 +463,11 @@ export async function fetchMagazineBoostAnomalies(opts: {
     .order('severity', { ascending: true })
     .range(offset, offset + limit - 1);
   if (severity) q = q.eq('severity', severity);
+  if (opts.signal) q = q.abortSignal(opts.signal);
   const { data, error, count } = await q;
   if (error) throw error;
-  let rows = (data ?? []) as MagazineBoostAnomaly[];
+  if (!Array.isArray(data) || !Number.isSafeInteger(count) || count! < 0) throw new Error('Magazine boost data unavailable');
+  let rows = data as MagazineBoostAnomaly[];
   if (ownOnly) rows = rows.filter(r => r.meta?.is_own === true);
   if (articleIds && articleIds.length > 0) {
     const idSet = new Set(articleIds);
