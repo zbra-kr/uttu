@@ -1,4 +1,5 @@
 'use client';
+import DailyReportScope from '@/components/report/DailyReportScope';
 import React from 'react';
 import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
@@ -46,7 +47,7 @@ const CONTEXTS: Record<string, string[]> = {
   '/me':        ['마이페이지'],
 };
 
-export default function ShellClient({ children }: { children: React.ReactNode }) {
+function ShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => { setMounted(true); }, []);
@@ -247,4 +248,9 @@ export default function ShellClient({ children }: { children: React.ReactNode })
       <CmdK open={cmdkOpen} onClose={() => setCmdkOpen(false)} />
     </>
   );
+}
+
+export default function ShellClient({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  return <DailyReportScope active={pathname === '/report'}><ShellContent>{children}</ShellContent></DailyReportScope>;
 }

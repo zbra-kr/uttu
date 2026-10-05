@@ -4,7 +4,7 @@ const fixturePath=path.join(__dirname,'performance-viewport.test.cjs');
 let source=fs.readFileSync(fixturePath,'utf8').split('\n(async()=>{')[0];
 source=source.replace("const { readSource } = require('./performance-source.cjs');", "const { readSource: readBaseSource } = require('./performance-source.cjs');\nfunction readSource(ref){const name=ref.split('/')[1];if(['ShellClient.tsx','MobileShell.tsx'].includes(name))return fs.readFileSync(require('node:path').join(__dirname,'../src/components/shell',name),'utf8');return readBaseSource(ref)}");
 source=source.replace("'next/navigation':{useRouter:","'next/navigation':{usePathname:()=>'/'+route,useRouter:");
-source=source.replace("const modules={", "const modules={'@/components/onboarding/OnboardingProvider':{useOnboarding:()=>({active:false,step:0})},'@/lib/supabase/client':{supabaseBrowser:()=>({auth:{getUser:async()=>({data:{user:null}})}})},");
+source=source.replace("const modules={", "const modules={'@/components/report/DailyReportScope':{__esModule:true,default:({children})=>children},'@/components/onboarding/OnboardingProvider':{useOnboarding:()=>({active:false,step:0})},'@/lib/supabase/client':{supabaseBrowser:()=>({auth:{getUser:async()=>({data:{user:null}})}})},");
 source=source.replace("fetchNoteCountForEntity:async()=>0,logView:()=>{}", "fetchNoteCountForEntity:async()=>0,fetchUnreadCount:async()=>0,logView:()=>{}");
 source=source.replace("const paths={", "const paths={'./MobileShell':'current/MobileShell.tsx',");
 source=source.replace("if(typeof t[k]!=='function')return t[k];", "if(k==='fetchShellStats')return async()=>({anomalyCount:0,reviewTotal:0,reviewAvgRating:0,reviewLowCount:0,snapNew7d:0,magazineNew7d:0,promoActiveCount:0});if(typeof t[k]!=='function')return t[k];");

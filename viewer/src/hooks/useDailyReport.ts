@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { fetchDailyReport, type DailyReportData } from '@/lib/queries-report';
 import { fetchReportBrandEvidence, type BrandEvidence } from '@/lib/report-brand-evidence';
@@ -10,7 +10,7 @@ import { fetchReportRecommendModules, fetchReportRecommendItems, deriveRecommend
 
 type State<T> = { state: 'loading' | 'signedout' | 'error' | 'ready'; data: T | null };
 const pending = { state: 'loading', data: null } as const;
-export function useDailyReport() {
+export function useDailyReportLoader(enabled = true, revision = 0) {
   const [core, setCore] = useState<State<DailyReportData>>(pending);
   const [brand, setBrand] = useState<State<BrandEvidence>>(pending);
   const [headers, setHeaders] = useState<State<PromotionHeaders>>(pending);
@@ -26,7 +26,15 @@ export function useDailyReport() {
   const moduleRetryRef = useRef<(() => void) | null>(null), recommendItemRetryRef = useRef<(() => void) | null>(null);
   const retryRecommendModules = useCallback(() => moduleRetryRef.current?.(), []);
   const retryRecommendItems = useCallback(() => recommendItemRetryRef.current?.(), []);
+  // A route re-entry or expired responsive reuse starts without the prior snapshot.
+  const [scope, setScope] = useState({ enabled, revision });
+  if (scope.enabled !== enabled || scope.revision !== revision) {
+    setScope({ enabled, revision });
+    setCore(pending); setBrand(pending); setHeaders(pending); setItems(pending);
+    setModules(pending); setRecommendItems(pending);
+  }
   useEffect(() => {
+    if (!enabled) return;
     let disposed = false, eventSeen = false, current: string | null | undefined;
     let controller: AbortController | undefined, brandController: AbortController | undefined;
     let brandAttempt = 0, brandPending = false, authAttempt = 0, authPending = false;
@@ -113,7 +121,7 @@ export function useDailyReport() {
     return () => { disposed = true; controller?.abort(); brandController?.abort(); abortSources(); retryRef.current = null;
       headerRetryRef.current = null; itemRetryRef.current = null;
       moduleRetryRef.current = null; recommendItemRetryRef.current = null; subscription.unsubscribe(); };
-  }, []);
+  }, [enabled, revision]);
   const rows = brand.state === 'ready' ? brand.data?.rows ?? [] : [];
   const promotion = derivePromotionEvidence(headers, items);
   const recommend = deriveRecommendEvidence(recommendModulesSource, recommendItemsSource);
@@ -124,4 +132,12 @@ export function useDailyReport() {
   }) } : null;
   return { core, brand, headers, items, promotion, recommendModulesSource, recommendItemsSource, recommend,
     data, retryBrand, retryHeaders, retryItems, retryRecommendModules, retryRecommendItems };
+}
+
+export const DailyReportContext = createContext<ReturnType<typeof useDailyReportLoader> | null>(null);
+
+export function useDailyReport() {
+  const shared = useContext(DailyReportContext);
+  const local = useDailyReportLoader(shared === null);
+  return shared ?? local;
 }
