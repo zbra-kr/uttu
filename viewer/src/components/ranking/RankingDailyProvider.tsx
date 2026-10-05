@@ -1,6 +1,7 @@
 'use client';
 import React from 'react';
 import { usePathname } from 'next/navigation';
+import { useIsMobile } from '@/hooks/useViewport';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { fetchRankingDaily } from '@/lib/queries-ranking-daily';
 import { createDailyRankingSession, type DailyRankingSession } from '@/lib/ranking-daily-session';
@@ -11,7 +12,8 @@ export const useRankingDailySession = () => React.useContext(Context);
 /** Stable above the responsive shell; identity comes only from the normal SDK lifecycle. */
 export default function RankingDailyProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const active = pathname === '/ranking';
+  const mobile = useIsMobile();
+  const active = pathname === '/ranking' || (pathname === '/' && mobile);
   const [session] = React.useState(() => createDailyRankingSession(fetchRankingDaily));
   React.useEffect(() => {
     if (!active) { session.leave(); return; }

@@ -9,6 +9,8 @@ import {
   type RankingRow, type AnomalyRow, type OwnBrandStat, type PromoSummary,
 } from '@/lib/queries';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
+import RankingDailyInsights, { useRankingDailyInsights } from '@/components/ranking/RankingDailyInsights';
+import { validateRankingSourceContext } from '@/lib/notes/ranking-context';
 
 const fmt = (n: number | null | undefined) => n == null ? '—' : n.toLocaleString();
 
@@ -42,6 +44,12 @@ export default function MobileHomeView() {
   const [reviewStats, setReviewStats] = React.useState<{ total: number; avgRating: number; lowCount: number } | null>(null);
   const [promos,     setPromos]     = React.useState<PromoSummary[]>([]);
   const [loading,    setLoading]    = React.useState(true);
+  const dailyScope = React.useMemo(() => validateRankingSourceContext({
+    version: 1, kind: 'ranking', period: 'today', fromDate: '', toDate: '',
+    selectedCategory: '000', gender: rankGender, age: 'AGE_BAND_ALL', price: [0, 50],
+    companies: [], brands: [], ownOnly: false, moverOnly: false, sort: 'rank', sortDir: 'asc', page: 1,
+  }), [rankGender]);
+  const dailyLoad = useRankingDailyInsights(dailyScope);
 
   React.useEffect(() => {
     Promise.all([
@@ -53,12 +61,22 @@ export default function MobileHomeView() {
   }, []);
 
   React.useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
     setRankLoading(true);
-    fetchLatestRanking({ genderFilter: rankGender, limit: 10 })
-      .then(setRanking)
-      .catch(() => setRanking([]))
-      .finally(() => setRankLoading(false));
+    fetchLatestRanking({ genderFilter: rankGender, limit: 10, signal: controller.signal })
+      .then(rows => { if (active) setRanking(rows); })
+      .catch(() => { if (active) setRanking([]); })
+      .finally(() => { if (active) setRankLoading(false); });
+    return () => { active = false; controller.abort(); };
   }, [rankGender]);
+
+  function selectRankGender(value: string) {
+    if (value === rankGender) return;
+    setRankLoading(true);
+    setRanking([]);
+    setRankGender(value);
+  }
 
   const ownTop100 = ownBrands.reduce((s, b) => s + b.top100_count, 0);
   const totalSku  = ownBrands.reduce((s, b) => s + b.sku_count, 0);
@@ -113,7 +131,7 @@ export default function MobileHomeView() {
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--f1)' }}>상품 랭킹 TOP10</span>
           <Link href="/ranking" style={{ fontSize: 11, color: 'var(--hs)', textDecoration: 'none', fontFamily: 'var(--mono)' }}>전체 →</Link>
         </div>
-        <MobileFilterChips items={GENDER_CHIPS} activeValue={rankGender} onChange={setRankGender} />
+        <MobileFilterChips items={GENDER_CHIPS} activeValue={rankGender} onChange={selectRankGender} />
         <div style={{ marginTop: 8 }}>
           {rankLoading ? (
             <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 12, color: 'var(--f4)' }}>불러오는 중...</div>
@@ -190,6 +208,10 @@ export default function MobileHomeView() {
           </div>
         </div>
       )}
+
+      <div style={{ '--f3': 'var(--f2)', '--f4': 'var(--f2)' } as React.CSSProperties}>
+        <RankingDailyInsights scope={dailyScope} load={dailyLoad} compact />
+      </div>
 
       {/* ── 이상탐지 ── */}
       {!loading && anomalies.length > 0 && (
