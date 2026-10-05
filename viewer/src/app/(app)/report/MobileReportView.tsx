@@ -35,13 +35,18 @@ function Section({ title, children, defaultOpen = false }: {
   );
 }
 
+function ReportFrame({ evidence, children }: { evidence: React.ReactNode; children: React.ReactNode }) {
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px', width: '100%', minWidth: 0 }}>{evidence}{children}</div>;
+}
+
 export default function MobileReportView() {
   const { core, brand, headers, items, promotion, data, retryBrand, retryHeaders, retryItems } = useDailyReport();
   const promotionStatus = <PromotionEvidenceStatus headers={headers} items={items} evidence={promotion} retryHeaders={retryHeaders} retryItems={retryItems} rankingDate={data?.kpi.latestDate} />;
   const loading = core.state === 'loading';
+  const evidence = <><BrandEvidenceStatus source={brand} retry={retryBrand} rankingDate={data?.kpi.latestDate} showRows={!data} />{promotionStatus}</>;
 
-  if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...<BrandEvidenceStatus source={brand} retry={retryBrand} showRows />{promotionStatus}</div>;
-  if (!data) return <><MobileEmptyState icon="📋" title={core.state === 'error' ? '리포트 조회 실패' : core.state === 'signedout' ? '로그인이 필요합니다' : '리포트 데이터가 없습니다'} /><BrandEvidenceStatus source={brand} retry={retryBrand} showRows />{promotionStatus}</>;
+  if (loading) return <ReportFrame evidence={evidence}><div role="status" style={{ textAlign: 'center', padding: '20px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div></ReportFrame>;
+  if (!data) return <ReportFrame evidence={evidence}><MobileEmptyState icon="📋" title={core.state === 'error' ? '리포트 조회 실패' : core.state === 'signedout' ? '로그인이 필요합니다' : '리포트 데이터가 없습니다'} /></ReportFrame>;
 
   const {
     kpi, ownBrands, competitors, brandRanking, demoGrid,
@@ -50,9 +55,7 @@ export default function MobileReportView() {
   } = data;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
-      <BrandEvidenceStatus source={brand} retry={retryBrand} rankingDate={kpi.latestDate} />
-      {promotionStatus}
+    <ReportFrame evidence={evidence}>
       {/* KPI 요약 */}
       <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
         <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>{kpi.latestDate} 기준</div>
@@ -296,6 +299,6 @@ export default function MobileReportView() {
           ))}
         </Section>
       )}
-    </div>
+    </ReportFrame>
   );
 }

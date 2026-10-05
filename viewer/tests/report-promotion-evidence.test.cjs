@@ -5,7 +5,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((a, b)
 const row = (date, rank = 1, name = 'Brand') => ({ snapshot_date: date, rank_position: rank, brand_name: name, brands: { is_own: true } });
 function fixture() {
     const calls = [], pending = [], listeners = new Set();
-    let authLate = null, coreError = false, ownNames = ['Brand'], authCalls = 0;
+    let authLate = null, coreLate = null, coreError = false, ownNames = ['Brand'], authCalls = 0;
     const client = { auth: { getUser: () => { authCalls++; return authLate?.promise ?? Promise.resolve({ data: { user: { id: 'A' } } }); }, onAuthStateChange: fn => { listeners.add(fn); return { data: { subscription: { unsubscribe: () => listeners.delete(fn) } } }; } }, from(table) {
             const call = { table, filters: [], ops: [], limit: null };
             calls.push(call);
@@ -19,6 +19,7 @@ function fixture() {
                     if (table === 'brands')
                         data = ownNames.map((name,i) => ({ id: 'brand'+i, name }));
                     if (table === 'ranking_snapshots' && call.fields === 'snapshot_date') {
+                        if (coreLate) return coreLate.promise.then(yes, no);
                         if (coreError)
                             return Promise.resolve({ data: null, error: { message: 'offline' } }).then(yes, no);
                         data = [{ snapshot_date: '2026-10-05' }];
@@ -29,7 +30,7 @@ function fixture() {
             return q;
         } };
     const mocks = { '@/lib/supabase/client': { supabaseBrowser: () => client }, './supabase/client': { supabaseBrowser: () => client }, 'next/link': { __esModule: true, default: ({ children, ...p }) => React.createElement('a', p, children) }, '@/hooks/useResolvedViewport': { useResolvedViewport: () => 'desktop' } };
-    return { client, calls, pending, mocks, get authCalls() { return authCalls; }, setOwnNames(names) { ownNames = names; }, auth(id) { listeners.forEach(fn => fn('SIGNED_IN', id ? { user: { id } } : null)); }, late() { authLate = deferred(); return authLate; }, failCore() { coreError = true; } };
+    return { client, calls, pending, mocks, get authCalls() { return authCalls; }, setOwnNames(names) { ownNames = names; }, auth(id) { listeners.forEach(fn => fn('SIGNED_IN', id ? { user: { id } } : null)); }, late() { authLate = deferred(); return authLate; }, holdCore() { coreLate = deferred(); return coreLate; }, failCore() { coreError = true; } };
 }
 const header = (date='2026-10-03',type='general',id='event') => ({id,snapshot_date:date,promotion_type:type});
 const item = (date='2026-10-03',promo='event',brand='Brand',dr=20,id='item') => ({id,promotion_id:promo,musinsa_no:'123',snapshot_date:date,musinsa_brand_name:brand,discount_rate:dr});
@@ -114,4 +115,17 @@ test('promotion control recovers identity failure through SDK; auth event wins l
  await React.act(async()=>root.unmount());for(const table of ['promotions','promotion_items'])assert.equal(pendingFor(f,table)[0].call.signal.aborted,true);
  await React.act(async()=>{pendingFor(f,'promotions')[0].resolve({data:[header()],error:null});pendingFor(f,'promotion_items')[0].resolve({data:[item()],error:null})});assert.equal(root.toJSON(),null);
  }finally{await React.act(async()=>root?.unmount())}
+});
+test('source retry controls retain instance across deferred core ready, empty and error transitions on desktop/mobile',async()=>{
+ for(const mobile of [false,true])for(const outcome of ['ready','empty','error'])for(const table of ['promotions','promotion_items']){
+ const f=fixture(),core=f.holdCore();f.mocks['@/hooks/useResolvedViewport']={useResolvedViewport:()=>mobile?'mobile':'desktop'};
+ const Page=load('src/app/(app)/report/page.tsx',f.mocks).default,label=table==='promotions'?'프로모션 헤더 다시 조회':'프로모션 아이템 다시 조회';let root;
+ try{await React.act(async()=>{root=Renderer.create(React.createElement(Page))});
+ await React.act(async()=>pendingFor(f,table)[0].resolve({data:null,error:{message:'offline'}}));
+ const button=root.root.findByProps({'aria-label':label});await React.act(async()=>button.props.onClick());assert.equal(button.props['aria-disabled'],true);
+ await React.act(async()=>core.resolve({data:outcome==='ready'?[{snapshot_date:'2026-10-05'}]:outcome==='empty'?[]:null,error:outcome==='error'?{message:'offline'}:null}));
+ assert.equal(root.root.findByProps({'aria-label':label}),button,`${mobile?'mobile':'desktop'} ${outcome} ${table}`);
+ await React.act(async()=>pendingFor(f,table)[1].resolve({data:table==='promotions'?[header()]:[item()],error:null}));
+ assert.equal(root.root.findByProps({'aria-label':label}),button);assert.equal(button.props['aria-disabled'],false);
+ }finally{await React.act(async()=>root?.unmount())}}
 });

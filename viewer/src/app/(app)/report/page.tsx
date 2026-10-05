@@ -202,7 +202,7 @@ export default function ReportPage() {
 
 function ReportDesktopView() {
   const { core, brand, headers, items, promotion, data, retryBrand, retryHeaders, retryItems } = useDailyReport();
-  const promotionStatus = <PromotionEvidenceStatus headers={headers} items={items} evidence={promotion} retryHeaders={retryHeaders} retryItems={retryItems} rankingDate={data?.kpi.latestDate} />;
+  const promotionStatus = <PromotionEvidenceStatus key="promotion-evidence" headers={headers} items={items} evidence={promotion} retryHeaders={retryHeaders} retryItems={retryItems} rankingDate={data?.kpi.latestDate} />;
   const loading = core.state === 'loading';
   const [showAllRanking, setShowAllRanking] = useState(false);
   const [rankingExpanded, setRankingExpanded] = useState(false);
@@ -212,7 +212,7 @@ function ReportDesktopView() {
       <div className="main">
         <div className="tb"><div className="bc"><span className="crumb last">일일 리포트</span></div></div>
         <div className="main-body" style={{ alignItems: 'center', justifyContent: 'center', color: 'var(--f4)', fontSize: 13 }}>
-          데이터 로딩 중…<BrandEvidenceStatus source={brand} retry={retryBrand} showRows />{promotionStatus}
+          데이터 로딩 중…<BrandEvidenceStatus key="brand-evidence" source={brand} retry={retryBrand} showRows />{promotionStatus}
         </div>
       </div>
     );
@@ -222,7 +222,7 @@ function ReportDesktopView() {
     return (
       <div className="main">
         <div className="tb"><div className="bc"><span className="crumb last">일일 리포트</span></div></div>
-        <div className="main-body" style={{ color: 'var(--f4)', fontSize: 13 }}>{core.state === 'error' ? '리포트를 확인하지 못했습니다.' : core.state === 'signedout' ? '로그인이 필요합니다.' : '랭킹 데이터가 없습니다.'}<BrandEvidenceStatus source={brand} retry={retryBrand} showRows />{promotionStatus}</div>
+        <div className="main-body" style={{ color: 'var(--f4)', fontSize: 13 }}>{core.state === 'error' ? '리포트를 확인하지 못했습니다.' : core.state === 'signedout' ? '로그인이 필요합니다.' : '랭킹 데이터가 없습니다.'}<BrandEvidenceStatus key="brand-evidence" source={brand} retry={retryBrand} showRows />{promotionStatus}</div>
       </div>
     );
   }
@@ -258,7 +258,7 @@ function ReportDesktopView() {
       </div>
 
       <div className="main-body">
-        <BrandEvidenceStatus source={brand} retry={retryBrand} rankingDate={kpi.latestDate} />
+        <BrandEvidenceStatus key="brand-evidence" source={brand} retry={retryBrand} rankingDate={kpi.latestDate} />
       {promotionStatus}
 
         {/* ── 리포트 헤더 ──────────────────────────────────────────── */}
