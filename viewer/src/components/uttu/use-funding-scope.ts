@@ -1,5 +1,6 @@
 'use client';
 import React from 'react';
+import { isAuthSessionMissingError } from '@supabase/supabase-js';
 import { supabaseBrowser } from '@/lib/supabase/client';
 
 /** Invalidate outstanding reads immediately on company, identity or unmount changes. */
@@ -30,7 +31,7 @@ export function useFundingScope(companyId: string) {
     const version = eventVersion;
     void client.auth.getUser().then(({ data, error }) => {
       if (!active || version !== eventVersion) return;
-      if (error) { setAuthError(true); return; }
+      if (error && !isAuthSessionMissingError(error)) { setAuthError(true); return; }
       publish(data.user?.id ?? null);
     }).catch(() => { if (active && version === eventVersion) setAuthError(true); });
     return () => { active = false; value.alive = false; subscription.unsubscribe(); };

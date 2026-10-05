@@ -1027,7 +1027,7 @@ export default function MobileCompanyDetailView() {
           funding={funding}
           briefMd={info.funding_brief_md ?? null}
           briefAt={info.funding_brief_at ?? null}
-          onRefresh={funding.refresh}
+          onRefresh={funding.refreshAfterJob}
         />
       )}
     </div>

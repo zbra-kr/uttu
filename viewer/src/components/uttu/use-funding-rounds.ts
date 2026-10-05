@@ -11,8 +11,8 @@ export function useFundingRounds(companyId: string) {
   }>({ key: null, rounds: [], loaded: false, loading: false, error: false });
   const request = React.useRef(0);
   const flight = React.useRef<string | null>(null);
-  const refresh = React.useCallback(async () => {
-    if (!key || !isCurrent(key) || flight.current === key) return;
+  const refresh = React.useCallback(async (supersede = false) => {
+    if (!key || !isCurrent(key) || (!supersede && flight.current === key)) return;
     const version = ++request.current;
     flight.current = key;
     const valid = () => isCurrent(key) && request.current === version;
@@ -27,6 +27,7 @@ export function useFundingRounds(companyId: string) {
       if (valid()) { flight.current = null; setState(old => ({ ...old, loading: false })); }
     }
   }, [companyId, key, isCurrent]);
+  const refreshAfterJob = React.useCallback(() => refresh(true), [refresh]);
   React.useEffect(() => {
     void refresh();
     const counter = request, activeFlight = flight;
@@ -40,6 +41,7 @@ export function useFundingRounds(companyId: string) {
     error: scope.authError || (!!visible && state.error),
     signedOut: scope.signedOut,
     refresh: scope.authError ? async () => scope.retryAuth() : refresh,
+    refreshAfterJob,
   };
 }
 export type FundingRoundsState = ReturnType<typeof useFundingRounds>;

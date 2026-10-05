@@ -1,6 +1,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const React = require('react'), Renderer = require('react-test-renderer');
 const load = require('./helpers/load-source.cjs');
+const { AuthSessionMissingError } = require('@supabase/supabase-js');
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const originalFetch = global.fetch;
 test.before(() => { global.fetch = async () => assert.fail('QA external network forbidden'); });
@@ -51,9 +52,12 @@ test('initial failure has retry, valid empty is distinct, retry is single flight
   try{
     await act(async()=>{root=Renderer.create(React.createElement(f.View));});
     assert.match(text(root),/불러오지 못했습니다/);assert.doesNotMatch(text(root),/수집된 투자정보가 없습니다/);
+    const retry=button(root,'투자정보 다시 조회');
     const pending=deferred();f.plans.push(pending.promise);
     await act(async()=>{void f.state().refresh();void f.state().refresh();});assert.equal(f.calls.length,2);
+    assert.equal(button(root,'투자정보 다시 조회'),retry);assert.equal(retry.props['aria-disabled'],true);
     await act(async()=>pending.resolve({data:[],error:null}));assert.match(text(root),/수집된 투자정보가 없습니다/);assert.doesNotMatch(text(root),/불러오지 못했습니다/);
+    assert.equal(button(root,'투자정보 다시 조회'),retry);assert.equal(retry.props['aria-disabled'],false);
   }finally{await act(async()=>root?.unmount());assert.equal(f.listeners.size,0);}
 });
 test('same-company refresh failure retains last good data; successful empty replaces it',async()=>{
@@ -97,6 +101,36 @@ test('auth lookup failure offers a bounded read-only retry',async()=>{
     await act(async()=>{root=Renderer.create(React.createElement(f.View));});assert.match(text(root),/불러오지 못했습니다/);assert.equal(f.calls.length,0);
     f.authOK();await act(async()=>button(root,'투자정보 다시 조회').props.onClick());assert.match(text(root),/a timeline/);assert.equal(f.calls.length,1);
   }finally{await act(async()=>root?.unmount());}
+});
+test('genuine missing session is signed-out, while auth transport failure remains retryable',async()=>{
+  const f=fixture();f.sdk.auth.getUser=async()=>({data:{user:null},error:new AuthSessionMissingError()});let root;
+  try{
+    await act(async()=>{root=Renderer.create(React.createElement(f.View));});
+    assert.match(text(root),/로그인 후/);assert.doesNotMatch(text(root),/불러오지 못했습니다|다시 조회/);assert.equal(f.calls.length,0);
+  }finally{await act(async()=>root?.unmount());assert.equal(f.listeners.size,0);}
+});
+test('exact job completion supersedes the pending pre-completion timeline snapshot',async()=>{
+  const f=sdkFixture(),client={supabaseBrowser:()=>f.sdk},mocks={'@/lib/supabase/client':client,'./supabase/client':client};
+  const {useFundingRounds}=load('src/components/uttu/use-funding-rounds.ts',mocks);
+  const {FundingCollectButton}=load('src/components/uttu/funding-collect-button.tsx',mocks);
+  const {FundingRoundsView}=load('src/components/uttu/funding-rounds-view.tsx',mocks);
+  const old=deferred(),fresh=deferred(),timers=new Map();let id=0,root,state;
+  const saved={setTimeout:global.setTimeout,clearTimeout:global.clearTimeout};
+  global.setTimeout=fn=>{timers.set(++id,fn);return id;};global.clearTimeout=id=>timers.delete(id);
+  function View(){state=useFundingRounds('a');return React.createElement(React.Fragment,null,
+    React.createElement(FundingCollectButton,{companyId:'a',fundingLastCollectedAt:null,onDone:state.refreshAfterJob}),
+    React.createElement(FundingRoundsView,{funding:state}));}
+  try{
+    f.plans.push({table:'funding_rounds',result:old.promise},{table:'funding_collection_jobs',result:{data:job(),error:null}});
+    await act(async()=>{root=Renderer.create(React.createElement(View));});assert.equal(timers.size,1);
+    f.plans.push({table:'funding_collection_jobs',result:{data:job('a','j1','done'),error:null}},{table:'funding_rounds',result:fresh.promise});
+    const [timer,fn]=timers.entries().next().value;timers.delete(timer);await act(async()=>fn());
+    assert.equal(f.calls.filter(c=>c.table==='funding_rounds').length,2);assert.deepEqual(f.calls.find(c=>c.filters.id==='j1').filters,{company_id:'a',id:'j1'});
+    await act(async()=>old.resolve({data:[{...row(),round_type:'obsolete snapshot'}],error:null}));
+    assert.equal(state.loaded,false);assert.equal(state.loading,true);assert.doesNotMatch(text(root),/obsolete snapshot/);
+    await act(async()=>fresh.resolve({data:[{...row(),round_type:'post-completion snapshot'}],error:null}));
+    assert.match(text(root),/post-completion snapshot/);assert.doesNotMatch(text(root),/obsolete snapshot/);assert.equal(state.loading,false);
+  }finally{await act(async()=>root?.unmount());Object.assign(global,saved);assert.equal(timers.size,0);assert.equal(f.listeners.size,0);}
 });
 
 test('initial session cannot hide failed verification; newer auth event beats delayed getUser',async()=>{

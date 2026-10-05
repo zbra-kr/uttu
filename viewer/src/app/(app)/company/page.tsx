@@ -1161,7 +1161,7 @@ function CompanyPageInner() {
   }, [idFromUrl, info?.corp_name]);
 
   // 투자정보 수집 완료 후 라운드 목록 갱신
-  const handleFundingDone = funding.refresh;
+  const handleFundingDone = funding.refreshAfterJob;
 
   const handleSelectCompany = React.useCallback((id: string) => {
     router.push(`/company?id=${id}`);

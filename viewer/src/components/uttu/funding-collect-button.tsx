@@ -59,6 +59,7 @@ function FundingCollectControl({ companyId, fundingLastCollectedAt, onDone, scop
         if (!next && tracked) throw new Error('Job unavailable');
         setJob(next);
         if (next?.status === 'pending' || next?.status === 'running') {
+          // Settled-attempt cap only: these readers have no network deadline.
           if (attempt >= 75) throw new Error('Polling paused');
           timer.current = setTimeout(() => { timer.current = null; void check(next, attempt + 1); }, 4000);
         } else if (tracked && next?.status === 'done' && !completed.current.has(next.id)) {
