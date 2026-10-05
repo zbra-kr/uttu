@@ -2,6 +2,7 @@
 import { useDailyReport } from '@/hooks/useDailyReport';
 import BrandEvidenceStatus from '@/components/report/BrandEvidenceStatus';
 import PromotionEvidenceStatus from '@/components/report/PromotionEvidenceStatus';
+import RecommendEvidenceStatus from '@/components/report/RecommendEvidenceStatus';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useResolvedViewport } from '@/hooks/useResolvedViewport';
@@ -104,7 +105,7 @@ function OwnBrandCard({ brand }: { brand: OwnBrandSummary }) {
           { label: '주별 랭킹', value: brand.weeklyBestRank != null ? `#${brand.weeklyBestRank}` : '없음', highlight: brand.weeklyBestRank != null },
           { label: '브랜드 순위', value: brand.brandRank != null ? `#${brand.brandRank}` : '조회 범위에서 미확인', highlight: brand.brandRank != null },
           { label: '콘텐츠', value: brand.contentCount > 0 ? `${brand.contentCount}건 (${(brand.contentTotalViews / 1000).toFixed(0)}K)` : '미노출', highlight: brand.contentCount > 0 },
-          { label: '추천판', value: brand.hasRecommend ? '노출 중' : '미노출', highlight: brand.hasRecommend },
+          { label: '추천판', value: brand.hasRecommend === null ? '확인 못함' : brand.hasRecommend ? '조회 내 노출' : '조회 내 미노출', highlight: brand.hasRecommend },
           { label: '세일', value: brand.hasSale === null ? '확인 못함' : brand.hasSale ? '조회 내 노출' : '조회 내 미노출', highlight: brand.hasSale },
         ].map(item => (
           <div key={item.label} style={{ background: 'var(--snk)', padding: '7px 10px', borderRadius: 5 }}>
@@ -201,8 +202,9 @@ export default function ReportPage() {
 }
 
 function ReportDesktopView() {
-  const { core, brand, headers, items, promotion, data, retryBrand, retryHeaders, retryItems } = useDailyReport();
+  const { core, brand, headers, items, promotion, data, retryBrand, retryHeaders, retryItems, recommendModulesSource, recommendItemsSource, recommend, retryRecommendModules, retryRecommendItems } = useDailyReport();
   const promotionStatus = <PromotionEvidenceStatus key="promotion-evidence" headers={headers} items={items} evidence={promotion} retryHeaders={retryHeaders} retryItems={retryItems} rankingDate={data?.kpi.latestDate} />;
+  const recommendStatus = <RecommendEvidenceStatus key="recommend-evidence" modules={recommendModulesSource} items={recommendItemsSource} evidence={recommend} retryModules={retryRecommendModules} retryItems={retryRecommendItems} rankingDate={data?.kpi.latestDate} showRows={!data || recommendModulesSource.state !== 'ready' || recommend.modules.length === 0} />;
   const loading = core.state === 'loading';
   const [showAllRanking, setShowAllRanking] = useState(false);
   const [rankingExpanded, setRankingExpanded] = useState(false);
@@ -212,7 +214,7 @@ function ReportDesktopView() {
       <div className="main">
         <div className="tb"><div className="bc"><span className="crumb last">일일 리포트</span></div></div>
         <div className="main-body" style={{ alignItems: 'center', justifyContent: 'center', color: 'var(--f4)', fontSize: 13 }}>
-          데이터 로딩 중…<BrandEvidenceStatus key="brand-evidence" source={brand} retry={retryBrand} showRows />{promotionStatus}
+          데이터 로딩 중…<BrandEvidenceStatus key="brand-evidence" source={brand} retry={retryBrand} showRows />{promotionStatus}{recommendStatus}
         </div>
       </div>
     );
@@ -222,7 +224,7 @@ function ReportDesktopView() {
     return (
       <div className="main">
         <div className="tb"><div className="bc"><span className="crumb last">일일 리포트</span></div></div>
-        <div className="main-body" style={{ color: 'var(--f4)', fontSize: 13 }}>{core.state === 'error' ? '리포트를 확인하지 못했습니다.' : core.state === 'signedout' ? '로그인이 필요합니다.' : '랭킹 데이터가 없습니다.'}<BrandEvidenceStatus key="brand-evidence" source={brand} retry={retryBrand} showRows />{promotionStatus}</div>
+        <div className="main-body" style={{ color: 'var(--f4)', fontSize: 13 }}>{core.state === 'error' ? '리포트를 확인하지 못했습니다.' : core.state === 'signedout' ? '로그인이 필요합니다.' : '랭킹 데이터가 없습니다.'}<BrandEvidenceStatus key="brand-evidence" source={brand} retry={retryBrand} showRows />{promotionStatus}{recommendStatus}</div>
       </div>
     );
   }
@@ -260,6 +262,7 @@ function ReportDesktopView() {
       <div className="main-body">
         <BrandEvidenceStatus key="brand-evidence" source={brand} retry={retryBrand} rankingDate={kpi.latestDate} />
       {promotionStatus}
+        {recommendStatus}
 
         {/* ── 리포트 헤더 ──────────────────────────────────────────── */}
         <div className="panel" style={{
@@ -284,7 +287,7 @@ function ReportDesktopView() {
             <KpiCard label="주별 랭킹" value={kpi.weeklyCount ?? '—'} sub={kpi.weeklyDate ? `${kpi.weeklyDate} 기준` : '데이터 없음'} />
             <KpiCard label="급상승/신규" value={kpi.risingCount} sub="▲10+ 또는 신규 진입" accent="var(--smf)" />
             <KpiCard label="콘텐츠" value={kpi.contentCount} sub={`${kpi.contentBrandCount}개 브랜드`} accent="var(--tu)" />
-            <KpiCard label="추천판" value={kpi.recommendItemCount} sub={`${kpi.recommendBrandCount}개 브랜드`} accent="var(--smf)" />
+            <KpiCard label="추천판" value={kpi.recommendItemCount ?? '—'} sub={`${kpi.recommendBrandCount ?? '—'}개 브랜드 (관찰 범위)`} accent="var(--smf)" />
             <KpiCard label="세일" value={kpi.saleItemCount ?? '—'} sub={`${kpi.saleBrandCount ?? '—'}개 유형 확인 브랜드 (조회 범위)`} accent="var(--td)" />
             <KpiCard label="성별×연령" value={14} sub="조합 분석" />
           </div>
@@ -367,7 +370,7 @@ function ReportDesktopView() {
                   <span className="cell-r" style={{ fontSize: 12 }}>{c.avgPrice != null ? `${c.avgPrice.toLocaleString()}` : '—'}</span>
                   <span className="cell-c" style={{ fontSize: 12, color: c.hasContent ? 'var(--tu)' : 'var(--f4)' }}>{c.hasContent ? 'O' : '-'}</span>
                   <span className="cell-c" style={{ fontSize: 12, color: c.hasSale ? 'var(--smf)' : 'var(--f4)' }}>{c.hasSale === null ? '?' : c.hasSale ? 'O' : '-'}</span>
-                  <span className="cell-c" style={{ fontSize: 12, color: c.hasRecommend ? 'var(--tu)' : 'var(--f4)' }}>{c.hasRecommend ? 'O' : '-'}</span>
+                  <span className="cell-c" style={{ fontSize: 12, color: c.hasRecommend ? 'var(--tu)' : 'var(--f4)' }}>{c.hasRecommend === null ? '?' : c.hasRecommend ? 'O' : '-'}</span>
                 </div>
               ))}
             </div>
@@ -463,9 +466,9 @@ function ReportDesktopView() {
 
         {/* ── 2. 추천판 ────────────────────────────────────────────── */}
         <div>
-          <SectionHead num="2" title={`추천판 (${kpi.recommendItemCount.toLocaleString()}개 상품 · ${kpi.recommendBrandCount}개 브랜드)`} accentColor="var(--smf)" />
+          <SectionHead num="2" title={`추천판 (${(kpi.recommendItemCount?.toLocaleString() ?? '—')}개 상품 · ${kpi.recommendBrandCount ?? '—'}개 브랜드)`} accentColor="var(--smf)" />
           {recommendModules.length === 0 ? (
-            <div style={{ color: 'var(--f4)', fontSize: 13, padding: '12px 0' }}>오늘 추천판 데이터가 없습니다.</div>
+            <div style={{ color: 'var(--f4)', fontSize: 13, padding: '12px 0' }}>{recommendModulesSource.state === 'error' ? '추천 모듈을 확인하지 못했습니다.' : recommendModulesSource.state === 'loading' ? '추천 모듈 불러오는 중…' : '저장된 추천 모듈이 없습니다.'}</div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               {/* 모듈 목록 */}
@@ -487,7 +490,7 @@ function ReportDesktopView() {
                           {m.moduleType.includes('DYNAMIC') ? '탭' : '일반'}
                         </span>
                       </span>
-                      <span className="cell-r mono" style={{ fontSize: 11 }}>{m.itemsCount}</span>
+                      <span className="cell-r mono" style={{ fontSize: 11 }}>{m.itemsCount ?? '—'}</span>
                     </div>
                   ))}
                 </div>
@@ -495,9 +498,9 @@ function ReportDesktopView() {
 
               {/* 추천판 상위 브랜드 */}
               <div className="panel">
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--f2)', marginBottom: 10 }}>노출 브랜드 TOP {Math.min(recommendTopBrands.length, 10)}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--f2)', marginBottom: 10 }}>아이템 관찰 브랜드 TOP {Math.min(recommendTopBrands.length, 10)}</div>
                 {recommendTopBrands.length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--f4)' }}>데이터 없음</div>
+                  <div style={{ fontSize: 12, color: 'var(--f4)' }}>{recommendItemsSource.state === 'error' ? '추천 아이템을 확인하지 못했습니다' : recommendItemsSource.state === 'loading' ? '추천 아이템 불러오는 중…' : '조회 내 브랜드명이 확인된 아이템이 없습니다'}</div>
                 ) : (
                   recommendTopBrands.map((b, i) => (
                     <div key={b.brandName} style={{ display: 'flex', gap: 8, marginBottom: 5, alignItems: 'baseline' }}>

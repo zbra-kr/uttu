@@ -55,8 +55,8 @@ export interface ReportKpi {
   risingCount: number;
   contentCount: number;
   contentBrandCount: number;
-  recommendItemCount: number;
-  recommendBrandCount: number;
+  recommendItemCount: number | null;
+  recommendBrandCount: number | null;
   saleItemCount: number | null;
   saleBrandCount: number | null;
 }
@@ -73,7 +73,7 @@ export interface OwnBrandSummary {
   contentTotalViews: number;
   hasPromo: boolean | null;
   hasSale: boolean | null;
-  hasRecommend: boolean;
+  hasRecommend: boolean | null;
   demoHighlights: string[];
 }
 
@@ -85,7 +85,7 @@ export interface CompetitorSummary {
   avgPrice: number | null;
   hasContent: boolean;
   hasSale: boolean | null;
-  hasRecommend: boolean;
+  hasRecommend: boolean | null;
 }
 
 export interface ChannelConversion {
@@ -133,7 +133,7 @@ export interface RecommendModuleRow {
   title: string;
   moduleType: string;
   position: number;
-  itemsCount: number;
+  itemsCount: number | null;
 }
 
 export interface DailyReportData {
@@ -177,7 +177,6 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
     todayRankRes, prevRankRes, weeklyCountRes,
     ownBrandsRes, magazineRes,
     demoRes,
-    recommendItemsRes, recommendModulesRes,
   ] = await Promise.all([
 
     // 오늘 랭킹 (전체/전체/전체)
@@ -220,20 +219,6 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
       .order('gender_filter').order('age_filter').order('rank_position', { ascending: true })
       .limit(3000).abortSignal(signal),
 
-    // 추천판 아이템 (오늘, 전체)
-    sb.from('recommend_items')
-      .select('brand_name, musinsa_no')
-      .eq('snapshot_date', latestDate)
-      .eq('gender_filter', 'A')
-      .limit(1000).abortSignal(signal),
-
-    // 추천판 모듈 (오늘, 전체)
-    sb.from('recommend_modules')
-      .select('id, title, module_type, position, items_count')
-      .eq('snapshot_date', latestDate)
-      .eq('gender_filter', 'A')
-      .order('position', { ascending: true })
-      .limit(50).abortSignal(signal),
   ]);
 
   const todayRows       = (todayRankRes.data ?? []) as any[];
@@ -241,8 +226,6 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
   const ownBrandList    = (ownBrandsRes.data ?? []) as { id: string; name: string }[];
   const magazineRows    = (magazineRes.data ?? []) as any[];
   const demoRows        = (demoRes.data ?? []) as any[];
-  const recommendItems  = (recommendItemsRes.data ?? []) as { brand_name: string; musinsa_no: string }[];
-  const recommendModuleRows = (recommendModulesRes.data ?? []) as any[];
 
   const ownBrandNames = ownBrandList.map(b => b.name);
   const ownBrandIds   = ownBrandList.map(b => b.id);
@@ -358,34 +341,13 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
   // Promotion evidence settles independently in useDailyReport.
   const saleDist: DailyReportData["saleDist"] = [];
 
-  // 추천판 집계
-  const recommendBrandSet = new Set<string>(recommendItems.map(r => r.brand_name).filter(Boolean));
-  const recommendBrandCountMap = new Map<string, number>();
-  for (const item of recommendItems) {
-    if (item.brand_name) recommendBrandCountMap.set(item.brand_name, (recommendBrandCountMap.get(item.brand_name) ?? 0) + 1);
-  }
-  const recommendTopBrands = [...recommendBrandCountMap.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([brandName, count]) => ({ brandName, count }));
-
-  const recommendModules: RecommendModuleRow[] = recommendModuleRows.map((m: any) => ({
-    id: m.id,
-    title: m.title ?? '—',
-    moduleType: m.module_type ?? '',
-    position: m.position ?? 0,
-    itemsCount: m.items_count ?? 0,
-  }));
+  // Recommendation evidence settles independently in useDailyReport.
+  const recommendModules: RecommendModuleRow[] = [];
+  const recommendTopBrands: DailyReportData["recommendTopBrands"] = [];
 
   // 채널 전환율
   const rankBrandSet = new Set(todayRows.map((r: any) => r.brand_name as string));
   const channelConversions: ChannelConversion[] = [
-    {
-      channel: '추천판',
-      exposureBrands: recommendBrandSet.size,
-      matchedBrands: [...recommendBrandSet].filter(b => rankBrandSet.has(b)).length,
-      rate: recommendBrandSet.size > 0 ? Math.round([...recommendBrandSet].filter(b => rankBrandSet.has(b)).length / recommendBrandSet.size * 100) : 0,
-    },
     {
       channel: '콘텐츠판',
       exposureBrands: allMagazineBrands.size,
@@ -456,7 +418,7 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
       contentTotalViews: ci.views,
       hasPromo:          null,
       hasSale:           null,
-      hasRecommend:      matchesBrandName(recommendBrandSet, b.name),
+      hasRecommend:      null,
       demoHighlights:    highlights,
     };
   });
@@ -482,7 +444,7 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
         avgPrice:     avg,
         hasContent:   contentBrandViewMap.has(name),
         hasSale:      null,
-        hasRecommend: recommendBrandSet.has(name),
+        hasRecommend: null,
       };
     })
     .sort((a, b) => {
@@ -539,8 +501,8 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
       risingCount,
       contentCount: magazineRows.length,
       contentBrandCount: allMagazineBrands.size,
-      recommendItemCount: recommendItems.length,
-      recommendBrandCount: recommendBrandSet.size,
+      recommendItemCount: null,
+      recommendBrandCount: null,
       saleItemCount: null,
       saleBrandCount: null,
     },

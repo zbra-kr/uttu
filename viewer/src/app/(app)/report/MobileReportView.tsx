@@ -2,6 +2,7 @@
 import { useDailyReport } from '@/hooks/useDailyReport';
 import BrandEvidenceStatus from '@/components/report/BrandEvidenceStatus';
 import PromotionEvidenceStatus from '@/components/report/PromotionEvidenceStatus';
+import RecommendEvidenceStatus from '@/components/report/RecommendEvidenceStatus';
 import { useState } from 'react';
 import { AGE_LABEL, GENDER_LABEL } from '@/lib/queries-report';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
@@ -40,10 +41,11 @@ function ReportFrame({ evidence, children }: { evidence: React.ReactNode; childr
 }
 
 export default function MobileReportView() {
-  const { core, brand, headers, items, promotion, data, retryBrand, retryHeaders, retryItems } = useDailyReport();
-  const promotionStatus = <PromotionEvidenceStatus headers={headers} items={items} evidence={promotion} retryHeaders={retryHeaders} retryItems={retryItems} rankingDate={data?.kpi.latestDate} />;
+  const { core, brand, headers, items, promotion, data, retryBrand, retryHeaders, retryItems, recommendModulesSource, recommendItemsSource, recommend, retryRecommendModules, retryRecommendItems } = useDailyReport();
+  const promotionStatus = <PromotionEvidenceStatus key="promotion-evidence" headers={headers} items={items} evidence={promotion} retryHeaders={retryHeaders} retryItems={retryItems} rankingDate={data?.kpi.latestDate} />;
+  const recommendStatus = <RecommendEvidenceStatus key="recommend-evidence" modules={recommendModulesSource} items={recommendItemsSource} evidence={recommend} retryModules={retryRecommendModules} retryItems={retryRecommendItems} rankingDate={data?.kpi.latestDate} showRows={!data || recommendModulesSource.state !== 'ready' || recommend.modules.length === 0} />;
   const loading = core.state === 'loading';
-  const evidence = <><BrandEvidenceStatus source={brand} retry={retryBrand} rankingDate={data?.kpi.latestDate} showRows={!data} />{promotionStatus}</>;
+  const evidence = <><BrandEvidenceStatus source={brand} retry={retryBrand} rankingDate={data?.kpi.latestDate} showRows={!data} />{promotionStatus}{recommendStatus}</>;
 
   if (loading) return <ReportFrame evidence={evidence}><div role="status" style={{ textAlign: 'center', padding: '20px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div></ReportFrame>;
   if (!data) return <ReportFrame evidence={evidence}><MobileEmptyState icon="📋" title={core.state === 'error' ? '리포트 조회 실패' : core.state === 'signedout' ? '로그인이 필요합니다' : '리포트 데이터가 없습니다'} /></ReportFrame>;
@@ -86,6 +88,7 @@ export default function MobileReportView() {
               {b.dailyRankChange != null && ` (${b.dailyRankChange > 0 ? '▲' : '▼'}${Math.abs(b.dailyRankChange)})`}
               {b.brandRank != null && ` · 브랜드랭킹 #${b.brandRank}`}
               {b.hasSale === null ? ' · 세일 확인 못함' : b.hasSale ? ' · 세일 조회 내 노출' : ' · 세일 조회 내 미노출'}
+              {b.hasRecommend === null ? ' · 추천 확인 못함' : b.hasRecommend ? ' · 추천 조회 내 노출' : ' · 추천 조회 내 미노출'}
             </div>
           </div>
         ))}
@@ -103,6 +106,7 @@ export default function MobileReportView() {
               <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>
                 {c.bestRank != null ? `#${c.bestRank}` : '—'} · SKU {c.productCount}
                 {c.hasSale === null ? ' · 세일 확인 못함' : c.hasSale ? ' · 세일 조회 내 노출' : ' · 세일 조회 내 미노출'}
+                {c.hasRecommend === null ? ' · 추천 확인 못함' : c.hasRecommend ? ' · 추천 조회 내 노출' : ' · 추천 조회 내 미노출'}
               </div>
             </div>
           </div>
@@ -183,21 +187,21 @@ export default function MobileReportView() {
       </Section>
 
       {/* 2. 추천판 */}
-      <Section title={`2. 추천판 (${recommendModules.length}개 모듈)`}>
+      <Section title={`2. 추천판 (${recommendModulesSource.state === 'ready' ? recommendModules.length : '—'}개 모듈)`}>
         {recommendModules.length === 0 ? (
-          <p style={{ margin: '4px 0', fontSize: 12, color: 'var(--f4)' }}>오늘 추천판 데이터가 없습니다</p>
+          <p style={{ margin: '4px 0', fontSize: 12, color: 'var(--f4)' }}>{recommendModulesSource.state === 'error' ? '추천 모듈을 확인하지 못했습니다' : recommendModulesSource.state === 'loading' ? '추천 모듈 불러오는 중…' : '저장된 추천 모듈이 없습니다'}</p>
         ) : (
           <>
             {recommendModules.slice(0, 8).map((m, i) => (
               <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: i > 0 ? 6 : 0, marginTop: i > 0 ? 6 : 0, borderTop: i > 0 ? '1px solid var(--bd)' : 'none' }}>
                 <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', width: 18, flexShrink: 0 }}>{m.position + 1}</span>
                 <span style={{ fontSize: 12, color: 'var(--f1)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</span>
-                <span style={{ fontSize: 9, color: 'var(--f4)', fontFamily: 'var(--mono)', flexShrink: 0 }}>{m.itemsCount}개</span>
+                <span style={{ fontSize: 9, color: 'var(--f4)', fontFamily: 'var(--mono)', flexShrink: 0 }}>{m.itemsCount ?? '—'}개</span>
               </div>
             ))}
             {recommendTopBrands.length > 0 && (
               <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--bd)' }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 6 }}>노출 브랜드 TOP 5</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 6 }}>아이템 관찰 브랜드 TOP 5</div>
                 {recommendTopBrands.slice(0, 5).map((b, i) => (
                   <div key={b.brandName} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
                     <span style={{ color: 'var(--f2)' }}>{i + 1}. {b.brandName}</span>
