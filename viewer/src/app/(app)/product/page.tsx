@@ -281,9 +281,12 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 function ProductPageRoot() {
   const isMobile = useIsMobile();
   const query = useSearchParams().toString();
+  const [viewportReady, setViewportReady] = React.useState(false);
+  React.useEffect(() => { setViewportReady(true); }, []);
   // An explicitly malformed observation cannot fall through to parseInt-based legacy readers.
   if (parseProductObservation(new URLSearchParams(query)).kind === 'invalid')
     return <ProductObservationPanel query={query} />;
+  if (!viewportReady) return <div role="status" aria-live="polite" style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>상품 화면을 준비하는 중…</div>;
   if (isMobile) return <><ProductObservationPanel query={query} /><MobileProductDetailView /></>;
   return (
     <>
