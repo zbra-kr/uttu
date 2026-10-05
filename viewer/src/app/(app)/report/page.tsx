@@ -1,6 +1,7 @@
 'use client';
 import { useDailyReport } from '@/hooks/useDailyReport';
 import BrandEvidenceStatus from '@/components/report/BrandEvidenceStatus';
+import PromotionEvidenceStatus from '@/components/report/PromotionEvidenceStatus';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useResolvedViewport } from '@/hooks/useResolvedViewport';
@@ -104,7 +105,7 @@ function OwnBrandCard({ brand }: { brand: OwnBrandSummary }) {
           { label: '브랜드 순위', value: brand.brandRank != null ? `#${brand.brandRank}` : '조회 범위에서 미확인', highlight: brand.brandRank != null },
           { label: '콘텐츠', value: brand.contentCount > 0 ? `${brand.contentCount}건 (${(brand.contentTotalViews / 1000).toFixed(0)}K)` : '미노출', highlight: brand.contentCount > 0 },
           { label: '추천판', value: brand.hasRecommend ? '노출 중' : '미노출', highlight: brand.hasRecommend },
-          { label: '세일', value: brand.hasSale ? '등록 중' : '미등록', highlight: brand.hasSale },
+          { label: '세일', value: brand.hasSale === null ? '확인 못함' : brand.hasSale ? '조회 내 노출' : '조회 내 미노출', highlight: brand.hasSale },
         ].map(item => (
           <div key={item.label} style={{ background: 'var(--snk)', padding: '7px 10px', borderRadius: 5 }}>
             <div style={{ color: 'var(--f4)' }}>{item.label}</div>
@@ -200,7 +201,8 @@ export default function ReportPage() {
 }
 
 function ReportDesktopView() {
-  const { core, brand, data, retryBrand } = useDailyReport();
+  const { core, brand, headers, items, promotion, data, retryBrand, retryHeaders, retryItems } = useDailyReport();
+  const promotionStatus = <PromotionEvidenceStatus headers={headers} items={items} evidence={promotion} retryHeaders={retryHeaders} retryItems={retryItems} rankingDate={data?.kpi.latestDate} />;
   const loading = core.state === 'loading';
   const [showAllRanking, setShowAllRanking] = useState(false);
   const [rankingExpanded, setRankingExpanded] = useState(false);
@@ -210,7 +212,7 @@ function ReportDesktopView() {
       <div className="main">
         <div className="tb"><div className="bc"><span className="crumb last">일일 리포트</span></div></div>
         <div className="main-body" style={{ alignItems: 'center', justifyContent: 'center', color: 'var(--f4)', fontSize: 13 }}>
-          데이터 로딩 중…<BrandEvidenceStatus source={brand} retry={retryBrand} showRows />
+          데이터 로딩 중…<BrandEvidenceStatus source={brand} retry={retryBrand} showRows />{promotionStatus}
         </div>
       </div>
     );
@@ -220,7 +222,7 @@ function ReportDesktopView() {
     return (
       <div className="main">
         <div className="tb"><div className="bc"><span className="crumb last">일일 리포트</span></div></div>
-        <div className="main-body" style={{ color: 'var(--f4)', fontSize: 13 }}>{core.state === 'error' ? '리포트를 확인하지 못했습니다.' : core.state === 'signedout' ? '로그인이 필요합니다.' : '랭킹 데이터가 없습니다.'}<BrandEvidenceStatus source={brand} retry={retryBrand} showRows /></div>
+        <div className="main-body" style={{ color: 'var(--f4)', fontSize: 13 }}>{core.state === 'error' ? '리포트를 확인하지 못했습니다.' : core.state === 'signedout' ? '로그인이 필요합니다.' : '랭킹 데이터가 없습니다.'}<BrandEvidenceStatus source={brand} retry={retryBrand} showRows />{promotionStatus}</div>
       </div>
     );
   }
@@ -257,6 +259,7 @@ function ReportDesktopView() {
 
       <div className="main-body">
         <BrandEvidenceStatus source={brand} retry={retryBrand} rankingDate={kpi.latestDate} />
+      {promotionStatus}
 
         {/* ── 리포트 헤더 ──────────────────────────────────────────── */}
         <div className="panel" style={{
@@ -282,7 +285,7 @@ function ReportDesktopView() {
             <KpiCard label="급상승/신규" value={kpi.risingCount} sub="▲10+ 또는 신규 진입" accent="var(--smf)" />
             <KpiCard label="콘텐츠" value={kpi.contentCount} sub={`${kpi.contentBrandCount}개 브랜드`} accent="var(--tu)" />
             <KpiCard label="추천판" value={kpi.recommendItemCount} sub={`${kpi.recommendBrandCount}개 브랜드`} accent="var(--smf)" />
-            <KpiCard label="세일" value={kpi.saleItemCount} sub={`${kpi.saleBrandCount}개 브랜드`} accent="var(--td)" />
+            <KpiCard label="세일" value={kpi.saleItemCount ?? '—'} sub={`${kpi.saleBrandCount ?? '—'}개 유형 확인 브랜드 (조회 범위)`} accent="var(--td)" />
             <KpiCard label="성별×연령" value={14} sub="조합 분석" />
           </div>
         </div>
@@ -363,7 +366,7 @@ function ReportDesktopView() {
                   <span className="cell-r" style={{ fontSize: 12 }}>{c.productCount > 0 ? c.productCount : '—'}</span>
                   <span className="cell-r" style={{ fontSize: 12 }}>{c.avgPrice != null ? `${c.avgPrice.toLocaleString()}` : '—'}</span>
                   <span className="cell-c" style={{ fontSize: 12, color: c.hasContent ? 'var(--tu)' : 'var(--f4)' }}>{c.hasContent ? 'O' : '-'}</span>
-                  <span className="cell-c" style={{ fontSize: 12, color: c.hasSale ? 'var(--smf)' : 'var(--f4)' }}>{c.hasSale ? 'O' : '-'}</span>
+                  <span className="cell-c" style={{ fontSize: 12, color: c.hasSale ? 'var(--smf)' : 'var(--f4)' }}>{c.hasSale === null ? '?' : c.hasSale ? 'O' : '-'}</span>
                   <span className="cell-c" style={{ fontSize: 12, color: c.hasRecommend ? 'var(--tu)' : 'var(--f4)' }}>{c.hasRecommend ? 'O' : '-'}</span>
                 </div>
               ))}
@@ -511,7 +514,7 @@ function ReportDesktopView() {
 
         {/* ── 3. 세일판 ────────────────────────────────────────────── */}
         <div>
-          <SectionHead num="3" title={`세일판 (${kpi.saleItemCount.toLocaleString()}개 상품 · ${kpi.saleBrandCount}개 브랜드)`} />
+          <SectionHead num="3" title={`세일판 (${(kpi.saleItemCount?.toLocaleString() ?? '—')}개 상품 · ${kpi.saleBrandCount ?? '—'}개 유형 확인 브랜드)`} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div className="panel">
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--f2)', marginBottom: 10 }}>할인율 분포</div>

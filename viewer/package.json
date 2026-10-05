@@ -25,7 +25,7 @@
     "test:framework": "node --test tests/framework-migration.test.cjs tests/help-route.test.cjs",
     "test:ranking-daily": "node --test tests/ranking-daily-insights*.test.cjs",
     "test:performance": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/performance-*.test.cjs",
-    "test:report-evidence": "node --test tests/report-brand-evidence.test.cjs"
+    "test:report-evidence": "node --test tests/report-*-evidence.test.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",

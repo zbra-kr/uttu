@@ -39,13 +39,6 @@ const PRICE_RANGES = [
   { label: '50만~',   min: 500000, max: Infinity },
 ];
 
-const DISC_RANGES = [
-  { label: '~20%',   min: 0,  max: 20  },
-  { label: '20~40%', min: 20, max: 40  },
-  { label: '40~60%', min: 40, max: 60  },
-  { label: '60~80%', min: 60, max: 80  },
-  { label: '80%~',   min: 80, max: 101 },
-];
 
 const BRAND_ORDER_REF = [
   '커버낫','커버낫 우먼','커버낫 뷰티','커버낫 키즈',
@@ -64,8 +57,8 @@ export interface ReportKpi {
   contentBrandCount: number;
   recommendItemCount: number;
   recommendBrandCount: number;
-  saleItemCount: number;
-  saleBrandCount: number;
+  saleItemCount: number | null;
+  saleBrandCount: number | null;
 }
 
 export interface OwnBrandSummary {
@@ -78,8 +71,8 @@ export interface OwnBrandSummary {
   brandRankChange: number | null;
   contentCount: number;
   contentTotalViews: number;
-  hasPromo: boolean;
-  hasSale: boolean;
+  hasPromo: boolean | null;
+  hasSale: boolean | null;
   hasRecommend: boolean;
   demoHighlights: string[];
 }
@@ -91,7 +84,7 @@ export interface CompetitorSummary {
   productCount: number;
   avgPrice: number | null;
   hasContent: boolean;
-  hasSale: boolean;
+  hasSale: boolean | null;
   hasRecommend: boolean;
 }
 
@@ -183,7 +176,6 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
   const [
     todayRankRes, prevRankRes, weeklyCountRes,
     ownBrandsRes, magazineRes,
-    promoItemsRes, promotionsRes,
     demoRes,
     recommendItemsRes, recommendModulesRes,
   ] = await Promise.all([
@@ -219,18 +211,6 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
       .order('view_count', { ascending: false })
       .limit(50).abortSignal(signal),
 
-    // 프로모션 아이템 (오늘)
-    sb.from('promotion_items')
-      .select('promotion_id, musinsa_no, musinsa_brand_name, discount_rate, final_price')
-      .eq('snapshot_date', latestDate)
-      .limit(2000).abortSignal(signal),
-
-    // 프로모션 헤더 (오늘)
-    sb.from('promotions')
-      .select('id, title, promotion_type, items_count')
-      .eq('snapshot_date', latestDate)
-      .limit(50).abortSignal(signal),
-
     // 성별×연령 조합 (M/F × 7 age bands)
     sb.from('ranking_snapshots')
       .select('gender_filter, age_filter, rank_position, product_name, brand_name')
@@ -260,8 +240,6 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
   const prevRows        = (prevRankRes.data ?? []) as any[];
   const ownBrandList    = (ownBrandsRes.data ?? []) as { id: string; name: string }[];
   const magazineRows    = (magazineRes.data ?? []) as any[];
-  const promoItems      = (promoItemsRes.data ?? []) as any[];
-  const promotions      = (promotionsRes.data ?? []) as any[];
   const demoRows        = (demoRes.data ?? []) as any[];
   const recommendItems  = (recommendItemsRes.data ?? []) as { brand_name: string; musinsa_no: string }[];
   const recommendModuleRows = (recommendModulesRes.data ?? []) as any[];
@@ -377,30 +355,8 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
     }
   }
 
-  // 프로모션 집계
-  const promoHeaderMap = new Map<string, any>();
-  for (const p of promotions) promoHeaderMap.set(p.id, p);
-
-  const promoTypeBrandMap = new Map<string, Set<string>>();
-  const discCounts = new Array(DISC_RANGES.length).fill(0);
-  for (const item of promoItems) {
-    const type = promoHeaderMap.get(item.promotion_id)?.promotion_type ?? 'general';
-    if (!promoTypeBrandMap.has(type)) promoTypeBrandMap.set(type, new Set());
-    promoTypeBrandMap.get(type)!.add(item.musinsa_brand_name ?? '');
-    const dr = Number(item.discount_rate ?? 0);
-    const idx = DISC_RANGES.findIndex(b => dr >= b.min && dr < b.max);
-    if (idx >= 0) discCounts[idx]++;
-  }
-
-  const limitedBrands = promoTypeBrandMap.get('limited_offer') ?? new Set<string>();
-  const brandWeekBrands = promoTypeBrandMap.get('brand_week') ?? new Set<string>();
-  const saleBrands = new Set<string>([
-    ...(promoTypeBrandMap.get('daily_sale') ?? []),
-    ...(promoTypeBrandMap.get('general') ?? []),
-  ]);
-  const allPromoBrands = new Set<string>([...limitedBrands, ...brandWeekBrands, ...saleBrands]);
-
-  const saleDist = DISC_RANGES.map((b, i) => ({ label: b.label, count: discCounts[i] }));
+  // Promotion evidence settles independently in useDailyReport.
+  const saleDist: DailyReportData["saleDist"] = [];
 
   // 추천판 집계
   const recommendBrandSet = new Set<string>(recommendItems.map(r => r.brand_name).filter(Boolean));
@@ -429,12 +385,6 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
       exposureBrands: recommendBrandSet.size,
       matchedBrands: [...recommendBrandSet].filter(b => rankBrandSet.has(b)).length,
       rate: recommendBrandSet.size > 0 ? Math.round([...recommendBrandSet].filter(b => rankBrandSet.has(b)).length / recommendBrandSet.size * 100) : 0,
-    },
-    {
-      channel: '세일판',
-      exposureBrands: saleBrands.size,
-      matchedBrands: [...saleBrands].filter(b => rankBrandSet.has(b)).length,
-      rate: saleBrands.size > 0 ? Math.round([...saleBrands].filter(b => rankBrandSet.has(b)).length / saleBrands.size * 100) : 0,
     },
     {
       channel: '콘텐츠판',
@@ -504,8 +454,8 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
       brandRankChange:   br?.change ?? null,
       contentCount:      ci.count,
       contentTotalViews: ci.views,
-      hasPromo:          matchesBrandName(limitedBrands, b.name) || matchesBrandName(brandWeekBrands, b.name),
-      hasSale:           matchesBrandName(saleBrands, b.name),
+      hasPromo:          null,
+      hasSale:           null,
       hasRecommend:      matchesBrandName(recommendBrandSet, b.name),
       demoHighlights:    highlights,
     };
@@ -531,7 +481,7 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
         productCount: rows.length,
         avgPrice:     avg,
         hasContent:   contentBrandViewMap.has(name),
-        hasSale:      saleBrands.has(name),
+        hasSale:      null,
         hasRecommend: recommendBrandSet.has(name),
       };
     })
@@ -591,8 +541,8 @@ export async function fetchDailyReport(signal: AbortSignal = new AbortController
       contentBrandCount: allMagazineBrands.size,
       recommendItemCount: recommendItems.length,
       recommendBrandCount: recommendBrandSet.size,
-      saleItemCount: promoItems.length,
-      saleBrandCount: allPromoBrands.size,
+      saleItemCount: null,
+      saleBrandCount: null,
     },
     ownBrands,
     competitors,

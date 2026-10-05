@@ -1,6 +1,7 @@
 'use client';
 import { useDailyReport } from '@/hooks/useDailyReport';
 import BrandEvidenceStatus from '@/components/report/BrandEvidenceStatus';
+import PromotionEvidenceStatus from '@/components/report/PromotionEvidenceStatus';
 import { useState } from 'react';
 import { AGE_LABEL, GENDER_LABEL } from '@/lib/queries-report';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
@@ -35,11 +36,12 @@ function Section({ title, children, defaultOpen = false }: {
 }
 
 export default function MobileReportView() {
-  const { core, brand, data, retryBrand } = useDailyReport();
+  const { core, brand, headers, items, promotion, data, retryBrand, retryHeaders, retryItems } = useDailyReport();
+  const promotionStatus = <PromotionEvidenceStatus headers={headers} items={items} evidence={promotion} retryHeaders={retryHeaders} retryItems={retryItems} rankingDate={data?.kpi.latestDate} />;
   const loading = core.state === 'loading';
 
-  if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...<BrandEvidenceStatus source={brand} retry={retryBrand} showRows /></div>;
-  if (!data) return <><MobileEmptyState icon="📋" title={core.state === 'error' ? '리포트 조회 실패' : core.state === 'signedout' ? '로그인이 필요합니다' : '리포트 데이터가 없습니다'} /><BrandEvidenceStatus source={brand} retry={retryBrand} showRows /></>;
+  if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...<BrandEvidenceStatus source={brand} retry={retryBrand} showRows />{promotionStatus}</div>;
+  if (!data) return <><MobileEmptyState icon="📋" title={core.state === 'error' ? '리포트 조회 실패' : core.state === 'signedout' ? '로그인이 필요합니다' : '리포트 데이터가 없습니다'} /><BrandEvidenceStatus source={brand} retry={retryBrand} showRows />{promotionStatus}</>;
 
   const {
     kpi, ownBrands, competitors, brandRanking, demoGrid,
@@ -50,6 +52,7 @@ export default function MobileReportView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       <BrandEvidenceStatus source={brand} retry={retryBrand} rankingDate={kpi.latestDate} />
+      {promotionStatus}
       {/* KPI 요약 */}
       <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
         <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>{kpi.latestDate} 기준</div>
@@ -79,6 +82,7 @@ export default function MobileReportView() {
               일간 최고 {b.dailyBestRank != null ? `#${b.dailyBestRank}` : '—'}
               {b.dailyRankChange != null && ` (${b.dailyRankChange > 0 ? '▲' : '▼'}${Math.abs(b.dailyRankChange)})`}
               {b.brandRank != null && ` · 브랜드랭킹 #${b.brandRank}`}
+              {b.hasSale === null ? ' · 세일 확인 못함' : b.hasSale ? ' · 세일 조회 내 노출' : ' · 세일 조회 내 미노출'}
             </div>
           </div>
         ))}
@@ -95,7 +99,7 @@ export default function MobileReportView() {
               <div style={{ fontSize: 12, fontWeight: 600, color: c.isOwn ? 'var(--hs)' : 'var(--f1)' }}>{c.brandName}</div>
               <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>
                 {c.bestRank != null ? `#${c.bestRank}` : '—'} · SKU {c.productCount}
-                {c.hasSale ? ' · 프로모션' : ''}
+                {c.hasSale === null ? ' · 세일 확인 못함' : c.hasSale ? ' · 세일 조회 내 노출' : ' · 세일 조회 내 미노출'}
               </div>
             </div>
           </div>
@@ -204,7 +208,7 @@ export default function MobileReportView() {
       </Section>
 
       {/* 3. 세일판 */}
-      <Section title={`3. 세일판 (${kpi.saleItemCount?.toLocaleString() ?? 0}개 상품)`}>
+      <Section title={`3. 세일판 (${kpi.saleItemCount?.toLocaleString() ?? '—'}개 상품)`}>
         {saleDist.length === 0 ? (
           <p style={{ margin: '4px 0', fontSize: 12, color: 'var(--f4)' }}>데이터 없음</p>
         ) : (

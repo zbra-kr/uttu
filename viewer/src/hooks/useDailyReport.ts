@@ -3,25 +3,37 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { fetchDailyReport, type DailyReportData } from '@/lib/queries-report';
 import { fetchReportBrandEvidence, type BrandEvidence } from '@/lib/report-brand-evidence';
+import { fetchReportPromotionHeaders, fetchReportPromotionItems, derivePromotionEvidence, applyPromotionEvidence,
+  type PromotionHeaders, type PromotionItems } from '@/lib/report-promotion-evidence';
 
 type State<T> = { state: 'loading' | 'signedout' | 'error' | 'ready'; data: T | null };
 const pending = { state: 'loading', data: null } as const;
 export function useDailyReport() {
   const [core, setCore] = useState<State<DailyReportData>>(pending);
   const [brand, setBrand] = useState<State<BrandEvidence>>(pending);
+  const [headers, setHeaders] = useState<State<PromotionHeaders>>(pending);
+  const [items, setItems] = useState<State<PromotionItems>>(pending);
   const generation = useRef(0);
   const retryRef = useRef<(() => void) | null>(null);
   const retryBrand = useCallback(() => retryRef.current?.(), []);
+  const headerRetryRef = useRef<(() => void) | null>(null), itemRetryRef = useRef<(() => void) | null>(null);
+  const retryHeaders = useCallback(() => headerRetryRef.current?.(), []);
+  const retryItems = useCallback(() => itemRetryRef.current?.(), []);
   useEffect(() => {
     let disposed = false, eventSeen = false, current: string | null | undefined;
     let controller: AbortController | undefined, brandController: AbortController | undefined;
     let brandAttempt = 0, brandPending = false, authAttempt = 0, authPending = false;
+    const sourceControllers = new Set<AbortController>();
+    const abortSources = () => { sourceControllers.forEach(c => c.abort()); sourceControllers.clear(); };
     const identity = (id: string | null) => {
       if (disposed || current === id) return;
       current = id; controller?.abort(); brandController?.abort(); retryRef.current = null;
+      abortSources(); headerRetryRef.current = null; itemRetryRef.current = null;
       const epoch = ++generation.current;
       setCore(id ? pending : { state: 'signedout', data: null });
       setBrand(id ? pending : { state: 'signedout', data: null });
+      setHeaders(id ? pending : { state: 'signedout', data: null });
+      setItems(id ? pending : { state: 'signedout', data: null });
       if (!id) return;
       controller = new AbortController(); const signal = controller.signal;
       const active = () => !disposed && !signal.aborted && generation.current === epoch;
@@ -41,6 +53,22 @@ export function useDailyReport() {
         });
       };
       brandPending = false; retryRef.current = readBrand; readBrand();
+      const attachSource = <T,>(read: (signal: AbortSignal) => Promise<T>, set: (value: State<T>) => void) => {
+        let inFlight = false;
+        return () => {
+          if (!active() || inFlight) return;
+          inFlight = true;
+          const sourceController = new AbortController(); sourceControllers.add(sourceController);
+          const sourceActive = () => active() && !sourceController.signal.aborted;
+          set(pending);
+          void read(sourceController.signal).then(data => { if (sourceActive()) set({ state: 'ready', data }); })
+            .catch(() => { if (sourceActive()) set({ state: 'error', data: null }); })
+            .finally(() => { inFlight = false; sourceControllers.delete(sourceController); });
+        };
+      };
+      headerRetryRef.current = attachSource(fetchReportPromotionHeaders, setHeaders);
+      itemRetryRef.current = attachSource(fetchReportPromotionItems, setItems);
+      headerRetryRef.current(); itemRetryRef.current();
     };
     const client = supabaseBrowser();
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
@@ -50,12 +78,15 @@ export function useDailyReport() {
       if (disposed || eventSeen) return;
       authPending = false;
       retryRef.current = lookupIdentity;
+      headerRetryRef.current = lookupIdentity; itemRetryRef.current = lookupIdentity;
       setCore({ state: 'error', data: null }); setBrand({ state: 'error', data: null });
+      setHeaders({ state: 'error', data: null }); setItems({ state: 'error', data: null });
     };
     const lookupIdentity = () => {
       if (disposed || eventSeen || authPending) return;
       authPending = true; const attempt = ++authAttempt;
       setCore(pending); setBrand(pending);
+      setHeaders(pending); setItems(pending);
       void client.auth.getUser().then(({ data, error }) => {
         if (disposed || eventSeen || attempt !== authAttempt) return;
         authPending = false;
@@ -63,12 +94,15 @@ export function useDailyReport() {
       }).catch(() => { if (attempt === authAttempt) authFailed(); });
     };
     lookupIdentity();
-    return () => { disposed = true; controller?.abort(); brandController?.abort(); retryRef.current = null; subscription.unsubscribe(); };
+    return () => { disposed = true; controller?.abort(); brandController?.abort(); abortSources(); retryRef.current = null;
+      headerRetryRef.current = null; itemRetryRef.current = null; subscription.unsubscribe(); };
   }, []);
   const rows = brand.state === 'ready' ? brand.data?.rows ?? [] : [];
-  const data = core.data ? { ...core.data, brandRanking: rows, ownBrands: core.data.ownBrands.map(item => {
+  const promotion = derivePromotionEvidence(headers, items);
+  const merged = core.data ? applyPromotionEvidence(core.data, promotion) : null;
+  const data = merged ? { ...merged, brandRanking: rows, ownBrands: merged.ownBrands.map(item => {
     const rank = brand.state === 'ready' ? brand.data?.latestRows.find(row => row.brandName === item.brandName) : undefined;
     return { ...item, brandRank: rank?.rank ?? null, brandRankChange: rank?.rankChange ?? null };
   }) } : null;
-  return { core, brand, data, retryBrand };
+  return { core, brand, headers, items, promotion, data, retryBrand, retryHeaders, retryItems };
 }
