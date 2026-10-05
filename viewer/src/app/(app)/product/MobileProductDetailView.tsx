@@ -77,8 +77,24 @@ export default function MobileProductDetailView() {
     let active = true;
     setDetail(null);
     setLoading(true);
+    let failed = false;
+    const detailPromise = fetchProductDetail(no);
+    // Own-product extras need only the resolved identity, not history data.
+    // Capture failures immediately while retaining the initial-wave loading gate.
+    const ownExtras = detailPromise.then(async det => {
+      if (!active || failed || !det?.is_own) return null;
+      try {
+        const [reviews, bodyStats] = await Promise.all([
+          fetchReviews({ productId: det.id, sort: 'recent', limit: 10 }),
+          fetchBodyStats(det.id),
+        ]);
+        return { ok: true as const, reviews, bodyStats };
+      } catch (error) {
+        return { ok: false as const, error };
+      }
+    }, () => null);
     Promise.all([
-      fetchProductDetail(no),
+      detailPromise,
       fetchProductPriceHistory(no),
       fetchProductRankHistory(no),
       fetchProductCategoryRanks(no),
@@ -90,18 +106,18 @@ export default function MobileProductDetailView() {
       setCategoryRanks(cr.rows);
       setCategoryDate(cr.snapshot_date);
       if (det?.is_own) {
-        const [rv, bs] = await Promise.all([
-          fetchReviews({ productId: det.id, sort: 'recent', limit: 10 }),
-          fetchBodyStats(det.id),
-        ]);
+        const extras = await ownExtras;
         if (!active) return;
-        setReviews(rv.rows);
-        setBodyStats(bs);
+        if (extras && !extras.ok) throw extras.error;
+        if (extras?.ok) {
+          setReviews(extras.reviews.rows);
+          setBodyStats(extras.bodyStats);
+        }
       } else if (det) {
         fetchReviews({ productId: det.id, limit: 5 }).then(({ rows }) => { if (active) setReviews(rows); }).catch(() => {});
       }
       setLoading(false);
-    }).catch(() => { if (active) setLoading(false); });
+    }).catch(() => { failed = true; if (active) setLoading(false); });
     return () => { active = false; };
   }, [no]);
 
