@@ -6,7 +6,7 @@ const { act } = React, flush = () => new Promise(resolve => setImmediate(resolve
 const row = gender => ({ id: 'fixture-' + gender, title: 'POPULATED-' + gender, module_type: 'STD',
   gender_filter: gender, position: 1, snapshot_date: '2026-10-05', items_count: 7 });
 async function fixture(options = {}) {
-  const calls = [], held = [], writes = []; let hold = false;
+  const calls = [], held = [], writes = []; let hold = false, failTransport = false;
   const client = createClient('https://fixture.invalid', 'fixture-anon', {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     global: { fetch: async (input, init) => {
@@ -14,6 +14,7 @@ async function fixture(options = {}) {
       if (url.pathname !== '/rest/v1/recommend_modules') throw new Error('Unexpected fixture endpoint');
       // Existing in-flight requests may ignore abort, but a fresh pre-aborted fetch cannot dispatch.
       if (init.signal?.aborted) throw new DOMException('fixture aborted', 'AbortError');
+      if (failTransport) throw new Error('fixture transport failure');
       return new Promise((resolve, reject) => {
         const call = { gender: url.searchParams.get('gender_filter').slice(3), params: [...url.searchParams],
           signal: init.signal, resolve, reject };
@@ -33,13 +34,13 @@ async function fixture(options = {}) {
       return () => { pending.cancelled = true; pending.cleanup?.(); };
     }, deps);
   } };
-  const chart = ({ children }) => React.createElement('div', null, children);
+  const chart = ({ children, data }) => React.createElement('div', Array.isArray(data) ? { 'data-fixture-chart': JSON.stringify(data) } : null, children);
   const Component = load('src/app/(app)/recommend/MobileRecommendView.tsx', {
     react, '@/lib/supabase/client': { supabaseBrowser: () => client },
     recharts: Object.fromEntries(['LineChart', 'Line', 'XAxis', 'YAxis', 'ResponsiveContainer', 'Tooltip'].map(name => [name, chart])),
   }).default;
   let root;
-  await act(async () => { root = Renderer.create(React.createElement(Component)); await flush(); });
+  await act(async () => { root = Renderer.create(options.strict ? React.createElement(React.StrictMode, null, React.createElement(Component)) : React.createElement(Component)); await flush(); });
   const settle = async (index, rows, error = false) => act(async () => {
     calls[index].resolve(new Response(JSON.stringify(error ? { message: 'fixture SDK failure', code: 'FIXTURE', details: null, hint: null } : rows),
       { status: error ? 400 : 200, headers: { 'Content-Type': 'application/json' } })); await flush();
@@ -52,9 +53,18 @@ async function fixture(options = {}) {
   const invoke = async (...handlers) => act(async () => { handlers.forEach(handler => handler()); await flush(); });
   const snapshot = () => ({ gender: root.root.find(instance => instance.type.name === 'MobileFilterChips').props.activeValue,
     tree: JSON.stringify(root.toJSON()), alerts: root.root.findAllByProps({ role: 'alert' }).length,
-    empty: root.root.findAll(instance => instance.type.name === 'MobileEmptyState').length });
+    empty: root.root.findAll(instance => instance.type.name === 'MobileEmptyState').length,
+    charts: root.root.findAll(instance => instance.props['data-fixture-chart']).map(instance => JSON.parse(instance.props['data-fixture-chart'])) });
   const close = async () => act(async () => { root.unmount(); await flush(); });
   const releaseEffects = async () => act(async () => { hold = false; for (const effect of held.splice(0)) if (!effect.cancelled) effect.cleanup = effect.run(); await flush(); });
-  return { calls, writes, settle, reject, select, retry, invoke, snapshot, close, row, holdEffects: () => { hold = true; }, releaseEffects };
+  const waitForError = async () => act(async () => {
+    const deadline = Date.now() + 15000;
+    while (!writes.some(value => value?.status === 'error')) {
+      if (Date.now() > deadline) throw new Error('SDK error did not settle');
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    await flush();
+  });
+  return { calls, writes, waitForError, failTransport: value => { failTransport = value; }, settle, reject, select, retry, invoke, snapshot, close, row, holdEffects: () => { hold = true; }, releaseEffects };
 }
 module.exports = { fixture, row };

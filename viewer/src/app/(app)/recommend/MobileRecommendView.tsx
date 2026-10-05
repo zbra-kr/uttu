@@ -37,6 +37,7 @@ export default function MobileRecommendView() {
   const [result, setResult] = useState<RecommendResult>({ gender: 'A', modules: [], status: 'loading' });
   const [retry, setRetry] = useState(0);
   const requestPending = useRef(false);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const [gender, setGender] = useState('A');
 
   const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
@@ -79,6 +80,7 @@ export default function MobileRecommendView() {
   const failed = current.status === 'error';
   function retryRequest() {
     if (requestPending.current) return;
+    if (typeof document !== 'undefined' && resultsRef.current?.contains(document.activeElement)) resultsRef.current.focus();
     requestPending.current = true;
     setResult({ gender, modules: [], status: 'loading' });
     setRetry(value => value + 1);
@@ -152,13 +154,14 @@ export default function MobileRecommendView() {
         </div>
       )}
 
+      <div ref={resultsRef} role="region" aria-label="추천 조회 결과" tabIndex={-1} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {failed ? (
         <div role="alert" style={{ padding: '12px 13px', background: 'var(--shb)', border: '1px solid var(--shf)', borderRadius: 10, color: 'var(--shf)', fontSize: 13 }}>
           <p style={{ margin: '0 0 8px' }}>추천 데이터를 불러오지 못했습니다.</p>
           <button onClick={retryRequest} style={{ padding: '6px 10px', border: '1px solid var(--bd)', borderRadius: 7, background: 'var(--sur)', color: 'var(--f1)', cursor: 'pointer' }}>다시 시도</button>
         </div>
       ) : loading ? (
-        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>
+        <div role="status" aria-live="polite" style={{ textAlign: 'center', padding: '40px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>
       ) : modules.length === 0 ? (
         <MobileEmptyState icon="📋" title="추천 모듈 데이터가 없습니다" />
       ) : (
@@ -180,6 +183,7 @@ export default function MobileRecommendView() {
           </div>
         ))
       )}
+      </div>
     </div>
   );
 }

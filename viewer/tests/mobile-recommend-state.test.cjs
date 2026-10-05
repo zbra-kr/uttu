@@ -1,7 +1,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const { fixture, row } = require('./helpers/recommend-state-fixture.cjs');
 const populated = async () => { const f = await fixture(); await f.settle(0, [row('A')]); return f; };
-function pending(f, gender) { const s = f.snapshot(); assert.equal(s.gender, gender); assert.equal(s.alerts, 0); assert.equal(s.empty, 0); assert.ok(!s.tree.includes('POPULATED-')); assert.ok(s.tree.includes('불러오는 중')); }
+function pending(f, gender) { const s = f.snapshot(); assert.equal(s.gender, gender); assert.equal(s.alerts, 0); assert.equal(s.empty, 0); assert.ok(!s.tree.includes('POPULATED-')); assert.ok(s.tree.includes('불러오는 중')); assert.ok(s.tree.includes('"role":"status"')); assert.ok(s.tree.includes('"aria-live":"polite"')); }
 function ready(f, gender) { const s = f.snapshot(); assert.equal(s.gender, gender); assert.equal(s.alerts, 0); assert.equal(s.empty, 0); assert.ok(s.tree.includes('POPULATED-' + gender)); }
 function failed(f, gender) { const s = f.snapshot(); assert.equal(s.gender, gender); assert.equal(s.alerts, 1); assert.equal(s.empty, 0); assert.ok(!s.tree.includes('POPULATED-')); assert.ok(s.tree.includes('—')); }
 
@@ -37,4 +37,15 @@ test('recommend cooperative transport cancellation on gender change is not a vis
 });
 test('recommend preserves scalar projection, cohort, date bounds, ordering and 100-row cap', async () => {
  const f = await populated(); try { const params = new URLSearchParams(f.calls[0].params); assert.equal(params.get('select'), 'id,title,module_type,gender_filter,position,snapshot_date,items_count'); assert.equal(params.get('gender_filter'), 'eq.A'); assert.equal(params.get('order'), 'snapshot_date.desc,position.asc'); assert.equal(params.get('limit'), '100'); assert.equal(params.getAll('snapshot_date').length, 2); assert.ok(params.getAll('snapshot_date')[0].startsWith('gte.')); assert.ok(params.getAll('snapshot_date')[1].startsWith('lte.')); assert.ok(f.calls[0].signal instanceof AbortSignal); } finally { await f.close(); }
+});
+
+test('recommend multi-date visible chart and totals switch with gender without retaining old series', async () => {
+ const f = await fixture(); const rows = gender => [{ ...row(gender), snapshot_date: '2026-10-04', items_count: 11 }, { ...row(gender), id: 'second-' + gender, items_count: 7 }];
+ try { await f.settle(0, rows('A')); assert.deepEqual(f.snapshot().charts[0].map(x => x.items), [11, 7]); await f.select('M'); pending(f, 'M'); assert.deepEqual(f.snapshot().charts, []); await f.settle(1, rows('M').map(r => ({ ...r, items_count: r.items_count + 10 }))); assert.deepEqual(f.snapshot().charts[0].map(x => x.items), [21, 17]); assert.ok(!f.snapshot().tree.includes('POPULATED-A')); } finally { await f.close(); }
+});
+test('recommend current transport failure exhausts SDK retries, then explicit retry recovers', async () => {
+ const f = await fixture(); try { f.failTransport(true); await f.reject(0); await f.waitForError(); failed(f, 'A'); f.failTransport(false); await f.invoke(f.retry()); assert.equal(f.calls.length, 2); await f.settle(1, [row('A')]); ready(f, 'A'); } finally { await f.close(); }
+});
+test('recommend StrictMode setup/cleanup leaves only active response able to commit', async () => {
+ const f = await fixture({ strict: true }); try { assert.equal(f.calls.length, 1); pending(f, 'A'); await f.settle(0, [row('A')]); ready(f, 'A'); await f.select('M'); assert.equal(f.calls[0].signal.aborted, true); await f.settle(1, [row('M')]); ready(f, 'M'); } finally { await f.close(); }
 });
