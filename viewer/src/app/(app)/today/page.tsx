@@ -151,7 +151,7 @@ function TodayContent() {
         flexDirection: 'column',
         gap: 14,
       }}>
-        {activeTab === 'cs' && <CSDailyReviewCheck key={csReviews.scope} state={csReviews} />}
+        {activeTab === 'cs' && <CSDailyReviewCheck state={csReviews} />}
         {!validDate ? <p role="status">유효한 브리핑 날짜를 선택하세요.</p> : loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 20px', color: 'var(--f4)', fontSize: 13 }}>
             불러오는 중...

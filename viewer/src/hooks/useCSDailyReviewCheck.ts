@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isAuthSessionMissingError } from '@supabase/supabase-js';
 import { fetchReviews } from '@/lib/queries';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { checkCSReviews, csReviewDate, CS_REVIEW_LIMIT, type CSReviewResult } from '@/lib/cs-daily-review-check';
@@ -29,12 +30,14 @@ export function useCSDailyReviewCheck(active: boolean, briefingDate: string, tod
       setAuth(previous => ({ ready: true, error: false, userId, epoch: previous.epoch + 1 }));
       setData(null);
     }
-    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
+      // Initial local session loading can emit null on failure; getUser verifies it.
+      if (event === 'INITIAL_SESSION') return;
       eventSeen = true; identity(session?.user?.id ?? null);
     });
     void client.auth.getUser().then(({ data: identityData, error }) => {
       if (cancelled || eventSeen) return;
-      if (error) throw error;
+      if (error && !isAuthSessionMissingError(error)) throw error;
       identity(identityData.user?.id ?? null);
     }).catch(() => {
       if (!cancelled && !eventSeen) {

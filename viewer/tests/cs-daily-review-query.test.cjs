@@ -3,11 +3,11 @@ const React = require('react'), Renderer = require('react-test-renderer');
 const load = require('./helpers/load-source.cjs');
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const tick = () => new Promise(resolve => setImmediate(resolve));
-function fixture({ pending = false, identityFailure = false, identityPending = false, shell = false } = {}) {
-  let owner = 'first-owner', mode = 'ready', active = true, date = '2026-10-05', root, state;
+function fixture({ pending = false, identityFailure = false, identityPending = false, identityMissing = false, initialOwner = 'first-owner', shell = false } = {}) {
+  let owner = initialOwner, mode = 'ready', active = true, date = '2026-10-05', root, state;
   const calls = [], listeners = new Set(); let resolveIdentity;
   const sdk = { auth: {
-    getUser: () => { const response = { data: { user: owner ? { id: owner } : null }, error: identityFailure ? Error('inert identity failure') : null }; return identityPending ? new Promise(resolve => { resolveIdentity = () => resolve(response); }) : Promise.resolve(response); },
+    getUser: () => { const response = { data: { user: owner ? { id: owner } : null }, error: identityMissing ? new (require('@supabase/supabase-js').AuthSessionMissingError)() : identityFailure ? Error('inert identity failure') : null }; return identityPending ? new Promise(resolve => { resolveIdentity = () => resolve(response); }) : Promise.resolve(response); },
     onAuthStateChange(fn) { listeners.add(fn); return { data: { subscription: { unsubscribe() { listeners.delete(fn); } } } }; },
   }, from(table) {
     const call = { table, ops: [], owner, settled: false };
@@ -52,10 +52,11 @@ function fixture({ pending = false, identityFailure = false, identityPending = f
   return { calls, listeners, get state() { return state; }, async mount() { await React.act(async () => { root = Renderer.create(React.createElement(App)); await tick(); }); },
     async update(values = {}) { if ('active' in values) active = values.active; if ('date' in values) date = values.date; await React.act(async () => { if (shell && 'mobile' in values) { media.matches = values.mobile; for (const fn of mediaListeners) fn({ matches: values.mobile }); } root.update(React.createElement(App, { mobile: values.mobile })); await tick(); }); },
     async auth(value) { owner = value; await React.act(async () => { for (const fn of listeners) fn(value ? 'SIGNED_IN' : 'SIGNED_OUT', value ? { user: { id: value } } : null); await tick(); }); },
+    async initial(value) { await React.act(async () => { for (const fn of listeners) fn('INITIAL_SESSION', value ? { user: { id: value } } : null); await tick(); }); },
     async retry() { await React.act(async () => { state.retry(); await tick(); }); },
     async resolveIdentity() { await React.act(async () => { resolveIdentity(); await tick(); }); },
     async resolve() { await React.act(async () => { for (const c of calls.filter(c => !c.settled)) c.resolve(); await tick(); }); },
-    mode(value) { mode = value; }, identityRecover() { identityFailure = false; },
+    mode(value) { mode = value; }, identityRecover() { identityFailure = false; identityPending = false; },
     async close() { if (root) await React.act(async () => root.unmount()); if (saved) for (const key of ['window', 'document']) { if (saved[key] === undefined) delete global[key]; else global[key] = saved[key]; } },
   };
 }
@@ -109,4 +110,38 @@ test('an SDK auth event wins a delayed getUser result from the prior owner', asy
     await f.auth('event-owner'); assert.equal(f.calls.length, 1); assert.equal(f.state.result.rows[0].review_text, 'event-owner');
     await f.resolveIdentity(); assert.equal(f.calls.length, 1); assert.equal(f.state.result.rows[0].review_text, 'event-owner');
   } finally { await f.close(); }
+});
+
+test('initial null plus failed verification is retryable; repeated retry succeeds', async () => {
+  const f = fixture({ identityPending: true, identityFailure: true }); try {
+    await f.mount(); await f.initial(null); assert.equal(f.state.status, 'loading');
+    await f.resolveIdentity(); assert.equal(f.state.status, 'error'); assert.equal(f.calls.length, 0);
+    f.identityRecover(); await f.retry(); assert.equal(f.state.status, 'ready'); assert.equal(f.calls.length, 1);
+    f.mode('error'); await f.retry(); assert.equal(f.state.status, 'error');
+    f.mode('ready'); await f.retry(); assert.equal(f.state.status, 'ready'); assert.equal(f.calls.length, 3);
+  } finally { await f.close(); } assert.equal(f.listeners.size, 0);
+});
+
+test('genuine missing session stays signed-out, including initial null', async () => {
+  for (const identityMissing of [false, true]) {
+    const f = fixture({ initialOwner: null, identityPending: true, identityMissing }); try {
+      await f.mount(); await f.initial(null); await f.resolveIdentity();
+      assert.equal(f.state.status, 'signed-out'); assert.equal(f.state.result, null); assert.equal(f.calls.length, 0);
+    } finally { await f.close(); }
+  }
+});
+
+test('explicit signout and newer owner override delayed failed verification and initial events', async () => {
+  for (const owner of [null, 'replacement-owner']) {
+    const f = fixture({ identityPending: true, identityFailure: true }); try {
+      await f.mount(); await f.auth(owner); await f.initial('stale-local-owner'); await f.resolveIdentity();
+      assert.equal(f.state.status, owner ? 'ready' : 'signed-out'); assert.equal(f.calls.length, owner ? 1 : 0);
+      assert.equal(f.state.result?.rows[0].review_text ?? null, owner);
+    } finally { await f.close(); }
+  }
+});
+
+test('unmount before pending identity completes unsubscribes and never reads sources', async () => {
+  const f = fixture({ identityPending: true }); await f.mount(); await f.close();
+  await f.resolveIdentity(); assert.equal(f.listeners.size, 0); assert.equal(f.calls.length, 0);
 });

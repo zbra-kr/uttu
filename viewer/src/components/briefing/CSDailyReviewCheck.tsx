@@ -1,13 +1,15 @@
 'use client';
 import Link from 'next/link';
+import { useRef } from 'react';
 import type { CSDailyReviewState } from '@/hooks/useCSDailyReviewCheck';
 import { currentCSProductHref } from '@/lib/cs-daily-review-check';
 
 export default function CSDailyReviewCheck({ state }: { state: CSDailyReviewState }) {
+  const region = useRef<HTMLElement>(null);
   if (state.status === 'inactive') return null;
   const result = state.result;
   return (
-    <section aria-label="CS 저장 리뷰 확인" style={{ border: '1px solid var(--bd)', borderRadius: 10, padding: 14, minWidth: 0, color: 'var(--f2)' }}>
+    <section ref={region} tabIndex={-1} aria-label="CS 저장 리뷰 확인" aria-busy={state.status === 'loading'} style={{ border: '1px solid var(--bd)', borderRadius: 10, padding: 14, minWidth: 0, color: 'var(--f2)' }}>
       <h2 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--f1)' }}>확인할 저평점 리뷰</h2>
       <p style={{ margin: '0 0 6px', fontSize: 12, lineHeight: 1.6 }}>
         브리핑 기준일 {state.briefingDate} · 저장된 리뷰 작성일 {state.reviewDate ?? '확인 필요'} · 1–2점
@@ -18,7 +20,7 @@ export default function CSDailyReviewCheck({ state }: { state: CSDailyReviewStat
       {state.status === 'invalid-date' ? <p role="status">유효한 현재 또는 과거 브리핑 날짜를 선택하세요.</p>
         : state.status === 'signed-out' ? <p role="status">로그인 후 저장 리뷰를 확인할 수 있습니다.</p>
         : state.status === 'loading' ? <p role="status" aria-live="polite">저장 리뷰를 확인하는 중…</p>
-        : state.status === 'error' ? <div role="alert"><p>저장 리뷰 또는 정확한 건수를 확인하지 못했습니다.</p><button type="button" onClick={state.retry} style={{ padding: '10px 14px', minHeight: 44, border: '1px solid var(--bd)', borderRadius: 8, background: 'var(--sur)', color: 'var(--f1)', cursor: 'pointer' }}>다시 확인</button></div>
+        : state.status === 'error' ? <div role="alert"><p>저장 리뷰 또는 정확한 건수를 확인하지 못했습니다.</p><button type="button" onClick={event => { if (document.activeElement === event.currentTarget) region.current?.focus(); state.retry(); }} style={{ padding: '10px 14px', minHeight: 44, border: '1px solid var(--bd)', borderRadius: 8, background: 'var(--sur)', color: 'var(--f1)', cursor: 'pointer' }}>다시 확인</button></div>
         : result ? <>
           <p role="status" aria-live="polite" style={{ fontSize: 12, margin: '0 0 10px' }}>
             조회 권한 내 조건에 맞는 저장 리뷰 {result.total.toLocaleString()}건 중 {result.rows.length}건 표시 · 최대 20건

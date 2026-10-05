@@ -146,7 +146,7 @@ export default function MobileTodayView({
         padding: '12px 12px 16px',
         display: 'flex', flexDirection: 'column', gap: 10,
       }}>
-        {activeTab === 'cs' && csReviews && <CSDailyReviewCheck key={csReviews.scope} state={csReviews} />}
+        {activeTab === 'cs' && csReviews && <CSDailyReviewCheck state={csReviews} />}
         {invalidDate ? <p role="status">유효한 브리핑 날짜를 선택하세요.</p> : loading ? (
           <div style={{
             display: 'flex', justifyContent: 'center',
