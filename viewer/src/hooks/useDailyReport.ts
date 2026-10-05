@@ -1,5 +1,6 @@
 'use client';
-import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
+import { useContext, useCallback, useEffect, useRef, useState } from 'react';
+import { ReportOwnerContext } from '@/lib/report-owner-context';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { fetchDailyReport, type DailyReportData } from '@/lib/queries-report';
 import { fetchReportBrandEvidence, type BrandEvidence } from '@/lib/report-brand-evidence';
@@ -134,10 +135,8 @@ export function useDailyReportLoader(enabled = true, revision = 0) {
     data, retryBrand, retryHeaders, retryItems, retryRecommendModules, retryRecommendItems };
 }
 
-export const DailyReportContext = createContext<ReturnType<typeof useDailyReportLoader> | null>(null);
-
 export function useDailyReport() {
-  const shared = useContext(DailyReportContext);
-  const local = useDailyReportLoader(shared === null);
-  return shared ?? local;
+  const { managed, report } = useContext(ReportOwnerContext);
+  const local = useDailyReportLoader(!managed);
+  return report ?? local;
 }

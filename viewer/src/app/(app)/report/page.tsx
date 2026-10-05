@@ -1,4 +1,5 @@
 'use client';
+import { ReportOwnerContext } from '@/lib/report-owner-context';
 import { useDailyReport } from '@/hooks/useDailyReport';
 import BrandEvidenceStatus from '@/components/report/BrandEvidenceStatus';
 import PromotionEvidenceStatus from '@/components/report/PromotionEvidenceStatus';
@@ -196,7 +197,8 @@ function DemoCard({ row }: { row: DemoRow }) {
 // ── 메인 페이지 ───────────────────────────────────────────────────────────────
 export default function ReportPage() {
   const viewport = useResolvedViewport();
-  if (!viewport) return <div role="status">리포트 화면 준비 중…</div>;
+  const owner = React.useContext(ReportOwnerContext);
+  if ((owner.managed && (!owner.active || !owner.report)) || !viewport) return <div role="status">리포트 화면 준비 중…</div>;
   if (viewport === 'mobile') return <MobileReportView />;
   return <ReportDesktopView />;
 }

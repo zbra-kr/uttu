@@ -1,11 +1,13 @@
 'use client';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { DailyReportContext, useDailyReportLoader } from '@/hooks/useDailyReport';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useDailyReportLoader } from '@/hooks/useDailyReport';
+import type { DailyReportSnapshot } from '@/lib/report-owner-context';
 
 export const REPORT_RESPONSIVE_FRESHNESS_MS = 60_000;
 
-/** Lives above Shell's responsive tree; owns data only while /report is active. */
-export default function DailyReportScope({ active, children }: { active: boolean; children: ReactNode }) {
+/** A lazy sibling of Shell; publishes before paint and unmounts on route exit. */
+export default memo(function DailyReportScope({ onChange }: { onChange: (report: DailyReportSnapshot) => void }) {
+  const active = true;
   const [revision, setRevision] = useState(0);
   const report = useDailyReportLoader(active, revision);
   const settledAt = useRef<number | null>(null);
@@ -37,5 +39,6 @@ export default function DailyReportScope({ active, children }: { active: boolean
     return () => media.removeEventListener('change', transition);
   }, [active]);
 
-  return <DailyReportContext.Provider value={active ? report : null}>{children}</DailyReportContext.Provider>;
-}
+  useLayoutEffect(() => { onChange(report); }, [onChange, report]);
+  return null;
+});

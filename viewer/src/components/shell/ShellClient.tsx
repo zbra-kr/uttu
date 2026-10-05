@@ -1,4 +1,5 @@
 'use client';
+import DailyReportBoundary from '@/components/report/DailyReportBoundary';
 import React from 'react';
 import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
@@ -28,9 +29,6 @@ const BREADCRUMBS: Record<string, string[]> = {
   '/admin/mapping':   ['매핑', 'Corp Code'],
   '/me':              ['마이페이지'],
 };
-
-// The owner is above responsive ancestry, but its readers load only on /report.
-const DailyReportScope = React.lazy(() => import('@/components/report/DailyReportScope'));
 
 const CONTEXTS: Record<string, string[]> = {
   '/':          ['전사 대시보드'],
@@ -254,9 +252,5 @@ function ShellContent({ children }: { children: React.ReactNode }) {
 
 export default function ShellClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if (pathname !== '/report') return <ShellContent>{children}</ShellContent>;
-  // Do not mount a standalone Report while its shared owner is still loading.
-  return <React.Suspense fallback={<div role="status">리포트 화면 준비 중…</div>}>
-    <DailyReportScope active><ShellContent>{children}</ShellContent></DailyReportScope>
-  </React.Suspense>;
+  return <DailyReportBoundary active={pathname === '/report'}><ShellContent>{children}</ShellContent></DailyReportBoundary>;
 }
