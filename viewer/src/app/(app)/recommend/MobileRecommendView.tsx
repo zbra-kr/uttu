@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
@@ -15,6 +15,12 @@ interface RecommendModule {
   items_count: number;
 }
 
+interface RecommendResult {
+  gender: string;
+  modules: RecommendModule[];
+  status: 'loading' | 'ready' | 'error';
+}
+
 const GENDER_CHIPS = [
   { value: 'A', label: '전체' },
   { value: 'M', label: '남성' },
@@ -28,8 +34,9 @@ function kstDaysAgo(n: number): string {
 }
 
 export default function MobileRecommendView() {
-  const [modules, setModules] = useState<RecommendModule[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState<RecommendResult>({ gender: 'A', modules: [], status: 'loading' });
+  const [retry, setRetry] = useState(0);
+  const requestPending = useRef(false);
   const [gender, setGender] = useState('A');
 
   const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
@@ -37,21 +44,45 @@ export default function MobileRecommendView() {
 
   useEffect(() => {
     const sb = supabaseBrowser();
-    setLoading(true);
-    sb.from('recommend_modules')
-      .select('id, title, module_type, gender_filter, position, snapshot_date, items_count')
-      .gte('snapshot_date', fromDate)
-      .lte('snapshot_date', today)
-      .eq('gender_filter', gender)
-      .order('snapshot_date', { ascending: false })
-      .order('position', { ascending: true })
-      .limit(100)
-      .then(({ data, error }) => {
-        if (!error && data) setModules(data as RecommendModule[]);
-        setLoading(false);
-      });
-  // gender 변경 시에만 재요청. sb·setters 안정 참조
-  }, [gender]); // eslint-disable-line react-hooks/exhaustive-deps
+    const controller = new AbortController();
+    let active = true;
+    requestPending.current = true;
+    setResult({ gender, modules: [], status: 'loading' });
+    void (async () => {
+      try {
+        const { data, error } = await sb.from('recommend_modules')
+          .select('id, title, module_type, gender_filter, position, snapshot_date, items_count')
+          .gte('snapshot_date', fromDate)
+          .lte('snapshot_date', today)
+          .eq('gender_filter', gender)
+          .order('snapshot_date', { ascending: false })
+          .order('position', { ascending: true })
+          .limit(100)
+          .abortSignal(controller.signal);
+        if (!active || controller.signal.aborted) return;
+        if (error) throw error;
+        setResult({ gender, modules: (data ?? []) as RecommendModule[], status: 'ready' });
+      } catch {
+        if (active && !controller.signal.aborted) setResult({ gender, modules: [], status: 'error' });
+      } finally {
+        if (active && !controller.signal.aborted) requestPending.current = false;
+      }
+    })();
+    return () => { active = false; controller.abort(); };
+  // Preserve the existing date-window behavior; gender changes and retries request fresh data.
+  }, [gender, retry]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mask the previous filter's rows before its replacement effect runs.
+  const current = result.gender === gender ? result : { gender, modules: [], status: 'loading' as const };
+  const modules = current.modules;
+  const loading = current.status === 'loading';
+  const failed = current.status === 'error';
+  function retryRequest() {
+    if (requestPending.current) return;
+    requestPending.current = true;
+    setResult({ gender, modules: [], status: 'loading' });
+    setRetry(value => value + 1);
+  }
 
   const totalItems = modules.reduce((s, m) => s + (m.items_count ?? 0), 0);
 
@@ -82,8 +113,8 @@ export default function MobileRecommendView() {
       {/* KPI */}
       <div style={{ display: 'flex', gap: 8 }}>
         {[
-          { label: '추천 모듈', value: modules.length },
-          { label: '총 노출 상품', value: totalItems.toLocaleString() },
+          { label: '추천 모듈', value: current.status === 'ready' ? modules.length : '—' },
+          { label: '총 노출 상품', value: current.status === 'ready' ? totalItems.toLocaleString() : '—' },
           { label: '오늘 날짜', value: today.slice(5) },
         ].map(kpi => (
           <div key={kpi.label} style={{
@@ -97,7 +128,7 @@ export default function MobileRecommendView() {
       </div>
 
       {/* 7일 노출 상품 수 추이 */}
-      {!loading && chartData.length > 1 && (
+      {current.status === 'ready' && chartData.length > 1 && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 8 }}>노출 상품 수 7일 추이</div>
           <ResponsiveContainer width="100%" height={160}>
@@ -121,7 +152,12 @@ export default function MobileRecommendView() {
         </div>
       )}
 
-      {loading ? (
+      {failed ? (
+        <div role="alert" style={{ padding: '12px 13px', background: 'var(--shb)', border: '1px solid var(--shf)', borderRadius: 10, color: 'var(--shf)', fontSize: 13 }}>
+          <p style={{ margin: '0 0 8px' }}>추천 데이터를 불러오지 못했습니다.</p>
+          <button onClick={retryRequest} style={{ padding: '6px 10px', border: '1px solid var(--bd)', borderRadius: 7, background: 'var(--sur)', color: 'var(--f1)', cursor: 'pointer' }}>다시 시도</button>
+        </div>
+      ) : loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>
       ) : modules.length === 0 ? (
         <MobileEmptyState icon="📋" title="추천 모듈 데이터가 없습니다" />

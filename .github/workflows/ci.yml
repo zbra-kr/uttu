@@ -75,6 +75,10 @@ jobs:
         run: npm run test:reviews-mobile
         working-directory: viewer
 
+      - name: Mobile recommendation state regression tests
+        run: npm run test:recommend-mobile
+        working-directory: viewer
+
       - name: Review statistics validity regression tests
         run: npm run test:review-stats
         working-directory: viewer
