@@ -90,7 +90,8 @@ export function applyPromotionEvidence(data: DailyReportData, evidence: Promotio
   if (evidence.coherent && evidence.date === data.kpi.latestDate) {
     const ranked = new Set(data.rankingRows.map(r => r.brandName));
     const matchedBrands = [...evidence.saleBrands].filter(b => ranked.has(b)).length;
-    channels.splice(1, 0, { channel: '세일판', exposureBrands: evidence.saleBrands.size, matchedBrands,
+    const recommendationIndex = channels.findIndex(c => c.channel === '추천판');
+    channels.splice(recommendationIndex < 0 ? 0 : recommendationIndex + 1, 0, { channel: '세일판', exposureBrands: evidence.saleBrands.size, matchedBrands,
       rate: evidence.saleBrands.size ? Math.round(matchedBrands / evidence.saleBrands.size * 100) : 0 });
   }
   return { ...data, kpi: { ...data.kpi, saleItemCount: evidence.itemCount, saleBrandCount: evidence.brandCount },

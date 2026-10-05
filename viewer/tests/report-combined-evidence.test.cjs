@@ -60,3 +60,33 @@ test('combined caps cannot manufacture negative exposure or either ranking conve
  const f=fixture(),v=await mount(f);try{await React.act(async()=>{pendingFor(f,'promotions')[0].resolve({data:Array.from({length:50},(_,n)=>({...promoHeader(),id:'p'+n})),error:null});pendingFor(f,'promotion_items')[0].resolve({data:Array.from({length:2000},(_,n)=>({...promoItem(),id:'pi'+n,promotion_id:'p'+n%50,musinsa_brand_name:'Different Label'})),error:null});pendingFor(f,'recommend_modules')[0].resolve({data:Array.from({length:50},(_,n)=>moduleRow('2026-10-05','m'+n,20,n)),error:null});pendingFor(f,'recommend_items')[0].resolve({data:Array.from({length:1000},(_,n)=>itemRow('2026-10-05','m'+n%50,'Different Label','ri'+n,n)),error:null})});assert.equal(v.current.data.ownBrands[0].hasRecommend,null);assert.equal(v.current.data.ownBrands[0].hasSale,null);assert.equal(v.current.data.kpi.recommendItemCount,1000);assert.equal(v.current.data.kpi.saleItemCount,2000);assert.deepEqual(v.current.data.channelConversions.map(x=>x.channel),['콘텐츠판']);assert.equal(v.current.recommend.coherent,false);assert.equal(v.current.promotion.coherent,false);
  }finally{await React.act(async()=>v.root.unmount())}
 });
+
+for (const scenario of ['module-loading','item-loading','module-error','item-error','module-capped','item-capped','module-date-mismatch','item-date-mismatch']) {
+ test('valid sale precedes content while recommendation is '+scenario,async()=>{
+  const f=fixture(),v=await mount(f);
+  try {
+   await React.act(async()=>{
+    pendingFor(f,'promotions')[0].resolve(response('promotions'));
+    pendingFor(f,'promotion_items')[0].resolve(response('promotion_items'));
+    for (const table of ['recommend_modules','recommend_items']) {
+     const kind=table==='recommend_modules'?'module':'item';
+     if (scenario===kind+'-loading') continue;
+     if (scenario===kind+'-error') { pendingFor(f,table)[0].resolve({data:null,error:{message:'offline'}}); continue; }
+     let result=response(table);
+     if (scenario==='module-capped'&&kind==='module') result={data:Array.from({length:50},(_,n)=>moduleRow('2026-10-05','m'+n,1,n)),error:null};
+     if (scenario==='item-capped'&&kind==='item') result={data:Array.from({length:1000},(_,n)=>itemRow('2026-10-05','module','Brand','ri'+n,n)),error:null};
+     if (scenario===kind+'-date-mismatch') result={data:kind==='module'?[moduleRow('2026-10-04')]:[itemRow('2026-10-04')],error:null};
+     pendingFor(f,table)[0].resolve(result);
+    }
+   });
+   assert.equal(v.current.promotion.coherent,true);
+   assert.equal(v.current.recommend.coherent,false);
+   assert.deepEqual(v.current.data.channelConversions.map(x=>x.channel),['세일판','콘텐츠판']);
+   assert.equal(v.current.data.ownBrands[0].hasSale,true);
+   assert.equal(v.current.data.kpi.saleItemCount,1);
+   assert.equal(f.calls.length,15);
+   assert.equal(f.authCalls,1);
+   for (const table of sourceTables) assert.equal(pendingFor(f,table).length,1);
+  } finally { await React.act(async()=>v.root.unmount()); }
+ });
+}
