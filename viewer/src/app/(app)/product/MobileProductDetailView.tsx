@@ -70,12 +70,17 @@ export default function MobileProductDetailView() {
   const [reviews,        setReviews]        = useState<ReviewRow[]>([]);
   const [bodyStats,      setBodyStats]      = useState<BodyStats | null>(null);
   const [loading,        setLoading]        = useState(true);
+  const [stateProductNo, setStateProductNo] = useState(no);
   const [selectedReview, setSelectedReview] = useState<ReviewRow | null>(null);
 
   useEffect(() => {
     if (!no) return;
     let active = true;
+    setStateProductNo(no);
     setDetail(null);
+    setReviews([]);
+    setBodyStats(null);
+    setSelectedReview(null);
     setLoading(true);
     let failed = false;
     const detailPromise = fetchProductDetail(no);
@@ -122,7 +127,7 @@ export default function MobileProductDetailView() {
   }, [no]);
 
   if (!no) return <MobileEmptyState icon="🔍" title="상품 번호가 없습니다" />;
-  if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>;
+  if (loading || stateProductNo !== no) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>;
   if (!detail) return <><MobileEmptyState icon="📦" title="상품 정보를 찾을 수 없습니다" /><SourceNoteFallback /></>;
 
   // ── 랭킹 차트 계산 ─────────────────────────────
