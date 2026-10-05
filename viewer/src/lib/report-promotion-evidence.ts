@@ -27,7 +27,7 @@ function source<T extends { snapshot_date: string }>(rows: T[], limit: number): 
     sampledRows: rows.length, atLimit: rows.length >= limit };
 }
 
-// Headers are mutable: retain all returned dates, but never apply a header to another day's items.
+// Headers are retained by date and may update within that date; never apply them to another day's items.
 export async function fetchReportPromotionHeaders(signal: AbortSignal): Promise<PromotionHeaders> {
   const { data, error } = await supabaseBrowser().from('promotions')
     .select('id, promotion_type, snapshot_date').order('snapshot_date', { ascending: false })

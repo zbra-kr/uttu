@@ -24,7 +24,7 @@ export default function PromotionEvidenceStatus({ headers, items, evidence, retr
       아이템 기준일 {evidence.date ?? '없음'} · 해당 날짜 조회 {evidence.itemCount.toLocaleString()}행
       {` · 유형 미확인 ${evidence.unknownClassification}행 · 할인율 미확인 ${evidence.unknownDiscount}행 · 브랜드명 미확인 ${evidence.unknownBrand}행`}
     </div>}
-    <div>유형은 헤더와 아이템의 ID·기준일이 일치할 때만 분류합니다. 조회 범위의 관찰이며 전체 수집 완료·진행 중인 행사 여부는 확인하지 못합니다.</div>
+    <div>유형은 헤더와 아이템의 ID·기준일이 일치할 때만 분류합니다. 날짜별 기록은 당일 수정될 수 있으며, 전체 수집 완료·당시 또는 현재 행사 진행 여부는 확인하지 못합니다.</div>
     {rankingDate && (!evidence.coherent || evidence.date !== rankingDate) &&
       <div>세일판 랭킹 비교 보류 — 유형·조회 범위 또는 랭킹 기준일({rankingDate})과의 일치를 확인하지 못했습니다.</div>}
   </div>;

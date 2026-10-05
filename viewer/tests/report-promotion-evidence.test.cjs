@@ -51,7 +51,7 @@ test('source errors, null, malformed IDs/dates and genuine empties remain distin
  if(Array.isArray(data)&&!data.length){const v=await p;assert.equal(v.date,null);assert.equal(v.atLimit,false)}else await assert.rejects(p);
  }for(const table of ['promotions','promotion_items']){const f=fixture(),m=lib(f),p=(table==='promotions'?m.fetchReportPromotionHeaders:m.fetchReportPromotionItems)(new AbortController().signal);await Promise.resolve();pendingFor(f,table)[0].resolve({data:[],error:{message:'offline'}});await assert.rejects(p)}
 });
-test('latest item date is observed independently; older mutable headers cannot classify it',async()=>{
+test('latest item date is observed independently; headers from another date cannot classify it',async()=>{
  const f=fixture(),m=lib(f),h=(await read(f,'promotions',[header('2026-10-04','daily_sale'),header('2026-10-03','brand_week','other')])).value;
  const i=(await read(f,'promotion_items',[item('2026-10-03'),item('2026-10-01','other')])).value;
  const v=m.derivePromotionEvidence(ready(h),ready(i));assert.equal(i.date,'2026-10-03');assert.equal(i.sampledRows,2);assert.equal(i.rows.length,1);
