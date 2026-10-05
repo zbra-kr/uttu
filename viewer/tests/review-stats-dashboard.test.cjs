@@ -27,7 +27,7 @@ test('real desktop route renders error/retry distinctly from a successful zero-c
     assert.equal(f.calls[0].days, 30);
     await React.act(async () => f.calls[0].reject(Error('offline')));
     assert.equal(root.root.findAllByProps({ role: 'alert' }).length, 1);
-    assert.doesNotMatch(values(root).join(','), /0/);
+    assert.doesNotMatch(values(root).slice(0, 4).join(','), /0/);
     await click(root, '다시 조회');
     assert.equal(f.calls[1].days, 30);
     assert.equal(root.root.findAllByProps({ role: 'alert' }).length, 0);

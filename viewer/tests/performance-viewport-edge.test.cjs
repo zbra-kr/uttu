@@ -115,11 +115,13 @@ async function withPair(route, mobile, search, tab, operation) {
         const removeEmptyStatus = node => {
           if (!node || typeof node !== 'object') return node;
           if (Array.isArray(node)) return node.map(removeEmptyStatus).filter(Boolean);
-          if (node.props['data-review-stats-state']) return null;
-          return { ...node, children: node.children?.map(removeEmptyStatus).filter(Boolean) ?? null };
+          if (node.props['data-review-stats-state'] || node.props['data-dashboard-panel-state']) return null;
+          const { 'data-dashboard-panel': panel, ...props } = node.props;
+          return { ...node, props, children: node.children?.map(removeEmptyStatus).filter(Boolean) ?? null };
         };
         assert.equal(br.root.findAll(x => x.type === 'p' && x.props.role === 'status' && x.children.join('') === '이 기간에 일치하는 리뷰가 없습니다.').length, 1);
         assert.equal(br.root.findAllByProps({ className: 'val' })[1].children.join(''), '—');
+        assert.equal(br.root.findAll(x => x.type === 'div' && x.props['data-dashboard-panel-state'] === 'ready').length, 2);
         const baselineTree = plain(ar.toJSON());
         const replaceZeroMean = node => {
           if (!node || typeof node !== 'object') return;

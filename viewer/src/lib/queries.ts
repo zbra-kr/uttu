@@ -662,7 +662,7 @@ export interface CsAnomaly {
   meta: Record<string, unknown>;
 }
 
-export async function fetchCsAnomalies(opts?: { severity?: string; limit?: number }): Promise<CsAnomaly[]> {
+export async function fetchCsAnomalies(opts?: { severity?: string; limit?: number }, signal?: AbortSignal): Promise<CsAnomaly[]> {
   const { severity, limit = 200 } = opts ?? {};
   let q = supabase
     .from('anomalies')
@@ -672,6 +672,7 @@ export async function fetchCsAnomalies(opts?: { severity?: string; limit?: numbe
     .order('severity', { ascending: true })
     .limit(limit);
   if (severity) q = q.eq('severity', severity);
+  if (signal) q = q.abortSignal(signal);
   const { data, error } = await q;
   if (error) throw error;
   return (data ?? []) as CsAnomaly[];
@@ -703,13 +704,15 @@ export interface OwnProduct {
   erp_style_code: string | null;
 }
 
-export async function fetchOwnProducts(limit = 100): Promise<OwnProduct[]> {
-  const { data, error } = await supabase
+export async function fetchOwnProducts(limit = 100, signal?: AbortSignal): Promise<OwnProduct[]> {
+  let query = supabase
     .from('products')
     .select('id, musinsa_no, name, review_count, satisfaction_score, style_no, erp_style_code, brands(name)')
     .eq('is_own', true)
     .order('review_count', { ascending: false })
     .limit(limit);
+  if (signal) query = query.abortSignal(signal);
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map((r: any) => ({
     id: r.id,

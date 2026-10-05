@@ -4,16 +4,17 @@ import React from 'react';
 import Link from 'next/link';
 import { useResolvedViewport } from '@/hooks/useResolvedViewport';
 import { useReviewStats } from '@/hooks/useReviewStats';
+import { useReviewDashboardPanels, type DashboardPanelState } from '@/hooks/useReviewDashboardPanels';
 import MobileReviewsView from './MobileReviewsView';
 import NoteDrawer from '@/components/me/NoteDrawer';
 import { IcArrowUR, IcX } from '@/components/ui/icons';
 import { exportBrowseReviews, exportProductReviews } from '@/lib/excel-export';
 import { PeriodFilter, FilterBlock, CheckRow } from '@/components/ui/filters';
 import {
-  fetchReviews, fetchOwnProducts, fetchOwnBrands,
+  fetchReviews, fetchOwnBrands,
   fetchCsAnomalies, fetchProductBrief, fetchOwnProductsWithPrices,
   CATEGORY_MAP,
-  type ReviewRow, type OwnProduct, type CsAnomaly, type OwnProductWithPrice,
+  type ReviewRow, type CsAnomaly, type OwnProductWithPrice,
 } from '@/lib/queries';
 import { kstToday, kstDaysAgo } from '@/lib/format';
 
@@ -240,16 +241,22 @@ function ReviewsDesktopView() {
 // ===========================================================================
 // A · 대시보드
 // ===========================================================================
+function DashboardPanelRead({ name, state, retry }: { name: string; state: DashboardPanelState; retry: () => void }) {
+  return <div data-dashboard-panel-state={state} className="row-flex gap-8" style={{ padding: '8px 0' }}>
+    {state === 'error' ? <span role="alert" className="dim">{name} 정보를 불러오지 못했습니다.</span>
+      : state === 'loading' ? <span role="status" className="dim">{name} 정보를 불러오는 중…</span>
+      : state === 'signedout' ? <span role="status" className="dim">로그인 후 조회할 수 있습니다.</span> : null}
+    <button type="button" className="btn sm" aria-label={`${name} 다시 조회`} aria-disabled={state === 'loading' || state === 'signedout'} onClick={() => {
+      if (state === 'ready' || state === 'error') retry();
+    }}>다시 조회</button>
+  </div>;
+}
+
 function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
   const [days, setDays] = React.useState(30);
   const { state: statsState, stats, retry: retryStats } = useReviewStats(days);
-  const [ownProducts, setOwnProducts] = React.useState<OwnProduct[]>([]);
-  const [csAnomalies, setCsAnomalies] = React.useState<CsAnomaly[]>([]);
-
-  React.useEffect(() => {
-    fetchOwnProducts(10).then(setOwnProducts).catch(console.error);
-    fetchCsAnomalies({ limit: 10 }).then(setCsAnomalies).catch(console.error);
-  }, []);
+  const panels = useReviewDashboardPanels();
+  const ownProducts = panels.ownProducts.rows, csAnomalies = panels.csAnomalies.rows;
 
   const total      = stats?.total ?? 0;
   const avgRating  = stats?.avgRating ?? 0;
@@ -295,7 +302,7 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
           ['평균 평점',    stats ? total > 0 ? `★ ${avgRating.toFixed(2)}` : '—' : '…', '자사 전체'],
           ['저점 (★1~2)', stats ? lowCount.toLocaleString() : '…',   `${days === 999 ? '전체' : days + '일'} 내`],
           ['이미지 리뷰',  stats ? imageCount.toLocaleString() : '…', '이미지 첨부'],
-          ['CS 이상탐지',  stats ? `H:${highAnomaly} M:${medAnomaly}` : '…', '최근 탐지'],
+          ['CS 이상탐지',  panels.csAnomalies.state === 'ready' ? `H:${highAnomaly} M:${medAnomaly}` : panels.csAnomalies.state === 'loading' ? '…' : '—', '최근 탐지'],
         ] as [string, string, string][]).map(([l, v, d], i) => (
           <div key={i} className="kpi"
             role={i === 4 ? 'button' : undefined}
@@ -338,12 +345,13 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
         </section>
 
         {/* CS 이상탐지 요약 */}
-        <section className="panel">
+        <section className="panel" data-dashboard-panel="cs">
           <div className="sec-head">
             <h3>CS 이상탐지 <span className="sub">리뷰 기반</span></h3>
             <button className="btn sm" onClick={onAnomalyRoute}>전체 보기 ↗</button>
           </div>
-          {csAnomalies.length === 0 ? (
+          <DashboardPanelRead name="CS 이상탐지" state={panels.csAnomalies.state} retry={panels.csAnomalies.retry} />
+          {panels.csAnomalies.state !== 'ready' ? null : csAnomalies.length === 0 ? (
             <div className="dim" style={{ fontSize: 12, padding: '12px 0', textAlign: 'center' }}>
               탐지된 이상 없음
             </div>
@@ -375,10 +383,11 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
       </div>
 
       {/* 특이점 상품 */}
-      <section className="panel">
+      <section className="panel" data-dashboard-panel="products">
         <div className="sec-head">
           <h3>자사 상품 리뷰 현황 <span className="sub">리뷰 수 기준</span></h3>
         </div>
+        <DashboardPanelRead name="자사 상품" state={panels.ownProducts.state} retry={panels.ownProducts.retry} />
         <div className="tbl">
           <div className="row head" style={{ gridTemplateColumns: '1fr 100px 70px 70px 70px' }}>
             <span>상품</span>
@@ -411,7 +420,7 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
               </span>
             </div>
           ))}
-          {ownProducts.length === 0 && (
+          {panels.ownProducts.state === 'ready' && ownProducts.length === 0 && (
             <div className="row" style={{ gridTemplateColumns: '1fr' }}>
               <span className="dim" style={{ fontSize: 12, textAlign: 'center', padding: '16px 0' }}>
                 자사 상품 없음
