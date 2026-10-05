@@ -19,6 +19,8 @@ interface RecommendResult {
   gender: string;
   modules: RecommendModule[];
   status: 'loading' | 'ready' | 'error';
+  fromDate: string;
+  today: string;
 }
 
 const GENDER_CHIPS = [
@@ -27,34 +29,33 @@ const GENDER_CHIPS = [
   { value: 'F', label: '여성' },
 ];
 
-function kstDaysAgo(n: number): string {
-  const d = new Date(Date.now() + 9 * 3_600_000);
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+export function recommendRequestWindow(timestamp = Date.now()) {
+  const d = new Date(timestamp + 9 * 3_600_000);
+  const today = d.toISOString().slice(0, 10);
+  d.setUTCDate(d.getUTCDate() - 7);
+  return { fromDate: d.toISOString().slice(0, 10), today };
 }
 
 export default function MobileRecommendView() {
-  const [result, setResult] = useState<RecommendResult>({ gender: 'A', modules: [], status: 'loading' });
+  const [result, setResult] = useState<RecommendResult>(() => ({ gender: 'A', modules: [], status: 'loading', ...recommendRequestWindow() }));
   const [retry, setRetry] = useState(0);
   const requestPending = useRef(false);
   const resultsRef = useRef<HTMLDivElement>(null);
   const [gender, setGender] = useState('A');
 
-  const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
-  const fromDate = kstDaysAgo(7);
-
   useEffect(() => {
     const sb = supabaseBrowser();
     const controller = new AbortController();
     let active = true;
+    const window = recommendRequestWindow();
     requestPending.current = true;
-    setResult({ gender, modules: [], status: 'loading' });
+    setResult({ gender, modules: [], status: 'loading', ...window });
     void (async () => {
       try {
         const { data, error } = await sb.from('recommend_modules')
           .select('id, title, module_type, gender_filter, position, snapshot_date, items_count')
-          .gte('snapshot_date', fromDate)
-          .lte('snapshot_date', today)
+          .gte('snapshot_date', window.fromDate)
+          .lte('snapshot_date', window.today)
           .eq('gender_filter', gender)
           .order('snapshot_date', { ascending: false })
           .order('position', { ascending: true })
@@ -62,9 +63,9 @@ export default function MobileRecommendView() {
           .abortSignal(controller.signal);
         if (!active || controller.signal.aborted) return;
         if (error) throw error;
-        setResult({ gender, modules: (data ?? []) as RecommendModule[], status: 'ready' });
+        setResult({ gender, modules: (data ?? []) as RecommendModule[], status: 'ready', ...window });
       } catch {
-        if (active && !controller.signal.aborted) setResult({ gender, modules: [], status: 'error' });
+        if (active && !controller.signal.aborted) setResult({ gender, modules: [], status: 'error', ...window });
       } finally {
         if (active && !controller.signal.aborted) requestPending.current = false;
       }
@@ -74,7 +75,8 @@ export default function MobileRecommendView() {
   }, [gender, retry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Mask the previous filter's rows before its replacement effect runs.
-  const current = result.gender === gender ? result : { gender, modules: [], status: 'loading' as const };
+  const current = result.gender === gender ? result : { ...result, gender, modules: [], status: 'loading' as const };
+  const { fromDate, today } = current;
   const modules = current.modules;
   const loading = current.status === 'loading';
   const failed = current.status === 'error';
@@ -82,7 +84,7 @@ export default function MobileRecommendView() {
     if (requestPending.current) return;
     if (typeof document !== 'undefined' && resultsRef.current?.contains(document.activeElement)) resultsRef.current.focus();
     requestPending.current = true;
-    setResult({ gender, modules: [], status: 'loading' });
+    setResult({ ...result, gender, modules: [], status: 'loading' });
     setRetry(value => value + 1);
   }
 
@@ -112,7 +114,7 @@ export default function MobileRecommendView() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       <MobileFilterChips items={GENDER_CHIPS} activeValue={gender} onChange={setGender} />
 
-      <div style={{ fontSize: 11, lineHeight: 1.6, color: 'var(--f3)', overflowWrap: 'anywhere' }}>
+      <div style={{ fontSize: 11, lineHeight: 1.6, color: 'var(--f2)', overflowWrap: 'anywhere' }}>
         <div>조회 기간: {fromDate} ~ {today} (KST, 양끝 포함 8일)</div>
         <div>선택한 성별의 기간 전체에서 최신순 최대 100개 모듈 스냅샷을 조회합니다.</div>
         <div>상품 항목 합계는 조회한 모듈의 상품 목록 길이를 더한 값으로, 중복을 포함할 수 있습니다. 실제 노출 수·고유 상품 수·시장 전체 합계가 아닙니다.</div>
@@ -124,14 +126,14 @@ export default function MobileRecommendView() {
         {[
           { label: '조회한 모듈 스냅샷', value: current.status === 'ready' ? modules.length : '—' },
           { label: '조회분 상품 항목 합계', value: current.status === 'ready' ? totalItems.toLocaleString() : '—' },
-          { label: '오늘 날짜', value: today.slice(5) },
+          { label: '조회 끝 날짜', value: today.slice(5) },
         ].map(kpi => (
           <div key={kpi.label} style={{
             flex: 1, minWidth: 0, padding: '10px 12px', background: 'var(--sur)',
             border: '1px solid var(--bd)', borderRadius: 10, textAlign: 'center',
           }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--f1)', fontFamily: 'var(--mono)' }}>{kpi.value}</div>
-            <div style={{ fontSize: 10, color: 'var(--f4)', marginTop: 2, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{kpi.label}</div>
+            <div style={{ fontSize: 10, color: 'var(--f2)', marginTop: 2, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{kpi.label}</div>
           </div>
         ))}
       </div>
@@ -139,8 +141,8 @@ export default function MobileRecommendView() {
       {/* 조회한 날짜별 상품 항목 합계 */}
       {current.status === 'ready' && chartData.length > 1 && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 8 }}>조회분 상품 항목 추이</div>
-          <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--f3)', marginBottom: 8 }}>표시된 날짜의 조회분만 연결합니다. 빠진 날짜는 0이 아니며, 날짜별 전체 수집 여부는 확인되지 않았습니다.</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f2)', marginBottom: 8 }}>조회분 상품 항목 추이</div>
+          <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--f2)', marginBottom: 8 }}>표시된 날짜의 조회분만 연결합니다. 빠진 날짜는 0이 아니며, 날짜별 전체 수집 여부는 확인되지 않았습니다.</div>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--f4)' }} />

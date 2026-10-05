@@ -69,6 +69,7 @@ async function fixture(options = {}) {
     }
     await flush();
   });
-  return { calls, writes, waitForError, failTransport: value => { failTransport = value; }, settle, reject, select, retry, invoke, snapshot, close, row, holdEffects: () => { hold = true; }, releaseEffects };
+  const rerender = async () => act(async () => { root.update(options.strict ? React.createElement(React.StrictMode, null, React.createElement(Component)) : React.createElement(Component)); await flush(); });
+  return { calls, writes, rerender, waitForError, failTransport: value => { failTransport = value; }, settle, reject, select, retry, invoke, snapshot, close, row, holdEffects: () => { hold = true; }, releaseEffects };
 }
 module.exports = { fixture, row };

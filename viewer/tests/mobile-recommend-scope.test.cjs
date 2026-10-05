@@ -1,5 +1,43 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const { fixture, row } = require('./helpers/recommend-state-fixture.cjs');
+const bounds = f => f.calls.at(-1).params.filter(([key]) => key === 'snapshot_date').map(([, value]) => value.slice(4));
+
+test('recommend KST bounds use UTC calendar arithmetic in non-KST DST browser timezones', () => {
+  const { execFileSync } = require('node:child_process');
+  for (const timezone of ['America/New_York', 'Asia/Seoul', 'UTC']) {
+    const output = execFileSync(process.execPath, ['-e', `const load=require('./tests/helpers/load-source.cjs');const {recommendRequestWindow}=load('src/app/(app)/recommend/MobileRecommendView.tsx',{'@/lib/supabase/client':{}});console.log(JSON.stringify(recommendRequestWindow(Date.parse('2026-11-01T15:30:00Z'))))`], { encoding: 'utf8', cwd: require('node:path').resolve(__dirname, '..'), env: { ...process.env, TZ: timezone } });
+    assert.deepEqual(JSON.parse(output), { fromDate: '2026-10-26', today: '2026-11-02' });
+  }
+});
+
+test('recommend completion across KST midnight and ordinary rerender retain actual request window without auto-refresh', async () => {
+  const original = Date.now; let now = Date.parse('2026-10-05T14:59:59Z'); Date.now = () => now;
+  let f;
+  try {
+    f = await fixture(); assert.deepEqual(bounds(f), ['2026-09-28', '2026-10-05']);
+    now = Date.parse('2026-10-05T15:00:01Z');
+    await f.settle(0, [row('A')]); await f.rerender();
+    assert.equal(f.calls.length, 1);
+    assert.ok(f.snapshot().tree.includes('2026-09-28')); assert.ok(f.snapshot().tree.includes('2026-10-05'));
+    assert.ok(!f.snapshot().tree.includes('2026-10-06'));
+    await f.select('M'); assert.deepEqual(bounds(f), ['2026-09-29', '2026-10-06']);
+    assert.ok(f.snapshot().tree.includes('2026-09-29')); assert.ok(f.snapshot().tree.includes('2026-10-06'));
+  } finally { if (f) await f.close(); Date.now = original; }
+});
+
+test('recommend failed request retains captured dates across rollover; explicit retry captures new eight-day window', async () => {
+  const original = Date.now; let now = Date.parse('2026-10-05T14:59:59Z'); Date.now = () => now;
+  let f;
+  try {
+    f = await fixture(); now = Date.parse('2026-10-05T15:00:01Z');
+    await f.settle(0, [], true); await f.rerender();
+    assert.ok(f.snapshot().tree.includes('2026-09-28')); assert.ok(!f.snapshot().tree.includes('2026-10-06'));
+    await f.invoke(f.retry()); assert.deepEqual(bounds(f), ['2026-09-29', '2026-10-06']);
+    assert.ok(f.snapshot().tree.includes('2026-10-06'));
+    now = Date.parse('2026-10-06T15:00:01Z'); await f.settle(1, [row('A')]); await f.rerender();
+    assert.equal(f.calls.length, 2); assert.ok(f.snapshot().tree.includes('2026-10-06')); assert.ok(!f.snapshot().tree.includes('2026-10-07'));
+  } finally { if (f) await f.close(); Date.now = original; }
+});
 
 test('recommend discloses actual inclusive KST bounds and unchanged total cap during loading', async () => {
   const f = await fixture();
