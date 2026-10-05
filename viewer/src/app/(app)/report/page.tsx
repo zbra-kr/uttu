@@ -1,11 +1,11 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import { useDailyReport } from '@/hooks/useDailyReport';
+import BrandEvidenceStatus from '@/components/report/BrandEvidenceStatus';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useIsMobile } from '@/hooks/useViewport';
 import MobileReportView from './MobileReportView';
 import {
-  fetchDailyReport,
-  type DailyReportData,
   type OwnBrandSummary,
   type RankRow,
   type DemoRow,
@@ -101,7 +101,7 @@ function OwnBrandCard({ brand }: { brand: OwnBrandSummary }) {
         {[
           { label: '일별 랭킹', value: brand.dailyBestRank != null ? `#${brand.dailyBestRank}` : '없음', highlight: brand.dailyBestRank != null },
           { label: '주별 랭킹', value: brand.weeklyBestRank != null ? `#${brand.weeklyBestRank}` : '없음', highlight: brand.weeklyBestRank != null },
-          { label: '브랜드 순위', value: brand.brandRank != null ? `#${brand.brandRank}` : '없음', highlight: brand.brandRank != null },
+          { label: '브랜드 순위', value: brand.brandRank != null ? `#${brand.brandRank}` : '조회 범위에서 미확인', highlight: brand.brandRank != null },
           { label: '콘텐츠', value: brand.contentCount > 0 ? `${brand.contentCount}건 (${(brand.contentTotalViews / 1000).toFixed(0)}K)` : '미노출', highlight: brand.contentCount > 0 },
           { label: '추천판', value: brand.hasRecommend ? '노출 중' : '미노출', highlight: brand.hasRecommend },
           { label: '세일', value: brand.hasSale ? '등록 중' : '미등록', highlight: brand.hasSale },
@@ -199,21 +199,17 @@ export default function ReportPage() {
 }
 
 function ReportDesktopView() {
-  const [data, setData] = useState<DailyReportData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { core, brand, data } = useDailyReport();
+  const loading = core.state === 'loading';
   const [showAllRanking, setShowAllRanking] = useState(false);
   const [rankingExpanded, setRankingExpanded] = useState(false);
-
-  useEffect(() => {
-    fetchDailyReport().then(d => { setData(d); setLoading(false); });
-  }, []);
 
   if (loading) {
     return (
       <div className="main">
         <div className="tb"><div className="bc"><span className="crumb last">일일 리포트</span></div></div>
         <div className="main-body" style={{ alignItems: 'center', justifyContent: 'center', color: 'var(--f4)', fontSize: 13 }}>
-          데이터 로딩 중…
+          데이터 로딩 중…<BrandEvidenceStatus source={brand} showRows />
         </div>
       </div>
     );
@@ -223,7 +219,7 @@ function ReportDesktopView() {
     return (
       <div className="main">
         <div className="tb"><div className="bc"><span className="crumb last">일일 리포트</span></div></div>
-        <div className="main-body" style={{ color: 'var(--f4)', fontSize: 13 }}>랭킹 데이터가 없습니다.</div>
+        <div className="main-body" style={{ color: 'var(--f4)', fontSize: 13 }}>{core.state === 'error' ? '리포트를 확인하지 못했습니다.' : core.state === 'signedout' ? '로그인이 필요합니다.' : '랭킹 데이터가 없습니다.'}<BrandEvidenceStatus source={brand} showRows /></div>
       </div>
     );
   }
@@ -259,6 +255,7 @@ function ReportDesktopView() {
       </div>
 
       <div className="main-body">
+        <BrandEvidenceStatus source={brand} rankingDate={kpi.latestDate} />
 
         {/* ── 리포트 헤더 ──────────────────────────────────────────── */}
         <div className="panel" style={{
@@ -565,6 +562,7 @@ function ReportDesktopView() {
         {/* ── 5. 브랜드 랭킹 ──────────────────────────────────────── */}
         <div>
           <SectionHead num="5" title={`브랜드 랭킹 TOP ${brandRanking.length}`} />
+          <BrandEvidenceStatus source={brand} rankingDate={kpi.latestDate} />
           <div className="tbl">
             <div className="row head" style={{ gridTemplateColumns: '40px 1fr 60px 50px' }}>
               <span>#</span><span>브랜드</span>

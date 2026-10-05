@@ -1,6 +1,5 @@
 import { supabaseBrowser } from './supabase/client';
 
-const sb = supabaseBrowser();
 
 // ── 유틸 ─────────────────────────────────────────────────────────────────────
 
@@ -162,17 +161,18 @@ export interface DailyReportData {
 
 // ── 메인 쿼리 ─────────────────────────────────────────────────────────────────
 
-export async function fetchDailyReport(): Promise<DailyReportData | null> {
+export async function fetchDailyReport(signal: AbortSignal = new AbortController().signal): Promise<DailyReportData | null> {
 
+  const sb = supabaseBrowser();
   // ── 1. 최신 날짜 조회 ─────────────────────────────────────────────────────
   const { data: latestRow, error: latestErr } = await sb
     .from('ranking_snapshots')
     .select('snapshot_date')
     .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
     .order('snapshot_date', { ascending: false })
-    .limit(1);
+    .limit(1).abortSignal(signal);
 
-  if (latestErr) { console.error('[report] latest date', latestErr); return null; }
+  if (latestErr) throw new Error('랭킹 기준일 조회 실패');
   const latestDate: string | undefined = (latestRow as any[])?.[0]?.snapshot_date;
   if (!latestDate) return null;
 
@@ -184,7 +184,7 @@ export async function fetchDailyReport(): Promise<DailyReportData | null> {
     todayRankRes, prevRankRes, weeklyCountRes,
     ownBrandsRes, magazineRes,
     promoItemsRes, promotionsRes,
-    brandRankRes, demoRes,
+    demoRes,
     recommendItemsRes, recommendModulesRes,
   ] = await Promise.all([
 
@@ -194,52 +194,42 @@ export async function fetchDailyReport(): Promise<DailyReportData | null> {
       .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
       .eq('snapshot_date', latestDate)
       .order('rank_position', { ascending: true })
-      .limit(500),
+      .limit(500).abortSignal(signal),
 
     // 어제 랭킹 (rank_change 계산용)
     sb.from('ranking_snapshots')
       .select('rank_position, musinsa_no, brand_name')
       .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
       .eq('snapshot_date', prevDate)
-      .limit(500),
+      .limit(500).abortSignal(signal),
 
     // 7일 전 총 상품 수
     sb.from('ranking_snapshots')
       .select('rank_position', { count: 'exact', head: true })
       .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
-      .eq('snapshot_date', weeklyDate),
+      .eq('snapshot_date', weeklyDate).abortSignal(signal),
 
     // 자사 브랜드 목록
-    sb.from('brands').select('id, name').eq('is_own', true).order('name'),
+    sb.from('brands').select('id, name').eq('is_own', true).order('name').abortSignal(signal),
 
     // 매거진 기사 (최근 30일)
     sb.from('magazine_articles')
       .select('title, brand_names, view_count, comment_count, landing_url')
       .gte('published_at', addDays(latestDate, -30))
       .order('view_count', { ascending: false })
-      .limit(50),
+      .limit(50).abortSignal(signal),
 
     // 프로모션 아이템 (오늘)
     sb.from('promotion_items')
       .select('promotion_id, musinsa_no, musinsa_brand_name, discount_rate, final_price')
       .eq('snapshot_date', latestDate)
-      .limit(2000),
+      .limit(2000).abortSignal(signal),
 
     // 프로모션 헤더 (오늘)
     sb.from('promotions')
       .select('id, title, promotion_type, items_count')
       .eq('snapshot_date', latestDate)
-      .limit(50),
-
-    // 브랜드 랭킹 (오늘 + 어제)
-    sb.from('brand_ranking_snapshots')
-      .select('rank_position, brand_name, snapshot_date, brands(is_own)')
-      .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
-      .gte('snapshot_date', prevDate)
-      .lte('snapshot_date', latestDate)
-      .order('snapshot_date', { ascending: false })
-      .order('rank_position', { ascending: true })
-      .limit(400),
+      .limit(50).abortSignal(signal),
 
     // 성별×연령 조합 (M/F × 7 age bands)
     sb.from('ranking_snapshots')
@@ -248,14 +238,14 @@ export async function fetchDailyReport(): Promise<DailyReportData | null> {
       .in('gender_filter', ['M', 'F'])
       .eq('snapshot_date', latestDate)
       .order('gender_filter').order('age_filter').order('rank_position', { ascending: true })
-      .limit(3000),
+      .limit(3000).abortSignal(signal),
 
     // 추천판 아이템 (오늘, 전체)
     sb.from('recommend_items')
       .select('brand_name, musinsa_no')
       .eq('snapshot_date', latestDate)
       .eq('gender_filter', 'A')
-      .limit(1000),
+      .limit(1000).abortSignal(signal),
 
     // 추천판 모듈 (오늘, 전체)
     sb.from('recommend_modules')
@@ -263,7 +253,7 @@ export async function fetchDailyReport(): Promise<DailyReportData | null> {
       .eq('snapshot_date', latestDate)
       .eq('gender_filter', 'A')
       .order('position', { ascending: true })
-      .limit(50),
+      .limit(50).abortSignal(signal),
   ]);
 
   const todayRows       = (todayRankRes.data ?? []) as any[];
@@ -272,7 +262,6 @@ export async function fetchDailyReport(): Promise<DailyReportData | null> {
   const magazineRows    = (magazineRes.data ?? []) as any[];
   const promoItems      = (promoItemsRes.data ?? []) as any[];
   const promotions      = (promotionsRes.data ?? []) as any[];
-  const brandRankAll    = (brandRankRes.data ?? []) as any[];
   const demoRows        = (demoRes.data ?? []) as any[];
   const recommendItems  = (recommendItemsRes.data ?? []) as { brand_name: string; musinsa_no: string }[];
   const recommendModuleRows = (recommendModulesRes.data ?? []) as any[];
@@ -291,7 +280,7 @@ export async function fetchDailyReport(): Promise<DailyReportData | null> {
           .eq('category_code', '000')
           .eq('snapshot_date', latestDate)
           .order('rank_position', { ascending: true })
-          .limit(500)
+          .limit(500).abortSignal(signal)
       : Promise.resolve({ data: [], error: null }),
 
     // 자사 브랜드 7일 전 순위
@@ -301,7 +290,7 @@ export async function fetchDailyReport(): Promise<DailyReportData | null> {
           .in('brand_name', ownBrandNames)
           .eq('category_code', '000').eq('gender_filter', 'A').eq('age_filter', 'AGE_BAND_ALL')
           .eq('snapshot_date', weeklyDate)
-          .limit(100)
+          .limit(100).abortSignal(signal)
       : Promise.resolve({ data: [], error: null }),
 
     // 경쟁사 브랜드 풀
@@ -309,7 +298,7 @@ export async function fetchDailyReport(): Promise<DailyReportData | null> {
       ? sb.from('competitor_brands')
           .select('brand_id, brands!competitor_brands_brand_id_fkey(name)')
           .in('own_brand_id', ownBrandIds)
-          .limit(500)
+          .limit(500).abortSignal(signal)
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -455,23 +444,8 @@ export async function fetchDailyReport(): Promise<DailyReportData | null> {
     },
   ];
 
-  // 브랜드 랭킹
-  const brsToday = brandRankAll.filter((r: any) => r.snapshot_date === latestDate);
-  const brsPrev  = brandRankAll.filter((r: any) => r.snapshot_date === prevDate);
-  const brsPrevMap = new Map<string, number>(brsPrev.map((r: any) => [r.brand_name as string, r.rank_position as number]));
-
-  const brandRanking: BrandRankRow[] = brsToday
-    .sort((a: any, b: any) => a.rank_position - b.rank_position)
-    .slice(0, 30)
-    .map((r: any) => ({
-      rank:       r.rank_position,
-      brandName:  r.brand_name,
-      rankChange: brsPrevMap.has(r.brand_name) ? brsPrevMap.get(r.brand_name)! - r.rank_position : null,
-      isOwn:      (r.brands as any)?.is_own ?? false,
-    }));
-
+  const brandRanking: BrandRankRow[] = [];
   const brandRankingMap = new Map<string, { rank: number; change: number | null }>();
-  for (const br of brandRanking) brandRankingMap.set(br.brandName, { rank: br.rank, change: br.rankChange });
 
   // 자사 브랜드 데모 하이라이트
   const ownDemoPerBrand = new Map<string, Map<string, number>>();

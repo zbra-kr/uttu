@@ -1,6 +1,8 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { fetchDailyReport, type DailyReportData, AGE_LABEL, GENDER_LABEL } from '@/lib/queries-report';
+import { useDailyReport } from '@/hooks/useDailyReport';
+import BrandEvidenceStatus from '@/components/report/BrandEvidenceStatus';
+import { useState } from 'react';
+import { AGE_LABEL, GENDER_LABEL } from '@/lib/queries-report';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
 
 function Section({ title, children, defaultOpen = false }: {
@@ -33,17 +35,11 @@ function Section({ title, children, defaultOpen = false }: {
 }
 
 export default function MobileReportView() {
-  const [data, setData] = useState<DailyReportData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { core, brand, data } = useDailyReport();
+  const loading = core.state === 'loading';
 
-  useEffect(() => {
-    fetchDailyReport()
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>;
-  if (!data) return <MobileEmptyState icon="📋" title="리포트 데이터가 없습니다" description="수집이 완료되면 자동 생성됩니다" />;
+  if (loading) return <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...<BrandEvidenceStatus source={brand} showRows /></div>;
+  if (!data) return <><MobileEmptyState icon="📋" title={core.state === 'error' ? '리포트 조회 실패' : core.state === 'signedout' ? '로그인이 필요합니다' : '리포트 데이터가 없습니다'} /><BrandEvidenceStatus source={brand} showRows /></>;
 
   const {
     kpi, ownBrands, competitors, brandRanking, demoGrid,
@@ -53,6 +49,7 @@ export default function MobileReportView() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
+      <BrandEvidenceStatus source={brand} rankingDate={kpi.latestDate} />
       {/* KPI 요약 */}
       <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
         <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>{kpi.latestDate} 기준</div>

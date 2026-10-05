@@ -83,6 +83,10 @@ jobs:
         run: npm run test:review-panels
         working-directory: viewer
 
+      - name: Daily report source evidence regression tests
+        run: npm run test:report-evidence
+        working-directory: viewer
+
       - name: Matching score regression tests
         run: npm run test:matching
         working-directory: viewer
