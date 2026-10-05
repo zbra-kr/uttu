@@ -41,7 +41,7 @@ test('recommend preserves scalar projection, cohort, date bounds, ordering and 1
 
 test('recommend multi-date visible chart and totals switch with gender without retaining old series', async () => {
  const f = await fixture(); const rows = gender => [{ ...row(gender), snapshot_date: '2026-10-04', items_count: 11 }, { ...row(gender), id: 'second-' + gender, items_count: 7 }];
- try { await f.settle(0, rows('A')); assert.deepEqual(f.snapshot().charts[0].map(x => x.items), [11, 7]); await f.select('M'); pending(f, 'M'); assert.deepEqual(f.snapshot().charts, []); await f.settle(1, rows('M').map(r => ({ ...r, items_count: r.items_count + 10 }))); assert.deepEqual(f.snapshot().charts[0].map(x => x.items), [21, 17]); assert.ok(!f.snapshot().tree.includes('POPULATED-A')); } finally { await f.close(); }
+ try { await f.settle(0, rows('A')); assert.deepEqual(f.snapshot().charts[0].map(x => x.items), [11, 7]); assert.deepEqual(f.snapshot().kpis, ['2', '18']); await f.select('M'); pending(f, 'M'); assert.deepEqual(f.snapshot().charts, []); assert.deepEqual(f.snapshot().kpis, ['—', '—']); await f.settle(1, rows('M').map(r => ({ ...r, items_count: r.items_count + 10 }))); assert.deepEqual(f.snapshot().charts[0].map(x => x.items), [21, 17]); assert.deepEqual(f.snapshot().kpis, ['2', '38']); assert.ok(!f.snapshot().tree.includes('POPULATED-A')); } finally { await f.close(); }
 });
 test('recommend current transport failure exhausts SDK retries, then explicit retry recovers', async () => {
  const f = await fixture(); try { f.failTransport(true); await f.reject(0); await f.waitForError(); failed(f, 'A'); f.failTransport(false); await f.invoke(f.retry()); assert.equal(f.calls.length, 2); await f.settle(1, [row('A')]); ready(f, 'A'); } finally { await f.close(); }

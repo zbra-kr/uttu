@@ -54,6 +54,10 @@ async function fixture(options = {}) {
   const snapshot = () => ({ gender: root.root.find(instance => instance.type.name === 'MobileFilterChips').props.activeValue,
     tree: JSON.stringify(root.toJSON()), alerts: root.root.findAllByProps({ role: 'alert' }).length,
     empty: root.root.findAll(instance => instance.type.name === 'MobileEmptyState').length,
+    kpis: ['추천 모듈', '총 노출 상품'].map(label => {
+      const node = root.root.findAllByType('div').find(instance => instance.children.length === 1 && instance.children[0] === label);
+      return node.parent.children[0].children.join('');
+    }),
     charts: root.root.findAll(instance => instance.props['data-fixture-chart']).map(instance => JSON.parse(instance.props['data-fixture-chart'])) });
   const close = async () => act(async () => { root.unmount(); await flush(); });
   const releaseEffects = async () => act(async () => { hold = false; for (const effect of held.splice(0)) if (!effect.cancelled) effect.cleanup = effect.run(); await flush(); });
