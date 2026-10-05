@@ -5,7 +5,7 @@ import { validDailyDate } from './ranking-daily-insights';
 import { productObservationHref, type ProductObservationContext } from './product-observation-context';
 
 export type ObservationReviewResult = { status: 'ready'; result: CSReviewResult }
-  | { status: 'unavailable' | 'competitor' };
+  | { status: 'unavailable' };
 const linkedId = (value: unknown): value is string => typeof value === 'string' && !!value.trim() && value.length <= 128;
 /** Date is the explicit authored-review date; no briefing D-minus-one rule. */
 export async function fetchObservationReviews(value: ProductObservationContext, today: string, signal: AbortSignal): Promise<ObservationReviewResult> {
@@ -21,8 +21,7 @@ export async function fetchObservationReviews(value: ProductObservationContext, 
   if (!Array.isArray(data)) throw Error('Product linkage unavailable');
   if (data.length !== 1 || !linkedId(data[0].id) || String(data[0].musinsa_no) !== value.product) return { status: 'unavailable' };
   const product = data[0];
-  if (product.is_own !== true) return { status: 'competitor' };
-  const reviews = await fetchReviews({ productId: product.id, ownOnly: true, requireOwnProduct: true,
+  const reviews = await fetchReviews({ productId: product.id, ownOnly: false,
     dateFrom: value.date, dateTo: value.date, ratingMin: 1, ratingMax: 2, limit: 20, offset: 0,
     sort: 'recent', stableOrder: true, requireExactCount: true, signal });
   guard();

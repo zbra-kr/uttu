@@ -30,7 +30,7 @@ function fixture({ pending = false, identityPending = false, identityFailure = f
     const productId = c.ops.find(x => x[0] === 'eq' && x[1] === 'product_id')[2];
     const date = c.ops.find(x => x[0] === 'gte' && x[1] === 'review_date')[2];
     const row = { id: c.owner, product_id: c.mode === 'foreign-row' ? 'wrong-product' : productId, rating: 1, review_date: date, review_text: c.owner,
-      products: { musinsa_no: productId.slice('product-'.length), name: 'Fixture', is_own: true, brands: { name: 'Fixture' } } };
+      products: { musinsa_no: productId.slice('product-'.length), name: 'Fixture', is_own: c.mode !== 'competitor', brands: { name: 'Fixture' } } };
     return { data: c.mode === 'empty' ? [] : [row], count: c.mode === 'count-missing' ? null : c.mode === 'empty' ? 0 : 30, error: null };
   }
   const mocks = { '@/lib/supabase/client': { supabaseBrowser: () => sdk }, './supabase/client': { supabaseBrowser: () => sdk } };
@@ -67,13 +67,13 @@ function fixture({ pending = false, identityPending = false, identityFailure = f
   };
 }
 
-test('explicit activation alone performs bounded product linkage and exact own/product/date/rating query', async () => {
+test('explicit activation alone performs bounded product linkage and exact selected-product/date/rating query', async () => {
   const f = fixture(); try {
     await f.mount(); assert.equal(f.state.status, 'recent'); assert.equal(f.identityReads, 0); assert.equal(f.calls.length, 0);
     await f.activate(); assert.equal(f.state.status, 'ready'); assert.equal(f.identityReads, 1); assert.equal(f.calls.length, 2);
     const identity = f.calls[0], source = f.calls[1];
     assert.deepEqual(identity.ops.find(x => x[0] === 'limit'), ['limit', 2]);
-    assert.deepEqual(source.ops.filter(x => ['eq', 'gte', 'lte'].includes(x[0])), [['gte', 'rating', 1], ['lte', 'rating', 2], ['eq', 'product_id', 'product-123'], ['eq', 'products.is_own', true], ['gte', 'review_date', '2026-10-05'], ['lte', 'review_date', '2026-10-05']]);
+    assert.deepEqual(source.ops.filter(x => ['eq', 'gte', 'lte'].includes(x[0])), [['gte', 'rating', 1], ['lte', 'rating', 2], ['eq', 'product_id', 'product-123'], ['gte', 'review_date', '2026-10-05'], ['lte', 'review_date', '2026-10-05']]);
     assert.deepEqual(source.ops.find(x => x[0] === 'range'), ['range', 0, 19]); assert.equal(source.ops.find(x => x[0] === 'select')[2].count, 'exact');
     assert.deepEqual(source.ops.filter(x => x[0] === 'order'), [['order', 'review_date', { ascending: false }], ['order', 'id', { ascending: false }]]);
     assert.ok(identity.signal instanceof AbortSignal); assert.ok(source.signal instanceof AbortSignal);
@@ -89,10 +89,18 @@ test('current-product/no-date and malformed/future observation scopes never acti
   }
 });
 
-test('missing/ambiguous/invalid linkage and competitor classification never dispatch source reviews', async () => {
-  for (const mode of ['missing', 'ambiguous', 'invalid-link', 'wrong-number', 'competitor']) {
-    const f = fixture(); try { f.mode(mode); await f.mount(); await f.activate(); assert.equal(f.calls.length, 1); assert.equal(f.calls[0].table, 'products'); assert.equal(f.state.status, mode === 'competitor' ? 'competitor' : 'unavailable'); assert.equal(f.state.result, null); } finally { await f.close(); }
+test('missing/ambiguous/invalid linkage never dispatches source reviews; competitor uses exact selected product', async () => {
+  for (const mode of ['missing', 'ambiguous', 'invalid-link', 'wrong-number']) {
+    const f = fixture(); try { f.mode(mode); await f.mount(); await f.activate(); assert.equal(f.calls.length, 1); assert.equal(f.calls[0].table, 'products'); assert.equal(f.state.status, 'unavailable'); assert.equal(f.state.result, null); } finally { await f.close(); }
   }
+  const f = fixture(); try {
+    f.mode('competitor'); await f.update(query('999')); await f.mount(); assert.equal(f.calls.length, 0); await f.activate();
+    assert.equal(f.state.status, 'ready'); assert.equal(f.calls.length, 2); assert.equal(f.state.result.rows[0].musinsa_no, '999');
+    assert.deepEqual(f.calls[0].ops.filter(x => x[0] === 'eq'), [['eq', 'musinsa_no', 999]]);
+    assert.deepEqual(f.calls[1].ops.filter(x => x[0] === 'eq'), [['eq', 'product_id', 'product-999']]);
+    f.mode('empty'); await f.retry(); assert.equal(f.state.result.total, 0); assert.equal(f.state.result.rows.length, 0);
+    f.mode('error'); await f.retry(); assert.equal(f.state.status, 'error'); assert.equal(f.state.result, null);
+  } finally { await f.close(); }
 });
 
 test('empty is normal, foreign linkage rows excluded, unavailable exact count retryable', async () => {
@@ -165,13 +173,13 @@ test('actual existing-section switch clears raw expansions and retains named ret
   } finally { if (root) await React.act(async () => root.unmount()); if (saved === undefined) delete global.document; else global.document = saved; }
 });
 
-test('section never offers activation for competitor/mismatched identity or current-product routes', () => {
+test('section offers competitor activation, but rejects mismatched identity and current-product routes', () => {
   const SSR = require('react-dom/server');
   for (const [currentQuery, own, number] of [[query(), false, 123], [query(), true, 456], ['no=123', true, 123]]) {
     const value = { query: currentQuery, available: currentQuery === query(), active: false, status: 'recent' };
     const Panel = load('src/components/product/ProductReviewMode.tsx', { '@/lib/observation-review-context': { useObservationReviewState: () => value } }).default;
     const html = SSR.renderToStaticMarkup(React.createElement(Panel, { query: currentQuery, detail: { is_own: own, musinsa_no: number } }, 'Existing recent reviews'));
-    assert.ok(html.includes('Existing recent reviews')); assert.ok(!html.includes('관측일 1–2점 저장 리뷰 확인'));
+    assert.ok(html.includes('Existing recent reviews')); assert.equal(html.includes('관측일 1–2점 저장 리뷰 확인'), currentQuery === query() && number === 123);
   }
 });
 

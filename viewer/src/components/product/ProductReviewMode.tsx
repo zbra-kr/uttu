@@ -9,7 +9,7 @@ export default function ProductReviewMode({ query, detail, children }: { query: 
   const state = useObservationReviewState(), region = useRef<HTMLElement>(null);
   const parsed = parseProductObservation(new URLSearchParams(query));
   const matching = state?.query === query;
-  const available = matching && state.available && parsed.kind === 'valid' && detail.is_own === true
+  const available = matching && state.available && parsed.kind === 'valid'
     && String(detail.musinsa_no) === parsed.value.product;
   const active = matching && state.active;
   const transferFocus = (button: HTMLButtonElement) => { if (document.activeElement === button) region.current?.focus(); };
@@ -20,11 +20,10 @@ export default function ProductReviewMode({ query, detail, children }: { query: 
     </div>}
     {!active ? children : <>
       <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>관측일의 저평점 저장 리뷰</h3>
-      <p style={{ fontSize: 12, lineHeight: 1.6 }}>리뷰 작성일 {state.date} · 1–2점 · 현재 자사로 분류되고 이 상품에 연결된 저장 리뷰입니다. 작성일은 수집일이 아니며, 수집 완료·최신성은 확인하지 않았습니다. 관측 날짜가 같아도 리뷰가 순위 변화의 원인임을 뜻하지 않습니다.</p>
+      <p style={{ fontSize: 12, lineHeight: 1.6 }}>리뷰 작성일 {state.date} · 1–2점 · 이 상품에 연결된 저장 리뷰입니다. 작성일은 수집일이 아니며, 수집 완료·최신성은 확인하지 않았습니다. 관측 날짜가 같아도 리뷰가 순위 변화의 원인임을 뜻하지 않습니다.</p>
       {state.status === 'loading' ? <p role="status" aria-live="polite">저장 리뷰를 확인하는 중…</p>
         : state.status === 'signed-out' ? <p role="status">로그인 후 저장 리뷰를 확인할 수 있습니다.</p>
         : state.status === 'unavailable' ? <p role="status">이 상품의 저장 리뷰 연결을 확인하지 못했습니다.</p>
-        : state.status === 'competitor' ? <p role="status">현재 자사 분류를 확인할 수 없어 이 모드의 리뷰를 조회하지 않습니다.</p>
         : state.status === 'error' ? <div role="alert"><p>저장 리뷰 또는 정확한 건수를 확인하지 못했습니다.</p><button type="button" className="btn" style={{ minHeight: 44 }} onClick={event => { transferFocus(event.currentTarget); state.retry(); }}>다시 확인</button></div>
         : state.result ? <>
           <p role="status" aria-live="polite">조건에 맞는 저장 리뷰 {state.result.total.toLocaleString()}건 중 {state.result.rows.length}건 표시 · 최대 20건{state.result.total > 20 ? ' · 일부만 표시하며 전체 검토를 뜻하지 않습니다.' : ''}</p>

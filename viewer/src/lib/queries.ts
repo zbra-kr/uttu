@@ -513,7 +513,6 @@ export async function fetchReviews(opts: {
   signal?: AbortSignal;
   requireExactCount?: boolean;
   stableOrder?: boolean;
-  requireOwnProduct?: boolean;
 }): Promise<{ rows: ReviewRow[]; total: number }> {
   const {
     ratingMin = 1, ratingMax = 5, dateFrom, dateTo, keyword, ownOnly = true,
@@ -534,8 +533,6 @@ export async function fetchReviews(opts: {
   if (productId) q = q.eq('product_id', productId);
   else if (productIds && productIds.length > 0) q = q.in('product_id', productIds);
   else if (ownOnly) q = (q as any).eq('products.is_own', true);
-  // Explicit product filters retain legacy precedence unless this reader opts in.
-  if (opts.requireOwnProduct && (productId || productIds?.length)) q = (q as any).eq('products.is_own', true);
   if (brandIds && brandIds.length > 0) q = (q as any).in('products.brand_id', brandIds);
   if (categoryCodes && categoryCodes.length > 0) q = (q as any).in('products.category_code', categoryCodes);
   if (dateFrom) q = q.gte('review_date', dateFrom);

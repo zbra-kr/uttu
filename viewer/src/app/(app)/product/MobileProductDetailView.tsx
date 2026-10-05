@@ -486,7 +486,7 @@ export default function MobileProductDetailView() {
       )}
 
       {/* ── 리뷰 ── */}
-      {(reviews.length > 0 || (detail.is_own && parseProductObservation(searchParams).kind === 'valid')) && (
+      {(reviews.length > 0 || parseProductObservation(searchParams).kind === 'valid') && (
         <ProductReviewMode query={query} detail={detail}>
           <div style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 8 }}>
             {detail.is_own ? `최근 리뷰 (${reviews.length}건)` : '최근 리뷰'}
@@ -543,7 +543,7 @@ export default function MobileProductDetailView() {
           )}
         </ProductReviewMode>
       )}
-      {!detail.is_own && (
+      {!detail.is_own && !(reviewMode?.query === query && reviewMode.active) && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, fontSize: 12, color: 'var(--f4)' }}>
           리뷰는 자사 상품만 수집합니다
         </div>

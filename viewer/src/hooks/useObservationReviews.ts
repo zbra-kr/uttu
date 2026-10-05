@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { isAuthSessionMissingError } from '@supabase/supabase-js';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { parseProductObservation } from '@/lib/product-observation-context';
@@ -30,7 +31,9 @@ export function useObservationReviews(query: string, today: string) {
     const client = supabaseBrowser();
     const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
       if (event === 'INITIAL_SESSION') return;
-      eventSeen = true; identity(session?.user?.id ?? null);
+      eventSeen = true;
+      // Auth is an external event: clear prior-owner source before the next paint.
+      flushSync(() => identity(session?.user?.id ?? null));
     });
     void client.auth.getUser().then(({ data, error }) => {
       if (cancelled || eventSeen) return;
