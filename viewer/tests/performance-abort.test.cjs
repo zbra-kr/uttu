@@ -19,7 +19,10 @@ function load(file, deferred=false){
  for(const opts of [{},{fromDate:'2026-07-06',toDate:'2026-10-03'},{fromDate:'2026-10-03',toDate:'2026-10-03'}]){
   const a=load('source/queries.ts'),b=load('abort-candidate/queries.ts');const ctl=new AbortController();
   const ar=await a.fn(opts),br=await b.fn({...opts,signal:ctl.signal});
-  assert.equal(JSON.stringify(ar),JSON.stringify(br));assert.equal(JSON.stringify(a.ledger),JSON.stringify(b.ledger));checks.push({scenario:opts.fromDate||'latest',queryAndResultParity:true,requests:b.ledger.length});
+  assert.equal(JSON.stringify(ar),JSON.stringify(br));
+  const expected=JSON.parse(JSON.stringify(a.ledger));
+  expected.find(call=>call.ops.find(op=>op[0]==='select')?.[1]!=='snapshot_date').ops.find(op=>op[0]==='select')[1]='rank_position, musinsa_no, products!inner(id)';
+  assert.equal(JSON.stringify(b.ledger),JSON.stringify(expected));checks.push({scenario:opts.fromDate||'latest',queryAndResultParity:true,requests:b.ledger.length});
  }
  const a=load('abort-candidate/queries.ts',true),ctl=new AbortController();const waiting=a.fn({fromDate:'2026-07-06',toDate:'2026-10-03',signal:ctl.signal});for(let i=0;i<10;i++)await Promise.resolve();assert.equal(a.ledger.length,91);ctl.abort();await assert.rejects(waiting,/aborted/);assert.ok(a.ledger.every(x=>x.aborted));checks.push({scenario:'superseded 90-day request',issued:91,mockRequestsReceivingAbort:91,claim:'HTTP mock only; no evidence of database query cancellation'});
  const b=load('abort-candidate/queries.ts',true),c=new AbortController();const latest=b.fn({signal:c.signal});for(let i=0;i<10;i++)await Promise.resolve();c.abort();await latest;assert.equal(b.ledger.length,1);checks.push({scenario:'abort latest-date lookup',requests:1,followupDateQueries:0});

@@ -24,7 +24,10 @@ function load(file,mode){
   const opts={categoryCode:'001',genderFilter:'F',ageFilter:'AGE_BAND_30',limit:17,fromDate:'2026-10-02',toDate:'2026-10-03'};
   const read=async x=>{try{return {rows:await x.fetch(opts)}}catch(e){return {error:e.message}}};
   assert.equal(JSON.stringify(await read(a)),JSON.stringify(await read(b)));
-  assert.equal(JSON.stringify(b.calls),JSON.stringify(a.calls));checks.push({case:'optional signal absent: '+mode,resultErrorAndRequestShapeParity:true});
+
+  const expected=JSON.parse(JSON.stringify(a.calls));
+  expected.find(call=>call.ops.find(op=>op[0]==='select')?.[1]!=='snapshot_date').ops.find(op=>op[0]==='select')[1]='rank_position, musinsa_no, products!inner(id)';
+  assert.equal(JSON.stringify(b.calls),JSON.stringify(expected));checks.push({case:'optional signal absent: '+mode,resultErrorAndRequestShapeParity:true});
  }
  for(const explicit of [false,true]){
   const b=load('abort-candidate/queries.ts','normal'),ctl=new AbortController();ctl.abort();

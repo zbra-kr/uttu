@@ -25,7 +25,14 @@ const { createFixture, mount, unmount, flush, React, Renderer, SSR } = fixtureMo
 const { act } = React;
 const plain = value => JSON.parse(JSON.stringify(value));
 const helperLedger = fixture => plain(fixture.helpers.map(x => ({ ...x, args: x.args.filter(arg => !(arg instanceof AbortSignal)).map(arg => { if (!arg || typeof arg !== 'object') return arg; const { signal, ...rest } = arg; return rest; }) })));
-const dispatchLedger = fixture => plain(fixture.requests).map(x => ({ ...x, ops: x.ops.filter(op => op[0] !== 'abortSignal') }));
+const dispatchLedger = (fixture, comparisonProjection = false) => {
+  const ledger = plain(fixture.requests).map(x => ({ ...x, ops: x.ops.filter(op => op[0] !== 'abortSignal') }));
+  if (comparisonProjection) {
+    const prior = ledger.find(call => call.table === 'ranking_snapshots' && call.ops.find(op => op[0] === 'select')?.[1] !== 'snapshot_date');
+    if (prior) prior.ops.find(op => op[0] === 'select')[1] = 'rank_position, musinsa_no, products!inner(id)';
+  }
+  return ledger;
+};
 const beforeResolve = fixture => fixture.effects.slice(0, fixture.effects.indexOf('resolve-viewport'));
 const rankingHelpers = fixture => fixture.helpers.filter(call => call.name === 'fetchLatestRanking');
 const desktop = root => root.root.find(instance => instance.type.name === 'RankingDesktopView');
@@ -92,7 +99,7 @@ async function withPair(route, mobile, search, tab, operation) {
       assert.equal(b.rankingRequests(), 3);
       if (!mobile) {
         assert.deepEqual(helperLedger(a), helperLedger(b));
-        assert.deepEqual(dispatchLedger(a), dispatchLedger(b));
+        assert.deepEqual(dispatchLedger(a, true), dispatchLedger(b));
       }
       results.push({ case: `persisted latest-day ranking ${mobile ? 'mobile' : 'desktop'}`, baselineRankingDispatches: a.rankingRequests(), candidateRankingDispatches: b.rankingRequests() });
     } finally { await unmount(ar); await unmount(br); }
@@ -100,7 +107,7 @@ async function withPair(route, mobile, search, tab, operation) {
 
   await withPair('ranking', false, '', 'dash', async (a, b) => {
     assert.deepEqual(helperLedger(a), helperLedger(b));
-    assert.deepEqual(dispatchLedger(a), dispatchLedger(b));
+    assert.deepEqual(dispatchLedger(a, true), dispatchLedger(b));
     assert.equal(b.rankingRequests(), 91);
     results.push({ case: 'desktop 90-day helper arguments and dispatch operations unchanged', rankingDispatches: 91 });
   });
@@ -110,7 +117,7 @@ async function withPair(route, mobile, search, tab, operation) {
       if (tab === 'dash') {
         const sorted = entries => entries.sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)));
         assert.deepEqual(sorted(helperLedger(a)), sorted(helperLedger(b)));
-        assert.deepEqual(sorted(dispatchLedger(a)), sorted(dispatchLedger(b)));
+        assert.deepEqual(sorted(dispatchLedger(a, true)), sorted(dispatchLedger(b)));
         const tree = plain(br.toJSON());
         const removeEmptyStatus = node => {
           if (!node || typeof node !== 'object') return node;
@@ -133,7 +140,7 @@ async function withPair(route, mobile, search, tab, operation) {
         assert.deepEqual(baselineTree, removeEmptyStatus(tree));
       } else {
         assert.deepEqual(helperLedger(a), helperLedger(b));
-        assert.deepEqual(dispatchLedger(a), dispatchLedger(b));
+        assert.deepEqual(dispatchLedger(a, true), dispatchLedger(b));
         assert.deepEqual(plain(ar.toJSON()), plain(br.toJSON()));
       }
       results.push({ case: `desktop reviews ${tab}: helper/dispatch/serialized settled host-tree parity`, queryDispatches: b.requests.length });
@@ -153,7 +160,7 @@ async function withPair(route, mobile, search, tab, operation) {
       assert.equal(br.root.findAll(x => x.type.name === 'MobileRankingView').length, 0);
       assert.equal(b.rankingRequests(), 4);
       assert.deepEqual(helperLedger(a), helperLedger(b));
-      assert.deepEqual(dispatchLedger(a), dispatchLedger(b));
+      assert.deepEqual(dispatchLedger(a, true), dispatchLedger(b));
       assert.equal(b.storage.get('uttu-ranking-filters'), JSON.stringify({ period: '90d' }));
       results.push({ case: `modern valid source context ${search.includes('&note=') ? 'note id' : search.includes('&notes=') ? 'notes open' : 'plain'}`, compactDesktop: true, exactContextAndDispatchParity: true, preservedPersonalFilters: true });
     });

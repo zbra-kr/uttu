@@ -58,10 +58,11 @@ export async function fetchLatestRanking(opts: {
   const { categoryCode = '000', genderFilter = 'A', ageFilter = 'AGE_BAND_ALL', limit = 300 } = opts;
 
   // 날짜 하나에 대한 쿼리 함수
-  const queryDate = async (date: string) => {
+  // The comparison date needs only ranks; retain the inner product join for eligibility.
+  const queryDate = async (date: string, comparisonOnly: boolean) => {
     let query = supabase
       .from('ranking_snapshots')
-      .select(`rank_position, musinsa_no, product_name, brand_name,
+      .select(comparisonOnly ? 'rank_position, musinsa_no, products!inner(id)' : `rank_position, musinsa_no, product_name, brand_name,
         category_code, gender_filter, age_filter,
         list_price, final_price, discount_rate,
         is_sold_out, review_count, review_score, snapshot_date,
@@ -116,7 +117,7 @@ export async function fetchLatestRanking(opts: {
   }
 
   // 날짜별 parallel 쿼리
-  const results = await Promise.all(dates.map(d => queryDate(d).then(rows => ({ date: d, rows }))));
+  const results = await Promise.all(dates.map((d, index) => queryDate(d, index === 0).then(rows => ({ date: d, rows }))));
 
   // byDate 맵 구성 (rank_change 계산용)
   const byDate = new Map<string, Map<string, number>>();
