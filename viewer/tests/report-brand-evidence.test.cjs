@@ -5,11 +5,11 @@ const deferred = () => { let resolve, reject; const promise = new Promise((a, b)
 const row = (date, rank = 1, name = 'Brand') => ({ snapshot_date: date, rank_position: rank, brand_name: name, brands: { is_own: true } });
 function fixture() {
     const calls = [], pending = [], listeners = new Set();
-    let authLate = null, coreError = false;
-    const client = { auth: { getUser: () => authLate?.promise ?? Promise.resolve({ data: { user: { id: 'A' } } }), onAuthStateChange: fn => { listeners.add(fn); return { data: { subscription: { unsubscribe: () => listeners.delete(fn) } } }; } }, from(table) {
-            const call = { table, filters: [], limit: null };
+    let authLate = null, coreError = false, ownNames = ['Brand'], authCalls = 0;
+    const client = { auth: { getUser: () => { authCalls++; return authLate?.promise ?? Promise.resolve({ data: { user: { id: 'A' } } }); }, onAuthStateChange: fn => { listeners.add(fn); return { data: { subscription: { unsubscribe: () => listeners.delete(fn) } } }; } }, from(table) {
+            const call = { table, filters: [], ops: [], limit: null };
             calls.push(call);
-            const q = { select(fields, opts) { call.fields = fields; call.opts = opts; return q; }, eq(...args) { call.filters.push(args); return q; }, gte() { return q; }, lte() { return q; }, in() { return q; }, order() { return q; }, limit(n) { call.limit = n; return q; }, abortSignal(signal) { call.signal = signal; return q; }, then(yes, no) {
+            const q = { select(fields, opts) { call.fields = fields; call.opts = opts; call.ops.push(['select', fields, opts]); return q; }, eq(...args) { call.filters.push(args); call.ops.push(['eq', ...args]); return q; }, gte(...args) { call.ops.push(['gte', ...args]); return q; }, lte(...args) { call.ops.push(['lte', ...args]); return q; }, in(...args) { call.ops.push(['in', ...args]); return q; }, order(...args) { call.ops.push(['order', ...args]); return q; }, limit(n) { call.limit = n; call.ops.push(['limit', n]); return q; }, abortSignal(signal) { call.signal = signal; call.ops.push(['abortSignal', signal]); return q; }, then(yes, no) {
                     if (table === 'brand_ranking_snapshots') {
                         const d = deferred();
                         pending.push({ ...d, call });
@@ -17,7 +17,7 @@ function fixture() {
                     }
                     let data = [];
                     if (table === 'brands')
-                        data = [{ id: 'brand', name: 'Brand' }];
+                        data = ownNames.map((name,i) => ({ id: 'brand'+i, name }));
                     if (table === 'ranking_snapshots' && call.fields === 'snapshot_date') {
                         if (coreError)
                             return Promise.resolve({ data: null, error: { message: 'offline' } }).then(yes, no);
@@ -29,9 +29,21 @@ function fixture() {
             return q;
         } };
     const mocks = { '@/lib/supabase/client': { supabaseBrowser: () => client }, './supabase/client': { supabaseBrowser: () => client }, 'next/link': { __esModule: true, default: ({ children, ...p }) => React.createElement('a', p, children) }, '@/hooks/useResolvedViewport': { useResolvedViewport: () => 'desktop' } };
-    return { client, calls, pending, mocks, auth(id) { listeners.forEach(fn => fn('SIGNED_IN', id ? { user: { id } } : null)); }, late() { authLate = deferred(); return authLate; }, failCore() { coreError = true; } };
+    return { client, calls, pending, mocks, get authCalls() { return authCalls; }, setOwnNames(names) { ownNames = names; }, auth(id) { listeners.forEach(fn => fn('SIGNED_IN', id ? { user: { id } } : null)); }, late() { authLate = deferred(); return authLate; }, failCore() { coreError = true; } };
 }
-test('actual source query uses independent available dates and bounded partial comparison', async () => { const f = fixture(), read = load('src/lib/report-brand-evidence.ts', f.mocks).fetchReportBrandEvidence; const p = read(new AbortController().signal); await Promise.resolve(); f.pending[0].resolve({ data: [row('2026-10-03', 2), row('2026-10-01', 5), row('2026-10-03', 3, 'Other')], error: null }); const value = await p; assert.equal(value.date, '2026-10-03'); assert.equal(value.comparisonDate, '2026-10-01'); assert.equal(value.rows[0].rankChange, 3); assert.equal(value.rows[1].rankChange, null); assert.equal(f.calls.length, 1); assert.equal(f.calls[0].limit, 400); assert.ok(!f.calls[0].filters.some(([k]) => k === 'snapshot_date')); });
+test('actual source query uses independent available dates and exact bounded contract', async () => {
+ const f=fixture(),read=load('src/lib/report-brand-evidence.ts',f.mocks).fetchReportBrandEvidence;
+ const signal=new AbortController().signal,p=read(signal);await Promise.resolve();
+ f.pending[0].resolve({data:[row('2026-10-03',2),row('2026-10-01',5),row('2026-10-03',3,'Other')],error:null});
+ const value=await p,call=f.calls[0];assert.equal(value.date,'2026-10-03');assert.equal(value.comparisonDate,'2026-10-01');
+ assert.equal(value.rows[0].rankChange,3);assert.equal(value.rows[1].rankChange,null);assert.equal(f.calls.length,1);
+ assert.equal(call.table,'brand_ranking_snapshots');assert.equal(call.fields,'rank_position, brand_name, snapshot_date, brands(is_own)');
+ assert.deepEqual(call.ops.filter(([op])=>['eq','gte','lte','in'].includes(op)),[['eq','category_code','000'],['eq','gender_filter','A'],['eq','age_filter','AGE_BAND_ALL']]);
+ assert.ok(!call.ops.some(([op,key])=>['eq','gte','lte','in'].includes(op)&&key==='snapshot_date'));
+ assert.deepEqual(call.ops.filter(([op])=>op==='order'),[['order','snapshot_date',{ascending:false}],['order','rank_position',{ascending:true}]]);
+ assert.deepEqual(call.ops.filter(([op])=>op==='limit'),[['limit',400]]);assert.equal(call.signal,signal);
+ assert.deepEqual(call.ops.filter(([op])=>op==='abortSignal'),[['abortSignal',signal]]);
+});
 test('error, malformed missing dates, null data, genuine empty, and cap remain distinct', async () => {
     for (const response of [{ data: [], error: { message: 'offline' } }, { data: [{ rank_position: 1, brand_name: 'B' }], error: null }, { data: null, error: null }, { data: [], error: null }, { data: Array.from({ length: 400 }, (_, i) => row('2026-10-04', i + 1, 'B' + i)), error: null }]) {
         const f = fixture(), read = load('src/lib/report-brand-evidence.ts', f.mocks).fetchReportBrandEvidence, p = read(new AbortController().signal);
@@ -176,3 +188,24 @@ test('unresolved viewport mounts neither report data subtree', async () => { con
 finally {
     await React.act(async () => root?.unmount());
 } });
+
+test('own brand ranks 31 and 200 use all returned latest rows; missing brand remains unknown without extra reads',async()=>{
+ const f=fixture();f.setOwnNames(['Brand','Own 200','Missing Own']);const Page=load('src/app/(app)/report/page.tsx',f.mocks).default;let root;
+ const rows=Array.from({length:200},(_,i)=>row('2026-10-03',i+1,i===30?'Brand':i===199?'Own 200':'Market '+i));
+ try {await React.act(async()=>{root=Renderer.create(React.createElement(Page))});await React.act(async()=>f.pending[0].resolve({data:rows,error:null}));
+ const text=JSON.stringify(root.toJSON());assert.match(text,/#31/);assert.match(text,/#200/);assert.match(text,/조회 범위에서 미확인/);assert.equal(f.calls.length,15);
+ const readFixture=fixture(),read=load('src/lib/report-brand-evidence.ts',readFixture.mocks).fetchReportBrandEvidence,p=read(new AbortController().signal);await Promise.resolve();readFixture.pending[0].resolve({data:rows,error:null});const value=await p;
+ assert.equal(value.rows.length,30);assert.equal(value.latestRows.length,200);assert.equal(value.latestRows.find(x=>x.brandName==='Brand').rank,31);assert.equal(value.latestRows.find(x=>x.brandName==='Own 200').rank,200);assert.equal(readFixture.calls.length,1);
+ }finally{await React.act(async()=>root?.unmount())}
+});
+
+test('failed initial identity lookup retries through SDK, recovers, and ignores late lookup after auth event',async()=>{
+ for(const eventRace of [false,true]){const f=fixture(),first=f.late(),Page=load('src/app/(app)/report/page.tsx',f.mocks).default;let root;
+ try {await React.act(async()=>{root=Renderer.create(React.createElement(Page));first.resolve({data:{user:null},error:{message:'offline'}})});
+ assert.equal(f.calls.length,0);const retryIdentity=f.late();const button=root.root.findAllByProps({'aria-label':'브랜드 순위 다시 조회'})[0];
+ await React.act(async()=>button.props.onClick());assert.equal(f.authCalls,2);await React.act(async()=>button.props.onClick());assert.equal(f.authCalls,2);
+ await React.act(async()=>{if(eventRace){f.auth('B');retryIdentity.resolve({data:{user:{id:'stale-A'}},error:null})}else retryIdentity.resolve({data:{user:{id:'A'}},error:null})});
+ assert.equal(f.calls.length,15);assert.equal(f.pending.length,1);await React.act(async()=>f.pending[0].resolve({data:[row('2026-10-03',1,eventRace?'Current B':'Recovered A')],error:null}));
+ assert.match(JSON.stringify(root.toJSON()),eventRace?/Current B/:/Recovered A/);assert.match(JSON.stringify(root.toJSON()),/MRR/);assert.doesNotMatch(JSON.stringify(root.toJSON()),/stale-A/);
+ }finally{await React.act(async()=>root?.unmount())}}
+});

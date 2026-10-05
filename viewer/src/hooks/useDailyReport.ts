@@ -15,7 +15,7 @@ export function useDailyReport() {
   useEffect(() => {
     let disposed = false, eventSeen = false, current: string | null | undefined;
     let controller: AbortController | undefined, brandController: AbortController | undefined;
-    let brandAttempt = 0, brandPending = false;
+    let brandAttempt = 0, brandPending = false, authAttempt = 0, authPending = false;
     const identity = (id: string | null) => {
       if (disposed || current === id) return;
       current = id; controller?.abort(); brandController?.abort(); retryRef.current = null;
@@ -48,17 +48,26 @@ export function useDailyReport() {
     });
     const authFailed = () => {
       if (disposed || eventSeen) return;
+      authPending = false;
+      retryRef.current = lookupIdentity;
       setCore({ state: 'error', data: null }); setBrand({ state: 'error', data: null });
     };
-    void client.auth.getUser().then(({ data, error }) => {
-      if (disposed || eventSeen) return;
-      if (error) authFailed(); else identity(data.user?.id ?? null);
-    }).catch(authFailed);
+    const lookupIdentity = () => {
+      if (disposed || eventSeen || authPending) return;
+      authPending = true; const attempt = ++authAttempt;
+      setCore(pending); setBrand(pending);
+      void client.auth.getUser().then(({ data, error }) => {
+        if (disposed || eventSeen || attempt !== authAttempt) return;
+        authPending = false;
+        if (error) authFailed(); else identity(data.user?.id ?? null);
+      }).catch(() => { if (attempt === authAttempt) authFailed(); });
+    };
+    lookupIdentity();
     return () => { disposed = true; controller?.abort(); brandController?.abort(); retryRef.current = null; subscription.unsubscribe(); };
   }, []);
   const rows = brand.state === 'ready' ? brand.data?.rows ?? [] : [];
   const data = core.data ? { ...core.data, brandRanking: rows, ownBrands: core.data.ownBrands.map(item => {
-    const rank = rows.find(row => row.brandName === item.brandName);
+    const rank = brand.state === 'ready' ? brand.data?.latestRows.find(row => row.brandName === item.brandName) : undefined;
     return { ...item, brandRank: rank?.rank ?? null, brandRankChange: rank?.rankChange ?? null };
   }) } : null;
   return { core, brand, data, retryBrand };

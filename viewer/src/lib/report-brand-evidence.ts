@@ -7,6 +7,7 @@ export interface BrandEvidence {
   sampledRows: number;
   atLimit: boolean;
   rows: BrandRankRow[];
+  latestRows: BrandRankRow[];
 }
 
 /** One bounded read, independent of product ranking dates. No completeness claim. */
@@ -25,10 +26,10 @@ export async function fetchReportBrandEvidence(signal: AbortSignal): Promise<Bra
   const dates = [...new Set(data.map(row => row.snapshot_date as string))].sort().reverse();
   const date = dates[0] ?? null, comparisonDate = dates[1] ?? null;
   const previous = new Map(data.filter(row => row.snapshot_date === comparisonDate).map(row => [row.brand_name, row.rank_position]));
-  return { date, comparisonDate, sampledRows: data.length, atLimit: data.length === 400,
-    rows: data.filter(row => row.snapshot_date === date).sort((a, b) => a.rank_position - b.rank_position).slice(0, 30).map(row => ({
+  const latestRows: BrandRankRow[] = data.filter(row => row.snapshot_date === date).sort((a, b) => a.rank_position - b.rank_position).map(row => ({
       rank: row.rank_position, brandName: row.brand_name,
       rankChange: previous.has(row.brand_name) ? previous.get(row.brand_name)! - row.rank_position : null,
       isOwn: (row.brands as unknown as { is_own?: boolean } | null)?.is_own ?? false,
-    })) };
+    }));
+  return { date, comparisonDate, sampledRows: data.length, atLimit: data.length === 400, latestRows, rows: latestRows.slice(0, 30) };
 }
