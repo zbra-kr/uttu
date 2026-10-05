@@ -9,10 +9,10 @@ const job=(company,id='j1',status='running')=>({id,company_id:company,status,rou
 const originalFetch=global.fetch;
 test.before(()=>{global.fetch=async()=>assert.fail('QA network forbidden');});test.after(()=>{global.fetch=originalFetch;});
 function fixture(){
-  const calls=[],plans=[],listeners=new Set(),timers=new Map();let serial=0,owner='owner';
+  const calls=[],plans=[],listeners=new Set(),timers=new Map();let serial=0,owner='owner',authPlan=null;
   const saved={setTimeout:global.setTimeout,clearTimeout:global.clearTimeout};
   global.setTimeout=(fn,delay)=>{timers.set(++serial,{fn,delay});return serial;};global.clearTimeout=id=>timers.delete(id);
-  const sdk={auth:{getUser:async()=>({data:{user:owner?{id:owner}:null},error:null}),onAuthStateChange(fn){listeners.add(fn);return {data:{subscription:{unsubscribe(){listeners.delete(fn);}}}};}},from(table){
+  const sdk={auth:{getUser:()=>authPlan??Promise.resolve({data:{user:owner?{id:owner}:null},error:null}),onAuthStateChange(fn){listeners.add(fn);return {data:{subscription:{unsubscribe(){listeners.delete(fn);}}}};}},from(table){
     const call={table,filters:{},signal:null};const q={select(){return q;},eq(k,v){call.filters[k]=v;return q;},order(){return q;},limit(){return q;},abortSignal(signal){call.signal=signal;return q;},insert(){assert.fail('QA write forbidden');},maybeSingle(){return execute();},then(a,b){return execute().then(a,b);}};
     function execute(){calls.push(call);const index=plans.findIndex(p=>p.table===table);const p=index<0?null:plans.splice(index,1)[0];return p?p.promise:Promise.resolve({data:table==='funding_rounds'?[row(call.filters.company_id)]:null,error:null});}return q;
   }};
@@ -21,11 +21,32 @@ function fixture(){
   let state,done=0;
   function View({company='a',control=false}){state=useFundingRounds(company);return React.createElement(React.Fragment,null,control&&React.createElement(FundingCollectButton,{companyId:company,fundingLastCollectedAt:null,onDone:()=>{done++;void state.refreshAfterJob();}}),React.createElement(FundingRoundsView,{funding:state}));}
   return {View,Control:FundingCollectButton,calls,plans,listeners,timers,state:()=>state,done:()=>done,
-    plan(table,value){plans.push({table,promise:value});},auth(id){owner=id;for(const fn of listeners)fn(id?'SIGNED_IN':'SIGNED_OUT',id?{user:{id}}:null);},
+    plan(table,value){plans.push({table,promise:value});},authPlan(value){authPlan=value;},auth(id){owner=id;for(const fn of listeners)fn(id?'SIGNED_IN':'SIGNED_OUT',id?{user:{id}}:null);},
     async fire(delay){const entry=[...timers.entries()].find(([,v])=>v.delay===delay);assert.ok(entry,'expected timer '+delay);timers.delete(entry[0]);await act(async()=>entry[1].fn());},
     restore(){Object.assign(global,saved);},
   };
 }
+test('funding stalled identity times out, retries verification without collection, and ignores late old identity',async()=>{
+  const f=fixture(),old=deferred(),fresh=deferred();let root;
+  try{
+    f.authPlan(old.promise);await act(async()=>{root=Renderer.create(React.createElement(f.View,{control:true}));});assert.equal(f.calls.length,0);assert.equal(f.state().loading,true);assert.equal([...f.timers.values()].filter(t=>t.delay===15000).length,2);
+    await f.fire(15000);await f.fire(15000);assert.equal(f.state().loading,false);assert.equal(f.state().error,true);assert.match(text(root),/로그인 상태를 확인하지 못했습니다/);assert.equal(f.timers.size,0);
+    const verify=button(root,'로그인 상태 다시 조회');f.authPlan(fresh.promise);await act(async()=>{verify.props.onClick();verify.props.onClick();button(root,'투자정보 다시 조회').props.onClick();});assert.equal(button(root,'로그인 상태 다시 조회'),verify);assert.equal(verify.props['aria-disabled'],true);assert.equal(f.calls.length,0);assert.equal(f.timers.size,2);
+    await act(async()=>old.resolve({data:{user:{id:'obsolete-owner'}},error:null}));assert.equal(f.calls.length,0);assert.equal(f.state().loading,true);
+    await act(async()=>fresh.resolve({data:{user:{id:'verified-owner'}},error:null}));assert.match(text(root),/a timeline/);assert.equal(button(root,'로그인 상태 다시 조회'),verify);assert.equal(verify.props['aria-disabled'],false);assert.equal(f.state().error,false);assert.equal(f.timers.size,0);assert.equal(f.calls.filter(c=>c.table==='funding_rounds').length,1);assert.equal(f.calls.filter(c=>c.table==='funding_collection_jobs').length,1);
+  }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);assert.equal(f.listeners.size,0);f.restore();}
+});
+for(const id of [null,'replacement-owner'])test('funding explicit '+String(id)+' event wins stalled identity and late settlement',async()=>{
+  const f=fixture(),old=deferred();let root;
+  try{
+    f.authPlan(old.promise);await act(async()=>{root=Renderer.create(React.createElement(f.View,{control:true}));});await act(async()=>f.auth(id));const calls=f.calls.length;assert.equal(f.timers.size,0);
+    if(id){assert.match(text(root),/a timeline/);assert.equal(f.state().error,false);}else{assert.equal(calls,0);assert.match(text(root),/로그인 후 투자정보/);assert.equal(button(root,'로그인 상태 다시 조회'),undefined);}
+    await act(async()=>old.resolve({data:{user:{id:'late-owner'}},error:null}));assert.equal(f.calls.length,calls);assert.equal(f.state().signedOut,id===null);assert.equal(f.state().error,false);
+  }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);assert.equal(f.listeners.size,0);f.restore();}
+});
+test('funding pending identity unmount clears deadline and subscription before late rejection',async()=>{
+  const f=fixture(),old=deferred();let root;try{f.authPlan(old.promise);await act(async()=>{root=Renderer.create(React.createElement(f.View,{control:true}));});await act(async()=>root.unmount());root=null;assert.equal(f.timers.size,0);assert.equal(f.listeners.size,0);await act(async()=>old.reject(Error('late auth')));assert.equal(f.calls.length,0);}finally{await act(async()=>root?.unmount());f.restore();}
+});
 test('deadline helper settles UI after 15 seconds, clears timers and ignores abort-ignoring late transport',async()=>{
   const f=fixture(),{startFundingRead}=load('src/lib/funding-read.ts');let signal;
   try{

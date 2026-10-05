@@ -99,12 +99,25 @@ test('optional read rejection and deadlines preserve required content; obsolete 
     }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);f.restore();}
   }
 });
-test('rapid date and identity changes dispose all optional/required reads and reject stale success/error',async()=>{
+test('date changes preserve unfiltered options while identity changes dispose all old-owner reads',async()=>{
   const f=fixture(),old=deferred(),dates=deferred(),kpi=deferred(),fresh=deferred();let root;
   try{
     f.plan('briefing',old.promise);f.plan('dates',dates.promise);f.plan('anomalies',kpi.promise);await act(async()=>{root=Renderer.create(React.createElement(f.Page));});const oldCalls=[...f.calls];
-    f.plan('briefing',fresh.promise);f.route('date=2026-10-04');await act(async()=>root.update(React.createElement(f.Page)));assert.ok(oldCalls.every(call=>call.signal.aborted));
-    await act(async()=>{f.auth('other');});await act(async()=>{old.resolve({data:[briefing('2026-10-05','stale')],error:null});dates.reject(Error('old dates'));kpi.resolve({data:null,error:{code:'500'}});fresh.resolve({data:[briefing('2026-10-04','wrong owner')],error:null});});
+    f.plan('briefing',fresh.promise);f.route('date=2026-10-04');await act(async()=>root.update(React.createElement(f.Page)));assert.ok(oldCalls.filter(call=>call.kind!=='dates').every(call=>call.signal.aborted));assert.equal(oldCalls.find(call=>call.kind==='dates').signal.aborted,false);
+    await act(async()=>{f.auth('other');});assert.ok(oldCalls.every(call=>call.signal.aborted));await act(async()=>{old.resolve({data:[briefing('2026-10-05','stale')],error:null});dates.reject(Error('old dates'));kpi.resolve({data:null,error:{code:'500'}});fresh.resolve({data:[briefing('2026-10-04','wrong owner')],error:null});});
     assert.doesNotMatch(text(root),/stale|wrong owner|조회에 실패/);assert.match(text(root),/stored news/);
   }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);f.restore();}
+});
+
+for(const mobile of [false,true])test(`${mobile?'mobile':'desktop'} date options survive date/tab changes and failed refresh, isolate owners, and refresh at midnight`,async()=>{
+  const f=fixture(mobile),history=[{briefing_date:'2026-10-05'},{briefing_date:'2026-10-04'}];let root;
+  try{
+    f.plan('dates',{data:history,error:null});await act(async()=>{root=Renderer.create(React.createElement(f.Page));});const initial=f.calls.filter(c=>c.kind==='dates').length;
+    for(const route of ['date=2026-10-04','date=2026-10-04&tab=staff','date=2026-10-05&tab=executive']){f.route(route);await act(async()=>root.update(React.createElement(f.Page)));assert.equal(f.calls.filter(c=>c.kind==='dates').length,initial);}
+    f.route('date=2026-10-04');await act(async()=>root.update(React.createElement(f.Page)));const retry=button(root,'날짜 목록 다시 조회'),pending=deferred();f.plan('dates',pending.promise);await act(async()=>{retry.props.onClick();retry.props.onClick();});assert.equal(f.calls.filter(c=>c.kind==='dates').length,initial+1);assert.equal(button(root,'날짜 목록 다시 조회'),retry);assert.equal(retry.props['aria-disabled'],true);if(mobile)assert.equal(typeof button(root,'▶').props.onClick,'function');
+    await act(async()=>pending.reject(Error('options offline')));assert.match(text(root),/같은 로그인 상태에서 이전에 조회한 날짜 목록/);assert.match(text(root),/stored news/);if(mobile)assert.equal(typeof button(root,'▶').props.onClick,'function');
+    f.plan('dates',{data:history,error:null});await act(async()=>retry.props.onClick());assert.doesNotMatch(text(root),/날짜 목록 조회에 실패/);
+    const oldOwner=deferred(),newOwner=deferred();f.plan('dates',oldOwner.promise);await act(async()=>retry.props.onClick());f.plan('dates',newOwner.promise);await act(async()=>f.auth('replacement'));if(mobile)assert.equal(button(root,'▶').props.onClick,undefined);await act(async()=>oldOwner.resolve({data:history,error:null}));if(mobile)assert.equal(button(root,'▶').props.onClick,undefined);await act(async()=>newOwner.resolve({data:[{briefing_date:'2026-10-04'}],error:null}));if(mobile)assert.equal(button(root,'▶').props.onClick,undefined);
+    const beforeMidnight=f.calls.filter(c=>c.kind==='dates').length;f.plan('dates',{data:null,error:{code:'500'}});f.today('2026-10-06');await f.fire('midnight');assert.equal(f.calls.filter(c=>c.kind==='dates').length,beforeMidnight+1);assert.match(text(root),/같은 로그인 상태에서 이전에 조회한 날짜 목록/);await act(async()=>f.auth(null));assert.match(text(root),/로그인 후 날짜 목록/);if(mobile)assert.equal(button(root,'▶').props.onClick,undefined);
+  }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);assert.equal(f.listeners.size,0);f.restore();}
 });

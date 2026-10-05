@@ -24,7 +24,10 @@ function is7dFresh(iso: string | null): boolean {
 
 export function FundingCollectButton(props: Props) {
   const scope = useFundingScope(props.companyId);
-  return <FundingCollectControl key={scope.key ?? props.companyId} {...props} scope={scope} />;
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+    <FundingCollectControl key={scope.key ?? props.companyId} {...props} scope={scope} />
+    {!scope.signedOut && <button type="button" className="btn sm" aria-disabled={!scope.key && !scope.authError} onClick={() => { if (scope.key || scope.authError) scope.retryAuth(); }}>로그인 상태 다시 조회</button>}
+  </div>;
 }
 
 function FundingCollectControl({ companyId, fundingLastCollectedAt, onDone, scope }: Props & { scope: ReturnType<typeof useFundingScope> }) {
@@ -182,7 +185,6 @@ function FundingCollectControl({ companyId, fundingLastCollectedAt, onDone, scop
       {msg && <span role="status" style={{ fontSize: 12, color: 'var(--shf)' }}>{msg}</span>}
       {scope.key && <button type="button" className="btn sm" aria-disabled={busy} onClick={() => { if (!busy) void readStatus(job ?? undefined); }}>수집 상태 다시 조회</button>}
       {scope.authError && <span role="status">로그인 상태를 확인하지 못했습니다.</span>}
-      {scope.authError && <button type="button" className="btn sm" onClick={scope.retryAuth}>로그인 상태 다시 조회</button>}
       {scope.signedOut && <span role="status">로그인 후 수집 상태를 조회할 수 있습니다.</span>}
     </div>
   );

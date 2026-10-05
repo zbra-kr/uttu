@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useCallback } from 'react';
+import { Suspense, useCallback, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { fetchAllBriefings, fetchAvailableBriefingDates } from '@/lib/queries-briefing';
 import { fetchBriefingKpiData } from '@/lib/queries-kpi';
@@ -71,12 +71,19 @@ function TodayContent() {
   const readDates = useCallback((signal: AbortSignal) => fetchAvailableBriefingDates(signal), []);
   const briefing = useBriefingRead(scope, readBriefing, validDate && !isFuture);
   const kpi = useBriefingRead(scope, readKpi, validDate && !isFuture && activeTab !== 'cs');
-  const dates = useBriefingRead(scope, readDates);
+  const dateOptionsScope = useBriefingScope('today-date-options');
+  const dates = useBriefingRead(dateOptionsScope, readDates);
+  const optionsDay = useRef(today);
+  useEffect(() => {
+    if (optionsDay.current === today) return;
+    optionsDay.current = today;
+    void dates.retry();
+  }, [today, dates.retry]);
   const data = briefing.value, availableDates = dates.value ?? [], kpiData = kpi.value;
   const readStatus = <>
     {validDate && !isFuture && <BriefingReadStatus state={briefing} label="브리핑" date={activeDate} />}
     {activeTab !== 'cs' && validDate && !isFuture && <BriefingReadStatus state={kpi} label="참고 지표" date={activeDate} />}
-    <BriefingReadStatus state={dates} label="날짜 목록" />
+    <BriefingReadStatus state={dates} label="날짜 목록" retainedLabel="같은 로그인 상태에서 이전에 조회한 날짜 목록" />
   </>;
 
   function handleTabSelect(tab: Tab) {
