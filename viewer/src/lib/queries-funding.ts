@@ -45,9 +45,10 @@ function readJob(data: unknown, companyId: string, jobId?: string): FundingJob |
 export async function getFundingRounds(
   companyId: string,
   limit = 50,
+  signal?: AbortSignal,
 ): Promise<FundingRound[]> {
   const supabase = supabaseBrowser();
-  const { data, error } = await supabase
+  const query = supabase
     .from('funding_rounds')
     .select(
       'id, company_id, round_type, amount_krw, announced_date, investors, source_type, source_url, source_ref, confidence, created_at',
@@ -55,6 +56,8 @@ export async function getFundingRounds(
     .eq('company_id', companyId)
     .order('announced_date', { ascending: false, nullsFirst: false })
     .limit(limit);
+  if (signal) query.abortSignal(signal);
+  const { data, error } = await query;
 
   if (error || !Array.isArray(data) || data.some(row => row.company_id !== companyId)) {
     throw new Error('투자정보를 불러오지 못했습니다.');
@@ -65,17 +68,19 @@ export async function getFundingRounds(
 /** 회사의 최신 수집 잡 1건 */
 export async function getLatestFundingJob(
   companyId: string,
+  signal?: AbortSignal,
 ): Promise<FundingJob | null> {
   const supabase = supabaseBrowser();
-  const { data, error } = await supabase
+  const query = supabase
     .from('funding_collection_jobs')
     .select(
       'id, company_id, status, requested_by, started_at, finished_at, rounds_found, error, created_at',
     )
     .eq('company_id', companyId)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  if (signal) query.abortSignal(signal);
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
     throw new Error('수집 상태를 불러오지 못했습니다.');
@@ -87,11 +92,14 @@ export async function getLatestFundingJob(
 export async function pollFundingJob(
   companyId: string,
   jobId: string,
+  signal?: AbortSignal,
 ): Promise<FundingJob | null> {
-  const { data, error } = await supabaseBrowser()
+  const query = supabaseBrowser()
     .from('funding_collection_jobs')
     .select('id, company_id, status, requested_by, started_at, finished_at, rounds_found, error, created_at')
-    .eq('company_id', companyId).eq('id', jobId).maybeSingle();
+    .eq('company_id', companyId).eq('id', jobId);
+  if (signal) query.abortSignal(signal);
+  const { data, error } = await query.maybeSingle();
   if (error) throw new Error('수집 상태를 불러오지 못했습니다.');
   return readJob(data, companyId, jobId);
 }

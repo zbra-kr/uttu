@@ -7,6 +7,7 @@ import {
   type FundingJob,
 } from '@/lib/queries-funding';
 import { useFundingScope } from './use-funding-scope';
+import { startFundingRead, FundingReadTimeoutError } from '@/lib/funding-read';
 import { fmtDate } from '@/lib/format';
 
 interface Props {
@@ -37,6 +38,7 @@ function FundingCollectControl({ companyId, fundingLastCollectedAt, onDone, scop
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const operation = React.useRef(0);
   const reading = React.useRef(false);
+  const read = React.useRef<ReturnType<typeof startFundingRead> | null>(null);
   const completed = React.useRef(new Set<string>());
   const onDoneRef = React.useRef(onDone); onDoneRef.current = onDone;
   const isFresh = !forceMode && is7dFresh(fundingLastCollectedAt);
@@ -52,22 +54,25 @@ function FundingCollectControl({ companyId, fundingLastCollectedAt, onDone, scop
     setBusy(true); setMsg(null); setStatusError(false);
     const check = async (tracked: FundingJob | undefined, attempt: number): Promise<void> => {
       reading.current = true;
+      const active = startFundingRead(signal => tracked ? pollFundingJob(companyId, tracked.id, signal) : getLatestFundingJob(companyId, signal));
+      read.current = active;
       try {
-        const next = tracked ? await pollFundingJob(companyId, tracked.id) : await getLatestFundingJob(companyId);
+        const next = await active.promise;
         if (!valid()) return;
         if (next && (next.company_id !== companyId || (tracked && next.id !== tracked.id))) throw new Error('Unexpected job');
         if (!next && tracked) throw new Error('Job unavailable');
         setJob(next);
         if (next?.status === 'pending' || next?.status === 'running') {
-          // Settled-attempt cap only: these readers have no network deadline.
+          // Attempt cap is separate from each read's 15-second UI deadline.
           if (attempt >= 75) throw new Error('Polling paused');
           timer.current = setTimeout(() => { timer.current = null; void check(next, attempt + 1); }, 4000);
         } else if (tracked && next?.status === 'done' && !completed.current.has(next.id)) {
           completed.current.add(next.id); onDoneRef.current?.();
         }
-      } catch {
-        if (valid()) { stop(); setStatusError(true); setMsg('수집 상태를 확인하지 못했습니다. 상태를 다시 조회해 주세요.'); }
+      } catch (error) {
+        if (valid()) { stop(); setStatusError(true); setMsg(error instanceof FundingReadTimeoutError ? '수집 상태 조회 시간이 초과되었습니다. 상태를 다시 조회해 주세요.' : '수집 상태를 확인하지 못했습니다. 상태를 다시 조회해 주세요.'); }
       } finally {
+        if (read.current === active) read.current = null;
         if (valid()) { reading.current = false; setBusy(false); }
       }
     };
@@ -76,8 +81,8 @@ function FundingCollectControl({ companyId, fundingLastCollectedAt, onDone, scop
 
   React.useEffect(() => {
     void readStatus();
-    const counter = operation, activeRead = reading;
-    return () => { counter.current++; activeRead.current = false; stop(); };
+    const counter = operation, activeReading = reading, activeRead = read;
+    return () => { counter.current++; activeReading.current = false; activeRead.current?.cancel(); activeRead.current = null; stop(); };
   }, [readStatus, stop]);
 
   const handleCollect = async () => {

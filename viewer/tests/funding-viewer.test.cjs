@@ -16,7 +16,7 @@ function sdkFixture() {
     onAuthStateChange(fn){listeners.add(fn);return {data:{subscription:{unsubscribe(){listeners.delete(fn);}}}};},
   }, from(table){
     const call={table,filters:{},write:false};
-    const q={select(){return q;},eq(k,v){call.filters[k]=v;return q;},order(){return q;},limit(){return q;},insert(){throw Error('QA database write forbidden');},
+    const q={select(){return q;},eq(k,v){call.filters[k]=v;return q;},order(){return q;},limit(){return q;},abortSignal(signal){call.signal=signal;return q;},insert(){throw Error('QA database write forbidden');},
       maybeSingle(){return execute();}, then(a,b){return execute().then(a,b);} };
     function execute(){calls.push(call);const index=plans.findIndex(p=>!p?.table||p.table===table);const p=index<0?null:plans.splice(index,1)[0];if(p)return Promise.resolve(p.table?p.result:typeof p==='function'?p(call):p);return Promise.resolve({data:table==='funding_rounds'?[row(call.filters.company_id)]:null,error:null});}
     return q;
@@ -116,15 +116,15 @@ test('exact job completion supersedes the pending pre-completion timeline snapsh
   const {FundingRoundsView}=load('src/components/uttu/funding-rounds-view.tsx',mocks);
   const old=deferred(),fresh=deferred(),timers=new Map();let id=0,root,state;
   const saved={setTimeout:global.setTimeout,clearTimeout:global.clearTimeout};
-  global.setTimeout=fn=>{timers.set(++id,fn);return id;};global.clearTimeout=id=>timers.delete(id);
+  global.setTimeout=(fn,delay)=>{timers.set(++id,{fn,delay});return id;};global.clearTimeout=id=>timers.delete(id);
   function View(){state=useFundingRounds('a');return React.createElement(React.Fragment,null,
     React.createElement(FundingCollectButton,{companyId:'a',fundingLastCollectedAt:null,onDone:state.refreshAfterJob}),
     React.createElement(FundingRoundsView,{funding:state}));}
   try{
     f.plans.push({table:'funding_rounds',result:old.promise},{table:'funding_collection_jobs',result:{data:job(),error:null}});
-    await act(async()=>{root=Renderer.create(React.createElement(View));});assert.equal(timers.size,1);
+    await act(async()=>{root=Renderer.create(React.createElement(View));});assert.equal([...timers.values()].filter(t=>t.delay===4000).length,1);
     f.plans.push({table:'funding_collection_jobs',result:{data:job('a','j1','done'),error:null}},{table:'funding_rounds',result:fresh.promise});
-    const [timer,fn]=timers.entries().next().value;timers.delete(timer);await act(async()=>fn());
+    const [timer,{fn}]=[...timers.entries()].find(([,t])=>t.delay===4000);timers.delete(timer);await act(async()=>fn());
     assert.equal(f.calls.filter(c=>c.table==='funding_rounds').length,2);assert.deepEqual(f.calls.find(c=>c.filters.id==='j1').filters,{company_id:'a',id:'j1'});
     await act(async()=>old.resolve({data:[{...row(),round_type:'obsolete snapshot'}],error:null}));
     assert.equal(state.loaded,false);assert.equal(state.loading,true);assert.doesNotMatch(text(root),/obsolete snapshot/);
@@ -172,17 +172,18 @@ for(const mobile of [false,true]) test(`actual ${mobile?'mobile':'desktop'} comp
 });
 
 function controlFixture(){
-  const f=sdkFixture(), reads=[], timers=new Map();let timerId=0,done=0,createCount=0;
+  const f=sdkFixture(), reads=[], signals=[], timers=new Map(),deadlines=new Map();let timerId=0,done=0,createCount=0;
   const plans=[],creates=[];
-  const reader=(company,id)=>{reads.push({company,id});const p=plans.shift();return Promise.resolve(p===undefined?null:p);};
+  const reader=(company,id,signal)=>{reads.push({company,id});signals.push(signal);const p=plans.shift();return Promise.resolve(p===undefined?null:p);};
   const Control=load('src/components/uttu/funding-collect-button.tsx',{
     '@/lib/supabase/client':{supabaseBrowser:()=>f.sdk},
-    '@/lib/queries-funding':{getLatestFundingJob:c=>reader(c),pollFundingJob:(c,id)=>reader(c,id),createFundingJob:()=>{createCount++;return Promise.resolve(creates.shift());}},
+    '@/lib/queries-funding':{getLatestFundingJob:(c,s)=>reader(c,undefined,s),pollFundingJob:(c,id,s)=>reader(c,id,s),createFundingJob:()=>{createCount++;return Promise.resolve(creates.shift());}},
     '@/lib/format':{fmtDate:v=>v},
   }).FundingCollectButton;
   const saved={setTimeout:global.setTimeout,clearTimeout:global.clearTimeout};
-  global.setTimeout=fn=>{timers.set(++timerId,fn);return timerId;};global.clearTimeout=id=>timers.delete(id);
-  return {...f,Control,reads,plans,creates,timers,props:(company='a')=>({companyId:company,fundingLastCollectedAt:null,onDone:()=>done++}),done:()=>done,createsCount:()=>createCount,
+  global.setTimeout=(fn,delay)=>{(delay===15000?deadlines:timers).set(++timerId,fn);return timerId;};global.clearTimeout=id=>{timers.delete(id);deadlines.delete(id);};
+  return {...f,Control,reads,signals,plans,creates,timers,deadlines,props:(company='a')=>({companyId:company,fundingLastCollectedAt:null,onDone:()=>done++}),done:()=>done,createsCount:()=>createCount,
+    async expire(){const [id,fn]=deadlines.entries().next().value??[];assert.ok(fn,'expected deadline');deadlines.delete(id);await act(async()=>fn());},
     async tick(){const [id,fn]=timers.entries().next().value??[];assert.ok(fn,'expected bounded timer');timers.delete(id);await act(async()=>fn());},restore(){Object.assign(global,saved);} };
 }
 test('actual control polls the restored exact job, pauses on error, retry reads only and completes once',async()=>{
