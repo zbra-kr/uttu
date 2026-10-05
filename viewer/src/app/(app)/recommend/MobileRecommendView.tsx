@@ -112,34 +112,42 @@ export default function MobileRecommendView() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       <MobileFilterChips items={GENDER_CHIPS} activeValue={gender} onChange={setGender} />
 
+      <div style={{ fontSize: 11, lineHeight: 1.6, color: 'var(--f3)', overflowWrap: 'anywhere' }}>
+        <div>조회 기간: {fromDate} ~ {today} (KST, 양끝 포함 8일)</div>
+        <div>선택한 성별의 기간 전체에서 최신순 최대 100개 모듈 스냅샷을 조회합니다.</div>
+        <div>상품 항목 합계는 조회한 모듈의 상품 목록 길이를 더한 값으로, 중복을 포함할 수 있습니다. 실제 노출 수·고유 상품 수·시장 전체 합계가 아닙니다.</div>
+        {current.status === 'ready' && modules.length >= 100 && <div>100개 조회: 전체 데이터가 포함되었는지는 알 수 없습니다.</div>}
+      </div>
+
       {/* KPI */}
       <div style={{ display: 'flex', gap: 8 }}>
         {[
-          { label: '추천 모듈', value: current.status === 'ready' ? modules.length : '—' },
-          { label: '총 노출 상품', value: current.status === 'ready' ? totalItems.toLocaleString() : '—' },
+          { label: '조회한 모듈 스냅샷', value: current.status === 'ready' ? modules.length : '—' },
+          { label: '조회분 상품 항목 합계', value: current.status === 'ready' ? totalItems.toLocaleString() : '—' },
           { label: '오늘 날짜', value: today.slice(5) },
         ].map(kpi => (
           <div key={kpi.label} style={{
-            flex: 1, padding: '10px 12px', background: 'var(--sur)',
+            flex: 1, minWidth: 0, padding: '10px 12px', background: 'var(--sur)',
             border: '1px solid var(--bd)', borderRadius: 10, textAlign: 'center',
           }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--f1)', fontFamily: 'var(--mono)' }}>{kpi.value}</div>
-            <div style={{ fontSize: 10, color: 'var(--f4)', marginTop: 2 }}>{kpi.label}</div>
+            <div style={{ fontSize: 10, color: 'var(--f4)', marginTop: 2, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{kpi.label}</div>
           </div>
         ))}
       </div>
 
-      {/* 7일 노출 상품 수 추이 */}
+      {/* 조회한 날짜별 상품 항목 합계 */}
       {current.status === 'ready' && chartData.length > 1 && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 8 }}>노출 상품 수 7일 추이</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--f3)', marginBottom: 8 }}>조회분 상품 항목 추이</div>
+          <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--f3)', marginBottom: 8 }}>표시된 날짜의 조회분만 연결합니다. 빠진 날짜는 0이 아니며, 날짜별 전체 수집 여부는 확인되지 않았습니다.</div>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
               <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--f4)' }} />
               <YAxis tick={{ fontSize: 10, fill: 'var(--f4)' }} domain={[0, 'auto']} />
               <Tooltip
                 contentStyle={{ background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 5, fontSize: 11 }}
-                formatter={(v: unknown) => [`${v}개`, '노출 상품']}
+                formatter={(v: unknown) => [`${v}개`, '조회분 상품 항목']}
               />
               <Line
                 type="monotone"
@@ -176,7 +184,7 @@ export default function MobileRecommendView() {
               </span>
             </div>
             <div style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', marginTop: 4, display: 'flex', gap: 8 }}>
-              <span>상품 {m.items_count}개</span>
+              <span>상품 항목 {m.items_count}개</span>
               <span>pos {m.position}</span>
               <span style={{ marginLeft: 'auto' }}>{m.snapshot_date}</span>
             </div>

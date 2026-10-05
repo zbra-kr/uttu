@@ -54,7 +54,7 @@ async function fixture(options = {}) {
   const snapshot = () => ({ gender: root.root.find(instance => instance.type.name === 'MobileFilterChips').props.activeValue,
     tree: JSON.stringify(root.toJSON()), alerts: root.root.findAllByProps({ role: 'alert' }).length,
     empty: root.root.findAll(instance => instance.type.name === 'MobileEmptyState').length,
-    kpis: ['추천 모듈', '총 노출 상품'].map(label => {
+    kpis: ['조회한 모듈 스냅샷', '조회분 상품 항목 합계'].map(label => {
       const node = root.root.findAllByType('div').find(instance => instance.children.length === 1 && instance.children[0] === label);
       return node.parent.children[0].children.join('');
     }),
