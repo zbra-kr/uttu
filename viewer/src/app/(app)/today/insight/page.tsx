@@ -2,13 +2,17 @@
 import BriefingEvidenceNote from '@/components/briefing/BriefingEvidenceNote';
 import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import Link from 'next/link';
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { fetchAllBriefings, type InsightPage } from '@/lib/queries-briefing';
+import { useBriefingScope, useBriefingRead } from '@/hooks/useBriefingRead';
+import { useKstToday } from '@/hooks/useKstToday';
+import { validCSDate } from '@/lib/cs-daily-review-check';
+import BriefingReadStatus from '@/components/briefing/BriefingReadStatus';
 import styles from './page.module.css';
 
 const CM = { top: 4, right: 4, bottom: 4, left: -16 };
@@ -147,27 +151,17 @@ function InsightPageContent({ page, audience, date }: { page: InsightPage; audie
 function InsightDetailContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const date     = params.get('date') ?? new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
-  const audience = (params.get('audience') ?? 'executive') as 'executive' | 'staff' | 'cs';
+  const today = useKstToday();
+  const date     = params.get('date') ?? today;
+  const rawAudience = params.get('audience') ?? 'executive';
+  const audience = rawAudience as 'executive' | 'staff' | 'cs';
   const idx      = parseInt(params.get('idx') ?? '0', 10);
 
-  const [page, setPage] = useState<InsightPage | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [total, setTotal] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetchAllBriefings(date).then(data => {
-      if (cancelled) return;
-      const briefing = data[audience];
-      const pages = briefing?.insight_pages ?? [];
-      setTotal(pages.length);
-      setPage(pages[idx] ?? null);
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [date, audience, idx]);
+  const valid = validCSDate(date) && date <= today && ['executive', 'staff', 'cs'].includes(rawAudience) && Number.isInteger(idx) && idx >= 0 && /^\d+$/.test(params.get('idx') ?? '0');
+  const scope = useBriefingScope(JSON.stringify(['insight', date, audience, params.get('idx')]));
+  const reader = useCallback((signal: AbortSignal) => fetchAllBriefings(date, signal), [date]);
+  const read = useBriefingRead(scope, reader, valid);
+  const pages = read.value?.[audience]?.insight_pages ?? [], total = pages.length, page = pages[idx] ?? null;
 
   const goTo = (newIdx: number) => {
     const p = new URLSearchParams({ date, audience, idx: String(newIdx) });
@@ -208,9 +202,10 @@ function InsightDetailContent() {
         )}
       </div>
 
-      {loading ? (
+      {valid && <BriefingReadStatus state={read} label="인사이트" date={date} />}
+      {!valid ? <p role="status">유효한 인사이트 날짜와 페이지를 선택하세요.</p> : read.loading && !read.loaded ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>
-      ) : !page ? (
+      ) : !read.loaded ? null : !page ? (
         <div style={{ textAlign: 'center', padding: '60px 16px', color: 'var(--f3)' }}>
           <div style={{ fontSize: 28, marginBottom: 10 }}>📭</div>
           <div style={{ fontSize: 13 }}>아직 생성된 상세 페이지가 없습니다.</div>

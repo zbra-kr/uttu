@@ -113,6 +113,8 @@ export interface MobileTodayViewProps {
   onDateChange: (date: string) => void;
   csReviews?: CSDailyReviewState;
   invalidDate?: boolean;
+  unavailable?: boolean;
+  readStatus?: React.ReactNode;
 }
 
 export default function MobileTodayView({
@@ -126,6 +128,8 @@ export default function MobileTodayView({
   onDateChange,
   csReviews,
   invalidDate,
+  unavailable,
+  readStatus,
 }: MobileTodayViewProps) {
   const activeBriefing = data ? data[activeTab] : null;
 
@@ -147,6 +151,7 @@ export default function MobileTodayView({
         display: 'flex', flexDirection: 'column', gap: 10,
       }}>
         {activeTab === 'cs' && csReviews && <CSDailyReviewCheck state={csReviews} />}
+        {readStatus}
         {invalidDate ? <p role="status">유효한 브리핑 날짜를 선택하세요.</p> : loading ? (
           <div style={{
             display: 'flex', justifyContent: 'center',
@@ -157,7 +162,7 @@ export default function MobileTodayView({
           </div>
         ) : isFuture ? (
           <EmptyState date={activeDate} future />
-        ) : activeBriefing === null ? (
+        ) : unavailable ? null : activeBriefing === null ? (
           <EmptyState date={data?.briefing_date ?? activeDate} />
         ) : (
           <BriefingContent briefing={activeBriefing} audience={activeTab} />

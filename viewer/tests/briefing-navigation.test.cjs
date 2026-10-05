@@ -34,6 +34,8 @@ function harness(initialUrl, mobile = true, detail = false) {
         if (!Object.is(next, hooks[i].value)) { hooks[i].value = next; dirty = true; }
       }];
     },
+    useRef(initial) { const i = cursor++; if (!(i in hooks)) hooks[i] = { value: { current: initial } }; return hooks[i].value; },
+    useCallback(fn, deps) { const i = cursor++; if (!hooks[i] || !equal(hooks[i].deps, deps)) hooks[i] = { value: fn, deps }; return hooks[i].value; },
     useEffect(fn, deps) {
       const i = cursor++;
       if (!hooks[i] || !equal(hooks[i].deps, deps)) {
@@ -50,6 +52,7 @@ function harness(initialUrl, mobile = true, detail = false) {
     react: { __esModule: true, ...react, default: react },
     'next/navigation': { useSearchParams: () => new URLSearchParams(url.search), useRouter: () => ({ push, back() { if (historyIndex) { url = new URL(history[--historyIndex]); dirty = true; } } }) },
     '@/hooks/useViewport': { useIsMobile: () => mobile },
+    '@/hooks/useKstToday': { useKstToday: () => TODAY },
     // This harness isolates existing URL/briefing navigation; the new source
     // reader's SDK ownership and responsive lifecycle have their own tests.
     '@/lib/cs-daily-review-context': { useCSDailyReviewState: () => null },
@@ -65,6 +68,12 @@ function harness(initialUrl, mobile = true, detail = false) {
     '@/components/briefing/CSBriefingView': { __esModule: true, default: 'CS' },
     './page.module.css': { __esModule: true, default: { detail: 'detail' } },
   };
+  // Keep URL tests isolated from identity verification; exercise the actual read hook.
+  mocks['@/hooks/useBriefingRead'] = { ...load('src/hooks/useBriefingRead.ts', mocks), useBriefingScope(context) {
+    const current = react.useRef(context); current.current = context;
+    const isCurrent = react.useCallback(key => current.current === key, []);
+    return { key: context, isCurrent, authError: false, signedOut: false, retryAuth() {} };
+  } };
   const Page = load(detail ? 'src/app/(app)/today/insight/page.tsx' : 'src/app/(app)/today/page.tsx', mocks).default;
   const Content = Page().props.children.type;
   function render(runEffects = true) {
@@ -141,7 +150,7 @@ test('an older date response cannot replace newer date data or reset the audienc
     h.render(); const old = h.requests[0];
     h.tabs().onDateChange(TODAY); h.render(); const current = h.requests[1];
     h.tabs().onTabSelect('staff'); h.render();
-    current.resolve(snapshot(TODAY)); await h.flush();
+    current.resolve(snapshot(TODAY)); h.requests.at(-1).resolve(snapshot(TODAY)); await h.flush();
     old.resolve(snapshot('2026-10-02')); await h.flush();
     assert.equal(h.tabs().activeTab, 'staff'); assert.equal(h.tabs().data.briefing_date, TODAY);
     assert.equal(h.tabs().kpiData.date, TODAY); assert.equal(h.tabs().loading, false);

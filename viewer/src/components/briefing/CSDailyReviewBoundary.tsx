@@ -3,11 +3,11 @@ import { Suspense, useCallback, useLayoutEffect, useState, type ReactNode } from
 import { useSearchParams } from 'next/navigation';
 import { useCSDailyReviewCheck, type CSDailyReviewState } from '@/hooks/useCSDailyReviewCheck';
 import { CSDailyReviewContext } from '@/lib/cs-daily-review-context';
-import { kstToday } from '@/lib/format';
+import { useKstToday } from '@/hooks/useKstToday';
 
 function Scope({ onChange }: { onChange: (state: CSDailyReviewState) => void }) {
   const params = useSearchParams();
-  const today = kstToday();
+  const today = useKstToday();
   const state = useCSDailyReviewCheck(params.get('tab') === 'cs', params.get('date') ?? today, today);
   // Publish before paint, so an identity change cannot display the prior owner's text.
   useLayoutEffect(() => { onChange(state); }, [state, onChange]);

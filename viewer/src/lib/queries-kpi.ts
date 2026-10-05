@@ -38,13 +38,13 @@ function addDays(dateStr: string, n: number): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
-export async function fetchBriefingKpiData(date: string): Promise<BriefingKpiData> {
+export async function fetchBriefingKpiData(date: string, signal?: AbortSignal): Promise<BriefingKpiData> {
   const sb        = supabaseBrowser();
   const yesterday = addDays(date, -1);
   const since     = addDays(date, -7);
   const dayBefore = addDays(date, -2);
 
-  const [rankRes, brandRes, anomalyRes, compRes] = await Promise.all([
+  const queries = [
     sb.from('ranking_snapshots')
       .select('brand_slug, snapshot_date, rank_position')
       .in('brand_slug', OWN_MAIN_SLUGS)
@@ -71,10 +71,10 @@ export async function fetchBriefingKpiData(date: string): Promise<BriefingKpiDat
       .eq('age_filter', 'AGE_BAND_ALL')
       .order('rank_position')
       .limit(5),
-  ]);
-
-  if (anomalyRes.error) console.error('[kpi] anomaly query error:', anomalyRes.error);
-  if (compRes.error)    console.error('[kpi] competitor query error:', compRes.error);
+  ] as const;
+  if (signal) queries.forEach(query => query.abortSignal(signal));
+  const [rankRes, brandRes, anomalyRes, compRes] = await Promise.all(queries);
+  if ([rankRes, brandRes, anomalyRes, compRes].some(result => result.error || !Array.isArray(result.data))) throw new Error('Briefing KPI unavailable');
 
   // ── 자사 브랜드명 ──────────────────────────────────────────
   const brandNames: Record<string, string> = {};
