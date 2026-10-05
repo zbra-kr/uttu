@@ -111,6 +111,9 @@ function CollStatRow({ s, i, job, router }: {
 
 export default function HomePage() {
   const isMobile = useIsMobile();
+  const [viewportReady, setViewportReady] = React.useState(false);
+  React.useEffect(() => { setViewportReady(true); }, []);
+  if (!viewportReady) return <div role="status" aria-live="polite" style={{ padding: 20, fontSize: 12, color: 'var(--f2)' }}>화면에 맞춰 홈을 준비하는 중…</div>;
   if (isMobile) return <MobileHomeView />;
   return <HomeDesktopView />;
 }

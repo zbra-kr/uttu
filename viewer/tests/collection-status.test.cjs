@@ -88,7 +88,7 @@ test('admin today client distinguishes HTTP error, null, rejected, empty and row
 });
 
 function renderHome(stats,result){
- const states=[stats,result,[],'A',false,[],'A',false,[],[],null,[],false];
+ const states=[true,stats,result,[],'A',false,[],'A',false,[],[],null,[],false];
  const {default:Home}=load('src/app/(app)/page.tsx',{
   react:{...React,useState:()=>[states.shift(),()=>{}],useEffect:()=>{},useRef:v=>({current:v}),useCallback:f=>f},
   '@/hooks/useViewport':{useIsMobile:()=>false},
@@ -186,13 +186,15 @@ test('admin initial history rejection retains successful jobs and partial KPI',a
 });
 test('home overlapping refreshes keep newest failure and ignore old success and disposed results',async()=>{
  const effects=[], updates=[];let i=0,onChange;
+ // HomePage's viewport-ready phase precedes the desktop view's own hooks.
+ let firstState=true,firstEffect=true;
  const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve}};
  const jobs=[deferred(),deferred(),deferred()],stats=[deferred(),deferred()];let jobCall=0,statCall=0;
  const priorInterval=global.setInterval,priorClear=global.clearInterval;
  global.setInterval=()=>1;global.clearInterval=()=>{};
  const channel={on(_a,_b,fn){onChange=fn;return this},subscribe(){return this}};
  const {default:Home}=load('src/app/(app)/page.tsx',{
-  react:{...React,useState:v=>{const index=i++;return [v,x=>updates.push([index,x])]},useEffect:fn=>effects.push(fn),useRef:v=>({current:v}),useCallback:f=>f},
+  react:{...React,useState:v=>{if(firstState){firstState=false;return [true,()=>{}]}const index=i++;return [v,x=>updates.push([index,x])]},useEffect:fn=>{if(firstEffect){firstEffect=false;return}effects.push(fn)},useRef:v=>({current:v}),useCallback:f=>f},
   '@/hooks/useViewport':{useIsMobile:()=>false},'next/navigation':{useRouter:()=>({push(){}})},
   'next/link':({children,...p})=>React.createElement('a',p,children),
   '@/lib/supabase/client':{supabaseBrowser:()=>({channel:()=>channel,removeChannel(){}})},
