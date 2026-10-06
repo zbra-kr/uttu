@@ -45,11 +45,11 @@ export default function Topbar({ breadcrumb, theme, onTheme, aipOpen, onToggleAi
         <span className="arrow">←</span>
         <span className="from">BACK</span>
       </button>
-      <nav className="bc">
+      <nav className="bc" aria-label={breadcrumb.join(' / ')}>
         {breadcrumb.map((b, i) => (
           <React.Fragment key={i}>
             {i > 0 && <span className="sep">/</span>}
-            <span className={`crumb ${i === breadcrumb.length - 1 ? 'last' : ''}`}>{b}</span>
+            <span className={`crumb ${i === breadcrumb.length - 1 ? 'last' : ''}`} title={b}>{b}</span>
           </React.Fragment>
         ))}
       </nav>

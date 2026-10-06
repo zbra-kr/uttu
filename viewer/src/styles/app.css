@@ -46,6 +46,11 @@ body {
 
 @media (min-width: 860px) and (max-width: 1099px) {
   .shell { min-width: 0; }
+  .tb .bc { flex: 1; min-width: 0; overflow: hidden; }
+  .tb .bc .crumb { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tb .search { flex: 1; min-width: 0; overflow: hidden; }
+  .tb .search .placeholder { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tb .search svg, .tb .search .kbd { flex-shrink: 0; }
 }
 
 .sb {
