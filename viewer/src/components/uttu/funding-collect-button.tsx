@@ -26,7 +26,7 @@ export function FundingCollectButton(props: Props) {
   const scope = useFundingScope(props.companyId);
   return <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
     <FundingCollectControl key={scope.key ?? props.companyId} {...props} scope={scope} />
-    {!scope.signedOut && <button type="button" className="btn sm" aria-disabled={!scope.key && !scope.authError} onClick={() => { if (scope.key || scope.authError) scope.retryAuth(); }}>로그인 상태 다시 조회</button>}
+    {!scope.signedOut && <button type="button" className="btn sm" aria-disabled={!scope.authError} onClick={() => { if (scope.authError) scope.retryAuth(); }}>로그인 상태 다시 조회</button>}
   </div>;
 }
 

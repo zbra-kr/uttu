@@ -16,16 +16,38 @@ function fixture(){
     const call={table,filters:{},signal:null};const q={select(){return q;},eq(k,v){call.filters[k]=v;return q;},order(){return q;},limit(){return q;},abortSignal(signal){call.signal=signal;return q;},insert(){assert.fail('QA write forbidden');},maybeSingle(){return execute();},then(a,b){return execute().then(a,b);}};
     function execute(){calls.push(call);const index=plans.findIndex(p=>p.table===table);const p=index<0?null:plans.splice(index,1)[0];return p?p.promise:Promise.resolve({data:table==='funding_rounds'?[row(call.filters.company_id)]:null,error:null});}return q;
   }};
+  const creates=[],createPlans=[];
   const client={supabaseBrowser:()=>sdk},mocks={'@/lib/supabase/client':client,'./supabase/client':client};
+  mocks['@/lib/queries-funding']={...load('src/lib/queries-funding.ts',mocks),createFundingJob(company,force){creates.push({company,force});assert.ok(createPlans.length,'inert create must be planned');return createPlans.shift();}};
   const {useFundingRounds}=load('src/components/uttu/use-funding-rounds.ts',mocks),{FundingRoundsView}=load('src/components/uttu/funding-rounds-view.tsx',mocks),{FundingCollectButton}=load('src/components/uttu/funding-collect-button.tsx',mocks);
   let state,done=0;
   function View({company='a',control=false}){state=useFundingRounds(company);return React.createElement(React.Fragment,null,control&&React.createElement(FundingCollectButton,{companyId:company,fundingLastCollectedAt:null,onDone:()=>{done++;void state.refreshAfterJob();}}),React.createElement(FundingRoundsView,{funding:state}));}
-  return {View,Control:FundingCollectButton,calls,plans,listeners,timers,state:()=>state,done:()=>done,
+  return {View,Control:FundingCollectButton,calls,plans,listeners,timers,creates,createPlan:p=>createPlans.push(p),state:()=>state,done:()=>done,
     plan(table,value){plans.push({table,promise:value});},authPlan(value){authPlan=value;},auth(id){owner=id;for(const fn of listeners)fn(id?'SIGNED_IN':'SIGNED_OUT',id?{user:{id}}:null);},
     async fire(delay){const entry=[...timers.entries()].find(([,v])=>v.delay===delay);assert.ok(entry,'expected timer '+delay);timers.delete(entry[0]);await act(async()=>entry[1].fn());},
     restore(){Object.assign(global,saved);},
   };
 }
+test('manual verification cannot remount control or duplicate a deferred create',async()=>{
+  const f=fixture(),first=deferred();let root;
+  try{
+    await act(async()=>{root=Renderer.create(React.createElement(f.Control,{companyId:'a',fundingLastCollectedAt:null}));});
+    f.createPlan(first.promise);await act(async()=>{void button(root,'투자정보 수집').props.onClick();});
+    const collect=button(root,'투자정보 수집'),verify=button(root,'로그인 상태 다시 조회'),reads=f.calls.length;assert.equal(verify.props['aria-disabled'],true);
+    await act(async()=>{verify.props.onClick();verify.props.onClick();});assert.equal(button(root,'투자정보 수집'),collect);assert.equal(button(root,'로그인 상태 다시 조회'),verify);assert.equal(collect.props.disabled,true);assert.equal(f.calls.length,reads);
+    await act(async()=>{void collect.props.onClick();});assert.equal(f.creates.length,1);
+    await act(async()=>first.resolve({type:'error'}));assert.equal(collect.props.disabled,false);
+  }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);assert.equal(f.listeners.size,0);f.restore();}
+});
+for(const id of [null,'replacement-owner'])test('external '+String(id)+' still clears a control with deferred create',async()=>{
+  const f=fixture(),first=deferred();let root;
+  try{
+    await act(async()=>{root=Renderer.create(React.createElement(f.Control,{companyId:'a',fundingLastCollectedAt:null}));});
+    f.createPlan(first.promise);await act(async()=>{void button(root,'투자정보 수집').props.onClick();});const old=button(root,'투자정보 수집');
+    await act(async()=>f.auth(id));assert.notEqual(button(root,'투자정보 수집'),old);assert.equal(button(root,'투자정보 수집').props.disabled,id===null);
+    const reads=f.calls.length;await act(async()=>first.resolve({type:'created',job:job('a','obsolete-job')}));assert.equal(f.calls.length,reads);assert.doesNotMatch(text(root),/수집 중…/);assert.equal(f.creates.length,1);
+  }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);assert.equal(f.listeners.size,0);f.restore();}
+});
 test('funding stalled identity times out, retries verification without collection, and ignores late old identity',async()=>{
   const f=fixture(),old=deferred(),fresh=deferred();let root;
   try{
@@ -33,7 +55,7 @@ test('funding stalled identity times out, retries verification without collectio
     await f.fire(15000);await f.fire(15000);assert.equal(f.state().loading,false);assert.equal(f.state().error,true);assert.match(text(root),/로그인 상태를 확인하지 못했습니다/);assert.equal(f.timers.size,0);
     const verify=button(root,'로그인 상태 다시 조회');f.authPlan(fresh.promise);await act(async()=>{verify.props.onClick();verify.props.onClick();button(root,'투자정보 다시 조회').props.onClick();});assert.equal(button(root,'로그인 상태 다시 조회'),verify);assert.equal(verify.props['aria-disabled'],true);assert.equal(f.calls.length,0);assert.equal(f.timers.size,2);
     await act(async()=>old.resolve({data:{user:{id:'obsolete-owner'}},error:null}));assert.equal(f.calls.length,0);assert.equal(f.state().loading,true);
-    await act(async()=>fresh.resolve({data:{user:{id:'verified-owner'}},error:null}));assert.match(text(root),/a timeline/);assert.equal(button(root,'로그인 상태 다시 조회'),verify);assert.equal(verify.props['aria-disabled'],false);assert.equal(f.state().error,false);assert.equal(f.timers.size,0);assert.equal(f.calls.filter(c=>c.table==='funding_rounds').length,1);assert.equal(f.calls.filter(c=>c.table==='funding_collection_jobs').length,1);
+    await act(async()=>fresh.resolve({data:{user:{id:'verified-owner'}},error:null}));assert.match(text(root),/a timeline/);assert.equal(button(root,'로그인 상태 다시 조회'),verify);assert.equal(verify.props['aria-disabled'],true);assert.equal(f.state().error,false);assert.equal(f.timers.size,0);assert.equal(f.calls.filter(c=>c.table==='funding_rounds').length,1);assert.equal(f.calls.filter(c=>c.table==='funding_collection_jobs').length,1);
   }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);assert.equal(f.listeners.size,0);f.restore();}
 });
 for(const id of [null,'replacement-owner'])test('funding explicit '+String(id)+' event wins stalled identity and late settlement',async()=>{
