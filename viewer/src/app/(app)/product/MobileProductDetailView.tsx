@@ -545,7 +545,7 @@ export default function MobileProductDetailView() {
       )}
       {!detail.is_own && !(reviewMode?.query === query && reviewMode.active) && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, fontSize: 12, color: 'var(--f4)' }}>
-          리뷰는 자사 상품만 수집합니다
+          최근 리뷰는 이 상품에 연결된 저장 리뷰 일부입니다. 수집 범위나 완료 여부를 뜻하지 않습니다.
         </div>
       )}
     </div>

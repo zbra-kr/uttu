@@ -924,9 +924,9 @@ function ProductPageInner() {
 
             {/* Reviews — 자사 상품만 */}
             <ProductReviewMode query={params.toString()} detail={detail}>
-              <div className="sec-head"><h3>최근 리뷰 <span className="sub">{detail.is_own ? '최신 10건' : '자사 상품만 수집'}</span></h3></div>
+              <div className="sec-head"><h3>최근 리뷰 <span className="sub">{detail.is_own ? '최신 10건' : '자사 상품 리뷰 표시'}</span></h3></div>
               {!detail.is_own ? (
-                <div style={{ fontSize: 12, color: 'var(--f4)', padding: '16px 0' }}>경쟁사 상품 — 리뷰 수집 대상이 아닙니다.</div>
+                <div style={{ fontSize: 12, color: 'var(--f4)', padding: '16px 0' }}>이 최근 리뷰 화면은 자사 상품 리뷰를 표시합니다.</div>
               ) : reviews.length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--f4)', padding: '16px 0' }}>수집된 리뷰가 없습니다.</div>
               ) : (
