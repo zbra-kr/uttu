@@ -44,6 +44,10 @@ body {
   min-width: 1100px;
 }
 
+@media (min-width: 860px) and (max-width: 1099px) {
+  .shell { min-width: 0; }
+}
+
 .sb {
   position: fixed;
   top: 0; left: 0;
