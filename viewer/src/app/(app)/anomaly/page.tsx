@@ -10,6 +10,8 @@ import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
 import NoteDrawer from '@/components/me/NoteDrawer';
 import { fetchNoteCountForEntity } from '@/lib/queries-me';
 import { kstToday } from '@/lib/format';
+import { isDailyRankObservation, observationExplanation, prioritySeverity } from '@/lib/anomaly-priority';
+import { useAnomalyRecords } from '@/hooks/useAnomalyRecords';
 
 interface ARow {
   id: string;
@@ -28,14 +30,15 @@ interface ARow {
   area: string;
 }
 
-const ALL_AREAS = ['상품', '프로모션', '리뷰'];
+const ALL_AREAS = ['상품', '브랜드', '프로모션', '리뷰'];
 
 function sevKey(s: string): 'hi' | 'md' | 'lo' {
   return s === 'high' ? 'hi' : s === 'medium' ? 'md' : 'lo';
 }
 
 function areaKey(t: string): string {
-  if (['rank_spike', 'new_entrant_top10', 'rank_drop_own', 'sold_out', 'price_drop'].includes(t)) return '상품';
+  if (t.startsWith('brand_')) return '브랜드';
+  if (t.startsWith('rank_') || ['new_entrant_top10', 'sold_out', 'price_drop', 'price_rise'].includes(t)) return '상품';
   if (t === 'promo_heavy_discount') return '프로모션';
   return '리뷰';
 }
@@ -160,9 +163,11 @@ function AnomalyDrawer({ item, onClose, onPrev, onNext }: {
   React.useEffect(() => {
     setNoteOpen(false);
     setEntityLink(null);
-    fetchNoteCountForEntity('anomaly', item.id).then(setNoteCount);
+    let active = true;
+    setNoteCount(0);
+    fetchNoteCountForEntity('anomaly', item.id).then(count => { if (active) setNoteCount(count); }).catch(() => {});
 
-    if (!item.entity_id || !item.entity_type) return;
+    if (!item.entity_id || !item.entity_type) return () => { active = false; };
     if (item.entity_type === 'brand') {
       setEntityLink(`/brand?id=${item.entity_id}`);
     } else if (item.entity_type === 'product') {
@@ -173,9 +178,10 @@ function AnomalyDrawer({ item, onClose, onPrev, onNext }: {
         .eq('id', item.entity_id)
         .single()
         .then(({ data }) => {
-          if (data?.musinsa_no) setEntityLink(`/product?no=${data.musinsa_no}`);
-        });
+          if (active && data?.musinsa_no) setEntityLink(`/product?no=${data.musinsa_no}`);
+        }, () => {});
     }
+    return () => { active = false; };
   // item.id 변경 시에만 재조회 — entity_id·table은 항상 item.id와 함께 변경됨
   }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -185,7 +191,7 @@ function AnomalyDrawer({ item, onClose, onPrev, onNext }: {
       <aside className="drawer" style={{ zIndex: 110 }}>
         <div className="drawer-head">
           <div className="row-flex center gap-8">
-            <span className={`sev ${item.sev}`}><span className="pip" />{item.sev.toUpperCase()}</span>
+            <span className={`sev ${sevKey(item.severity)}`}><span className="pip" />기록된 {item.severity.toUpperCase()}</span>
             <span className="sec-tag">{item.area}</span>
             <span className="mono dim" style={{ fontSize: 11 }}>{formatTs(item.detected_at)}</span>
           </div>
@@ -193,6 +199,7 @@ function AnomalyDrawer({ item, onClose, onPrev, onNext }: {
         </div>
 
         <div className="drawer-body">
+          {observationExplanation(item) && <p>{observationExplanation(item)}</p>}
           <div>
             <div className="mono" style={{ fontSize: 11, color: 'var(--f4)', marginBottom: 4 }}>
               {anomalyLabel(item.anomaly_type)}
@@ -279,69 +286,42 @@ function AnomalyPage() {
   const [fromDate, setFromDate] = React.useState(() => kstDaysAgo(6));
   const [toDate,   setToDate]   = React.useState(kstToday);
 
+  const detailIntent = React.useRef(0);
+  const invalidatePendingDetail = React.useCallback(() => { detailIntent.current++; }, []);
   const [sev, setSev] = React.useState(new Set(['hi', 'md', 'lo']));
   React.useEffect(() => {
     const p = params.get('sev');
-    if (p && ['hi', 'md', 'lo'].includes(p)) setSev(new Set([p]));
-  // 마운트 1회만 실행 — URL params 초기값 읽기
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    invalidatePendingDetail();
+    setSev(new Set(p && ['hi', 'md', 'lo'].includes(p) ? [p] : ['hi', 'md', 'lo']));
+  }, [params, invalidatePendingDetail]);
   const [area,   setArea]   = React.useState(new Set(ALL_AREAS));
   const [detail, setDetail] = React.useState<ARow | null>(null);
+  const chooseDetail = (next: ARow | null) => { invalidatePendingDetail(); setDetail(next); };
 
-  const [rows,    setRows]    = React.useState<ARow[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [errMsg,  setErrMsg]  = React.useState<string | null>(null);
-
-  const jumpedRef = React.useRef(false);
-
+  const { from, to } = computeDateRange(period, fromDate, toDate);
+  const records = useAnomalyRecords(from, to);
+  const rows: ARow[] = records.rows.map(r => ({ ...r, sev: prioritySeverity(r), area: areaKey(r.anomaly_type) }));
+  const { loading, error: errMsg } = records;
+  const [observationsOpen, setObservationsOpen] = React.useState(false);
+  React.useEffect(() => { invalidatePendingDetail(); setDetail(null); setObservationsOpen(false); }, [from, to, records.identityKey, invalidatePendingDetail]);
   React.useEffect(() => {
-    if (!jumpId || jumpedRef.current) return;
-    supabaseBrowser()
-      .from('anomalies')
+    setDetail(null);
+    if (!jumpId || !records.identity) return;
+    let active = true;
+    const ownIntent = ++detailIntent.current;
+    supabaseBrowser().from('anomalies')
       .select('id, detected_at, detection_date, module, severity, anomaly_type, entity_type, entity_id, entity_name, description, meta')
-      .eq('id', jumpId)
-      .single()
-      .then(({ data }) => {
-        if (!data) return;
-        jumpedRef.current = true;
-        const row: ARow = { ...data, sev: sevKey(data.severity), area: areaKey(data.anomaly_type) };
-        setSev(new Set(['hi', 'md', 'lo']));
-        setDetail(row);
-      });
-  }, [jumpId]);
+      .eq('id', jumpId).single().then(({ data }) => {
+        if (active && ownIntent === detailIntent.current && data) {
+          setDetail({ ...data, sev: prioritySeverity(data), area: areaKey(data.anomaly_type) });
+          if (isDailyRankObservation(data)) setObservationsOpen(true);
+        }
+      }, () => {});
+    return () => { active = false; };
+  }, [jumpId, records.identity, records.identityKey]);
 
-  React.useEffect(() => {
-    const { from, to } = computeDateRange(period, fromDate, toDate);
-    let cancelled = false;
-
-    const load = async () => {
-      setLoading(true);
-      setErrMsg(null);
-      const { data, error } = await supabaseBrowser()
-        .from('anomalies')
-        .select('id, detected_at, detection_date, module, severity, anomaly_type, entity_type, entity_id, entity_name, description, meta')
-        .gte('detection_date', from)
-        .lte('detection_date', to)
-        .order('detected_at', { ascending: false })
-        .limit(500);
-
-      if (cancelled) return;
-      if (error) { setErrMsg(error.message); setLoading(false); return; }
-
-      setRows((data ?? []).map(r => ({
-        ...r,
-        sev:  sevKey(r.severity),
-        area: areaKey(r.anomaly_type),
-      })));
-      setLoading(false);
-    };
-
-    load();
-    return () => { cancelled = true; };
-  }, [period, fromDate, toDate]);
-
-  const toggleSev  = (k: string) => setSev(p  => { const n = new Set(p);  n.has(k) ? n.delete(k) : n.add(k); return n; });
-  const toggleArea = (k: string) => setArea(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const toggleSev = (k: string) => { invalidatePendingDetail(); setSev(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; }); };
+  const toggleArea = (k: string) => { invalidatePendingDetail(); setArea(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; }); };
 
   const filtered = rows.filter(r => {
     if (!sev.has(r.sev))   return false;
@@ -356,12 +336,14 @@ function AnomalyPage() {
     period === '30d' ? '30일' : period === '90d' ? '90일' : `${fromDate} ~ ${toDate}`;
 
   const reset = () => {
+    invalidatePendingDetail();
     setPeriod('7d');
     setSev(new Set(['hi', 'md', 'lo']));
     setArea(new Set(ALL_AREAS));
   };
 
   const handleLoadFilter = (filter: unknown) => {
+    invalidatePendingDetail();
     const f = filter as any;
     if (f.period !== undefined)    setPeriod(f.period);
     if (f.fromDate !== undefined)  setFromDate(f.fromDate);
@@ -384,8 +366,8 @@ function AnomalyPage() {
 
       <div className="grid grid-4 gap-8">
         {([
-          ['전체',   loading ? '…' : String(rows.length),                                              periodLabel],
-          ['HIGH',   loading ? '…' : String(sevCount('hi')),                                           '심각 신호'],
+          ['불러온 기록',   loading ? '…' : String(rows.length),                                              periodLabel],
+          ['HIGH',   loading ? '…' : String(sevCount('hi')),                                           '일일 순위 관측 제외 · 불러온 기록 기준'],
           ['상품기획',loading ? '…' : String(rows.filter(r => r.module === 'product_planning').length), ''],
           ['CS',     loading ? '…' : String(rows.filter(r => r.module === 'cs').length),               ''],
         ] as [string, string, string][]).map(([l, v, d], i) => (
@@ -421,9 +403,9 @@ function AnomalyPage() {
           </div>
           <div className="frb">
             <PeriodFilter
-              value={period} onChange={setPeriod}
+              value={period} onChange={value => { invalidatePendingDetail(); setPeriod(value); }}
               from={fromDate} to={toDate}
-              onFromChange={setFromDate} onToChange={setToDate}
+              onFromChange={value => { invalidatePendingDetail(); setFromDate(value); }} onToChange={value => { invalidatePendingDetail(); setToDate(value); }}
               options={[
                 ['today',  '오늘'],
                 ['7d',     '7일'],
@@ -460,19 +442,19 @@ function AnomalyPage() {
         <div className="col-flex gap-10">
           <div className="row-flex center gap-6 wrap">
             <span className="sec-tag">applied</span>
-            <DismissChip onDismiss={() => setPeriod('7d')}>{periodLabel}</DismissChip>
+            <DismissChip onDismiss={() => { invalidatePendingDetail(); setPeriod('7d'); }}>{periodLabel}</DismissChip>
             {[...sev].map(s => (
               <DismissChip key={s} onDismiss={() => toggleSev(s)}>
                 <span className={`sev ${s}`}><span className="pip" />{s.toUpperCase()}</span>
               </DismissChip>
             ))}
             {area.size < ALL_AREAS.length && (
-              <DismissChip onDismiss={() => setArea(new Set(ALL_AREAS))}>
+              <DismissChip onDismiss={() => { invalidatePendingDetail(); setArea(new Set(ALL_AREAS)); }}>
                 영역 {area.size}/{ALL_AREAS.length}
               </DismissChip>
             )}
             <div className="flex-1" />
-            <span className="mono dim" style={{ fontSize: 12 }}>{filtered.length}건 / {rows.length}</span>
+            <span className="mono dim" style={{ fontSize: 12 }}>{filtered.length}건 표시 / 불러온 {rows.length}건</span>
           </div>
 
           <section className="panel" style={{ padding: 0 }}>
@@ -492,47 +474,59 @@ function AnomalyPage() {
                 </div>
               )}
 
-              {!loading && filtered.map((r, i) => (
+              {(!loading || rows.length > 0) && ([false, true] as const).map(observations => {
+                const items = filtered.filter(r => isDailyRankObservation(r) === observations);
+                return <details key={String(observations)} open={observations ? observationsOpen : true}
+                  onToggle={event => { if (observations) setObservationsOpen(event.currentTarget.open); }}>
+                  <summary style={{ padding: '12px 16px', cursor: 'pointer' }}>
+                    {observations ? '일일 순위 관측' : '우선 확인'} · 불러온 기록 중 {items.length}건
+                  </summary>
+                                {items.map((r, i) => (
                 <div key={r.id}
                   className={`row hover ${i % 2 ? 'alt' : ''}`}
                   style={{ gridTemplateColumns: '130px 60px 70px 1fr 220px 46px', cursor: 'pointer' }}
-                  onClick={() => setDetail(r)}
+                  onClick={() => chooseDetail(r)}
                 >
                   <span className="mono dim" style={{ fontSize: 11 }}>{formatTs(r.detected_at)}</span>
-                  <span><span className={`sev ${r.sev}`}><span className="pip" />{r.sev.toUpperCase()}</span></span>
+                  <span><span className={`sev ${r.sev}`}><span className="pip" />{isDailyRankObservation(r) ? '관측' : r.sev.toUpperCase()}</span></span>
                   <span className="mono" style={{ fontSize: 11, color: 'var(--f2)' }}>{r.area}</span>
-                  <span style={{ fontSize: 12 }}>{eventLabel(r)}</span>
+                  <span style={{ fontSize: 12 }}>{observationExplanation(r) || eventLabel(r)}</span>
                   <span className="muted ellip" style={{ fontSize: 12 }}>{r.entity_name || '—'}</span>
                   <span>
-                    <button className="btn sm icon" onClick={e => { e.stopPropagation(); setDetail(r); }}>
+                    <button className="btn sm icon" onClick={e => { e.stopPropagation(); chooseDetail(r); }}>
                       <IcArrowUR />
                     </button>
                   </span>
                 </div>
               ))}
 
-              {!loading && filtered.length === 0 && (
+                </details>;
+              })}
+
+              {!loading && !errMsg && filtered.length === 0 && (
                 <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--f4)' }}>
                   <span className="sec-tag">no results</span>
-                  <div style={{ marginTop: 8, fontSize: 12 }}>조건에 맞는 이상탐지가 없습니다.</div>
+                  <div style={{ marginTop: 8, fontSize: 12 }}>{records.hasMore ? '불러온 기록에는 조건에 맞는 항목이 없습니다. 아직 확인하지 않은 기록이 있습니다.' : '선택한 기간의 기록을 모두 불러왔으며 조건에 맞는 항목이 없습니다.'}</div>
                 </div>
               )}
             </div>
           </section>
+          {records.hasMore && <><p>일부 기록만 불러왔습니다. 필터 결과와 건수는 불러온 기록 기준입니다.</p><button className="btn" disabled={loading} onClick={records.loadMore}>{filtered.length === 0 ? '다음 기록에서 조건 계속 확인' : '더 보기'}</button></>}
+          {errMsg && <button className="btn" disabled={loading} onClick={records.retry}>다시 시도</button>}
         </div>
       </div>
 
       {detail && (
         <AnomalyDrawer
           item={detail}
-          onClose={() => setDetail(null)}
+          onClose={() => chooseDetail(null)}
           onPrev={() => {
-            const i = filtered.indexOf(detail);
-            if (i > 0) setDetail(filtered[i - 1]);
+            const i = filtered.findIndex(row => row.id === detail.id);
+            if (i > 0) chooseDetail(filtered[i - 1]);
           }}
           onNext={() => {
-            const i = filtered.indexOf(detail);
-            if (i < filtered.length - 1) setDetail(filtered[i + 1]);
+            const i = filtered.findIndex(row => row.id === detail.id);
+            if (i >= 0 && i < filtered.length - 1) chooseDetail(filtered[i + 1]);
           }}
         />
       )}

@@ -1,6 +1,8 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAnomalyRecords } from '@/hooks/useAnomalyRecords';
+import { isDailyRankObservation, prioritySeverity, observationExplanation } from '@/lib/anomaly-priority';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import MobileFilterChips from '@/components/mobile/MobileFilterChips';
 import MobileSeverityIndicator, { type Severity } from '@/components/mobile/MobileSeverityIndicator';
@@ -11,6 +13,7 @@ interface ARow {
   detected_at: string;
   detection_date: string;
   severity: string;
+  meta: Record<string, unknown> | null;
   anomaly_type: string;
   entity_type: string | null;
   entity_id: string | null;
@@ -65,30 +68,22 @@ const PERIOD_CHIPS = [
 
 export default function MobileAnomalyView() {
   const router = useRouter();
-  const [rows, setRows] = useState<ARow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const params = useSearchParams();
   const [period, setPeriod] = useState('7d');
   const [sevFilter, setSevFilter] = useState('all');
-
+  const [observationsOpen, setObservationsOpen] = useState(false);
+  const [navigationError, setNavigationError] = useState<string | null>(null);
+  const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+  const from = period === 'today' ? today : kstDaysAgo(period === '7d' ? 6 : 29);
+  const records = useAnomalyRecords(from, today);
+  const rows: ARow[] = records.rows.map(r => ({ ...r, sev: prioritySeverity(r) }));
+  const { loading } = records;
+  const navigation = useRef(0);
   useEffect(() => {
-    setLoading(true);
-    const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
-    const from = period === 'today' ? today : kstDaysAgo(period === '7d' ? 7 : 30);
-
-    supabaseBrowser()
-      .from('anomalies')
-      .select('id, detected_at, detection_date, severity, anomaly_type, entity_type, entity_id, entity_name, description')
-      .gte('detection_date', from)
-      .lte('detection_date', today)
-      .order('detected_at', { ascending: false })
-      .limit(1000)
-      .then(({ data, error }) => {
-        if (!error && data) {
-          setRows(data.map((r: any) => ({ ...r, sev: sevKey(r.severity) })));
-        }
-        setLoading(false);
-      });
-  }, [period]);
+    const value = params.get('sev');
+    setSevFilter(value && ['hi', 'md', 'lo'].includes(value) ? value : 'all');
+  }, [params]);
+  useEffect(() => { navigation.current++; setObservationsOpen(false); setNavigationError(null); return () => { navigation.current++; }; }, [from, records.identityKey]);
 
   const filtered = rows.filter(r => sevFilter === 'all' || r.sev === sevFilter);
 
@@ -99,25 +94,32 @@ export default function MobileAnomalyView() {
   };
 
   const chips = [
-    { value: 'all', label: `전체 ${rows.length}` },
+    { value: 'all', label: `불러온 기록 ${rows.length}` },
     { value: 'hi',  label: `🔴 HIGH ${counts.hi}` },
     { value: 'md',  label: `🟡 MED ${counts.md}` },
     { value: 'lo',  label: `🟢 낮음 ${counts.lo}` },
   ];
 
   async function handleRowClick(r: ARow) {
+    const ownNavigation = ++navigation.current;
+    setNavigationError(null);
     if (!r.entity_id || !r.entity_type) return;
     if (r.entity_type === 'brand') {
       router.push(`/brand?id=${r.entity_id}`);
       return;
     }
     // entity_id는 products.id (UUID) → musinsa_no 조회 필요
-    const { data } = await supabaseBrowser()
+    try {
+    const { data, error } = await supabaseBrowser()
       .from('products')
       .select('musinsa_no')
       .eq('id', r.entity_id)
       .single();
-    if (data?.musinsa_no) router.push(`/product?no=${data.musinsa_no}`);
+    if (error) throw error;
+    if (ownNavigation === navigation.current && data?.musinsa_no) router.push(`/product?no=${data.musinsa_no}`);
+    } catch {
+      if (ownNavigation === navigation.current) setNavigationError('대상 정보를 조회할 수 없습니다.');
+    }
   }
 
   return (
@@ -128,15 +130,20 @@ export default function MobileAnomalyView() {
       {/* 심각도 필터 */}
       <MobileFilterChips items={chips} activeValue={sevFilter} onChange={setSevFilter} />
 
-      {loading ? (
+      {loading && rows.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--f4)', fontSize: 13 }}>불러오는 중...</div>
       ) : filtered.length === 0 ? (
-        <MobileEmptyState icon="✅" title="이상 탐지 없음" description="선택한 기간에 이상 신호가 없습니다" />
+        <MobileEmptyState icon="✅" title={records.error ? '조회 상태 확인' : '표시할 기록 없음'} description={records.error ? '조회 실패 내용을 확인하고 다시 시도해주세요.' : records.hasMore ? '불러온 기록에는 해당 항목이 없습니다. 아직 확인하지 않은 기록이 있습니다.' : '선택한 기간의 기록을 모두 불러왔으며 조건에 맞는 항목이 없습니다.'} />
       ) : (
-        filtered.map(r => (
+        ([false, true] as const).map(observations => (
+          <details key={String(observations)} open={observations ? observationsOpen : true}
+            onToggle={event => { if (observations) setObservationsOpen(event.currentTarget.open); }}>
+            <summary style={{ padding: '12px 4px', cursor: 'pointer' }}>
+              {observations ? '일일 순위 관측' : '우선 확인'} · 불러온 기록 중 {filtered.filter(r => isDailyRankObservation(r) === observations).length}건
+            </summary>
+            {filtered.filter(r => isDailyRankObservation(r) === observations).map(r => (
           <div
             key={r.id}
-            onClick={() => handleRowClick(r)}
             style={{
               display: 'flex', alignItems: 'stretch', gap: 0,
               background: 'var(--sur)', border: '1px solid var(--bd)',
@@ -150,12 +157,18 @@ export default function MobileAnomalyView() {
             <div style={{ flex: 1, padding: '10px 12px 10px 10px', minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--f1)' }}>
-                  {anomalyLabel(r.anomaly_type)}
+                  {observationExplanation(r) || anomalyLabel(r.anomaly_type)}
                 </span>
               </div>
               {r.entity_name && (
                 <div style={{ fontSize: 12, color: 'var(--f3)', marginTop: 2 }}>{r.entity_name}</div>
               )}
+              <details onClick={event => event.stopPropagation()}>
+                <summary>기록 상세</summary>
+                <p>기록된 심각도: {r.severity.toUpperCase()}</p>
+                <p>{r.description || '설명 없음'}</p>
+              </details>
+              <button className="btn sm" disabled={!r.entity_id} onClick={event => { event.stopPropagation(); void handleRowClick(r); }}>대상 보기</button>
               {r.description && (
                 <div style={{ fontSize: 11, color: 'var(--f4)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {r.description}
@@ -167,8 +180,14 @@ export default function MobileAnomalyView() {
             </div>
             {r.entity_id && <div style={{ display: 'flex', alignItems: 'center', paddingRight: 12, color: 'var(--f4)', fontSize: 14 }}>→</div>}
           </div>
+        ))}
+          </details>
         ))
       )}
+      {records.error && <div role="alert">조회 실패: {records.error}<button className="btn" onClick={records.retry} disabled={loading}>다시 시도</button></div>}
+      {navigationError && <div role="alert">{navigationError}</div>}
+      {records.hasMore && <><p>일부 기록만 불러왔습니다. 다음 기록에도 조건에 맞는 항목이 있을 수 있습니다.</p><button className="btn" onClick={records.loadMore} disabled={loading}>{filtered.length === 0 ? '다음 기록에서 조건 계속 확인' : '더 보기'}</button></>}
+      <p>심각도와 섹션 건수는 불러온 기록 기준입니다.</p>
     </div>
   );
 }
