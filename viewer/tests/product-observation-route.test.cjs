@@ -18,7 +18,7 @@ function fixture(){
   'next/navigation':{usePathname:()=>'/product',useSearchParams:()=>new URLSearchParams(query),useRouter:()=>({push(){},replace(){},back(){}})},
   'next/link':{__esModule:true,default:Link},
   '@/lib/queries':{CATEGORY_MAP:{'000':'All'},AGE_MAP:{AGE_BAND_ALL:'All'},fetchShellStats:async()=>null,
-   fetchProductDetail:detail,fetchProductPriceHistory:async()=>[],fetchProductRankHistory:async()=>[],fetchProductCategoryRanks:async()=>({rows:[],snapshot_date:'2026-10-05'}),fetchReviews:async()=>({rows:[],total:0}),fetchBodyStats:async()=>null,searchProducts:async()=>[]},
+   fetchProductDetail:detail,fetchProductHistories:async()=>({price:[],rank:[]}),fetchProductPriceHistory:async()=>[],fetchProductRankHistory:async()=>[],fetchProductCategoryRanks:async()=>({rows:[],snapshot_date:'2026-10-05'}),fetchReviews:async()=>({rows:[],total:0}),fetchBodyStats:async()=>null,searchProducts:async()=>[]},
   '@/lib/queries-me':{fetchNoteCountForEntity:async()=>0,logView:async()=>{}},
   '@/lib/queries-product-observation':{fetchProductObservation:async(value)=>{calls.observation.push(value);return{status:'missing'};}},
   '@/lib/supabase/client':{supabaseBrowser:()=>({auth:{onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}}),getUser:async()=>({data:{user:{id:'account-a'}}})}})},

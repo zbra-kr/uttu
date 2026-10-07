@@ -6,8 +6,8 @@ global.IS_REACT_ACT_ENVIRONMENT=true;global.fetch=()=>{throw Error('network forb
 async function scenario(name,opts={}){
  let now=0,no='123',events=[],queue=[],seq=0,tree,unmounted=false;const als=new AsyncLocalStorage();
  const log=(kind,extra={})=>events.push({at:now,kind,...extra});
- const delays={fetchProductDetail:10,fetchProductPriceHistory:100,fetchProductRankHistory:80,fetchProductCategoryRanks:35,fetchReviews:50,fetchBodyStats:30,...opts.delays};
- function query(table,rpc,args){const ctx=als.getStore();let select='',filters={};const target={};const proxy=new Proxy(target,{get(_,key){if(key==='then')return(resolve,reject)=>{log(rpc?'rpc-dispatch':'table-dispatch',{helper:ctx.helper,product:ctx.product,table,select,filters,args});queue.push({at:now+(opts.productDelays?.[String(ctx.product)]?.[ctx.helper]??delays[ctx.helper]),id:seq++,run(){if(opts.fail===ctx.helper&&(!opts.failBOnly||String(ctx.product).includes('456'))&&(!opts.failAOnly||String(ctx.product).includes('123'))){log('transport-reject',{helper:ctx.helper});reject(Error('fixture transport'));return}let data=[];if(table==='products')data=opts.missing?null:{id:'uuid-'+ctx.product,musinsa_no:Number(ctx.product),name:'Fixture '+ctx.product,is_own:opts.own!==false&&!(opts.nonOwnB&&ctx.product==='456'),brands:{name:'Fixture brand'}};if(table==='reviews')data=[{id:'review-'+ctx.product,product_id:ctx.product,rating:5,review_text:'REVIEW-'+ctx.product,review_date:'2026-10-05',products:{name:'Review product '+ctx.product,musinsa_no:ctx.product.replace('uuid-','')}}];if(rpc)data=[{type:'height',bucket:'HEIGHT-'+ctx.product,avg_rating:4.5,cnt:11},{type:'weight',bucket:'WEIGHT-'+ctx.product,avg_rating:4,cnt:11}];if(select==='snapshot_date')data=[{snapshot_date:'2026-10-05'}];log('reader-response',{helper:ctx.helper,table});resolve({data,error:opts.sdkFail===ctx.helper?{message:'fixture SDK error'}:null,count:0})}})};return(...a)=>{if(key==='select')select=a[0];if(key==='eq')filters[a[0]]=a[1];return proxy}}});return proxy}
+ const delays={fetchProductDetail:10,fetchProductHistories:100,fetchProductCategoryRanks:35,fetchReviews:50,fetchBodyStats:30,...opts.delays};
+ function query(table,rpc,args){const ctx=als.getStore();let select='',filters={};const target={};const proxy=new Proxy(target,{get(_,key){if(key==='then')return(resolve,reject)=>{log(rpc?'rpc-dispatch':'table-dispatch',{helper:ctx.helper,product:ctx.product,table,select,filters,args});queue.push({at:now+(opts.productDelays?.[String(ctx.product)]?.[ctx.helper]??delays[ctx.helper]),id:seq++,run(){if(opts.fail===ctx.helper&&(!opts.failBOnly||String(ctx.product).includes('456'))&&(!opts.failAOnly||String(ctx.product).includes('123'))){log('transport-reject',{helper:ctx.helper});reject(Error('fixture transport'));return}let data=[];if(table==='products')data=opts.missing?null:{id:'uuid-'+ctx.product,musinsa_no:Number(ctx.product),name:'Fixture '+ctx.product,is_own:opts.own!==false&&!(opts.nonOwnB&&ctx.product==='456'),brands:{name:'Fixture brand'}};if(table==='reviews')data=[{id:'review-'+ctx.product,product_id:ctx.product,rating:5,review_text:'REVIEW-'+ctx.product,review_date:'2026-10-05',products:{name:'Review product '+ctx.product,musinsa_no:ctx.product.replace('uuid-','')}}];if(rpc)data=[{type:'height',bucket:'HEIGHT-'+ctx.product,avg_rating:4.5,cnt:11},{type:'weight',bucket:'WEIGHT-'+ctx.product,avg_rating:4,cnt:11}];if(table==='get_product_history_v1')data=require('./fixtures/product-history-weekly.json');if(select==='snapshot_date')data=[{snapshot_date:'2026-10-05'}];log('reader-response',{helper:ctx.helper,table});resolve({data,error:opts.sdkFail===ctx.helper?{message:'fixture SDK error'}:null,count:0})}})};return(...a)=>{if(key==='select')select=a[0];if(key==='eq')filters[a[0]]=a[1];return proxy}}});return proxy}
  const client={from:table=>query(table,false),rpc:(name,args)=>query(name,true,args)};
  const actual=load('src/lib/queries.ts',{'./supabase/client':{supabaseBrowser:()=>client}});
  const helpers={...actual};for(const helper of Object.keys(delays))helpers[helper]=(...args)=>{const product=typeof args[0]==='object'?args[0].productId:args[0];log('helper-start',{helper,product});return als.run({helper,product},()=>actual[helper](...args)).then(v=>{log('helper-end',{helper,product});return v})};
@@ -26,28 +26,29 @@ async function scenario(name,opts={}){
 
 const test=require('node:test'),assert=require('node:assert/strict');
 const cases=[
- ['own slow history',{},100,7,1,10],
- ['own slow detail',{delays:{fetchProductDetail:120}},170,7,1,120],
- ['non-own',{own:false},100,7,0,100],
- ['missing detail',{missing:true},100,6,0,null],
- ['early history failure',{fail:'fetchProductPriceHistory',delays:{fetchProductPriceHistory:5}},5,6,0,null],
- ['detail failure',{fail:'fetchProductDetail'},10,6,0,null],
- ['late history failure',{fail:'fetchProductPriceHistory'},100,7,1,10],
- ['review rejection',{fail:'fetchReviews'},100,7,1,10],
- ['body SDK degradation',{sdkFail:'fetchBodyStats'},100,7,1,10],
- ['review SDK error',{sdkFail:'fetchReviews'},100,7,1,10],
- ['body transport rejection',{fail:'fetchBodyStats'},100,7,1,10],
- ['cancel before identity',{cancelAt:5},undefined,6,0,null],
- ['cancel after extras',{cancelAt:20},undefined,7,1,10],
- ['navigate before identity',{navigateAt:5},105,13,1,15],
- ['navigate during extras',{navigateAt:20},120,14,2,10],
+ ['own slow history',{},70,5,2,10],
+ ['own slow detail',{delays:{fetchProductDetail:120}},170,5,2,120],
+ ['non-own',{own:false},70,5,1,70],
+ ['missing detail',{missing:true},70,4,1,null],
+ ['early history failure',{fail:'fetchProductHistories',delays:{fetchProductHistories:5}},70,5,2,10],
+ ['detail failure',{fail:'fetchProductDetail'},10,4,1,null],
+ ['late history failure',{fail:'fetchProductHistories'},70,5,2,10],
+ ['review rejection',{fail:'fetchReviews'},70,5,2,10],
+ ['body SDK degradation',{sdkFail:'fetchBodyStats'},70,5,2,10],
+ ['review SDK error',{sdkFail:'fetchReviews'},70,5,2,10],
+ ['body transport rejection',{fail:'fetchBodyStats'},70,5,2,10],
+ ['cancel before identity',{cancelAt:5},undefined,4,1,null],
+ ['cancel after extras',{cancelAt:20},undefined,5,2,10],
+ ['navigate before identity',{navigateAt:5},75,9,3,15],
+ ['navigate during extras',{navigateAt:20},90,10,4,10],
 ];
 for(const[name,opts,ready,reads,rpcs,extraAt]of cases)test('MobileProduct actual reader waterfall: '+name,async()=>{
  const r=await scenario(name,opts);assert.equal(r.readyAt,ready);assert.equal(r.tableReads,reads);assert.equal(r.rpcCalls,rpcs);
  const reviews=r.events.filter(e=>e.kind==='helper-start'&&e.helper==='fetchReviews');assert.equal(reviews[0]?.at??null,extraAt);
  if(opts.navigateAt){assert.equal(r.events.some(e=>e.kind==='render'&&e.at>=opts.navigateAt&&e.product123),false);assert.equal(r.events.some(e=>e.kind==='render'&&e.product456),true)}
  if(opts.fail==='fetchReviews'||opts.fail==='fetchBodyStats'||opts.sdkFail)assert.equal(r.events.some(e=>e.kind==='render'&&!e.loading&&e.product123),true);
- if(opts.fail==='fetchProductDetail'||opts.fail==='fetchProductPriceHistory')assert.equal(r.events.some(e=>e.kind==='render'&&e.product123),false);
+ if(opts.fail==='fetchProductDetail')assert.equal(r.events.some(e=>e.kind==='render'&&e.product123),false);
+ if(opts.fail==='fetchProductHistories')assert.equal(r.events.some(e=>e.kind==='render'&&e.product123),true);
  if(opts.cancelAt)assert.equal(r.events.filter(e=>e.kind==='setter-attempt'&&e.unmounted).length,0);
 });
 
@@ -66,7 +67,7 @@ for(const failure of [null,'fetchReviews','fetchBodyStats'])test('MobileProduct 
 });
 test('MobileProduct unmount after initial wave observes late extras rejection without setters',async()=>{
  const r=await scenario('unmount awaiting A extras',{cancelAt:120,fail:'fetchReviews',productDelays:{'uuid-123':{fetchReviews:300,fetchBodyStats:300}}});
- assert.ok(r.events.some(e=>e.kind==='setter-attempt'&&e.at===100&&!e.unmounted));
+ assert.ok(r.events.some(e=>e.kind==='setter-attempt'&&e.at===70&&!e.unmounted));
  assert.ok(r.events.some(e=>e.kind==='transport-reject'&&e.at===310));
  assert.equal(r.events.filter(e=>e.kind==='setter-attempt'&&e.unmounted).length,0);
  for(const helper of ['fetchReviews','fetchBodyStats']){const start=r.events.find(e=>e.kind==='helper-start'&&e.helper===helper);assert.equal(start.product,'uuid-123');assert.equal(start.at,10)}

@@ -15,7 +15,7 @@ async function run(file, options={}) {
     calls.push({name,start:now,args});events.push({at:now+delays[name],run:()=>options.fail===name?reject(new Error(name)):resolve(result[name])});
   });
   const sandbox={React:{useEffect:f=>{cleanup=f()}},selectedNo:options.noSelection?'':'123',console:{error:e=>state.push(['error',e.message])},window:{dispatchEvent:()=>{}},CustomEvent:function(){},Promise,
-    fetchProductDetail:fn('detail'),fetchProductPriceHistory:fn('price'),fetchProductRankHistory:fn('rank'),fetchProductCategoryRanks:fn('category'),fetchReviews:fn('reviews'),fetchBodyStats:fn('body')};
+    fetchProductHistories:async(...args)=>{const [price,rank]=await Promise.all([fn('price')(...args),fn('rank')(...args)]);return {price,rank};},fetchProductDetail:fn('detail'),fetchProductPriceHistory:fn('price'),fetchProductRankHistory:fn('rank'),fetchProductCategoryRanks:fn('category'),fetchReviews:fn('reviews'),fetchBodyStats:fn('body')};
   for(const name of ['Loading','Detail','Reviews','RankHistory','CategoryRanks','CategoryRanksDate','PriceHistory','BodyStats'])sandbox['set'+name]=v=>state.push([name,v,now]);
   vm.runInNewContext(compiled,sandbox);
   if(options.cancelAt!==undefined)events.push({at:options.cancelAt,run:()=>cleanup()});
@@ -27,10 +27,14 @@ const before='source/product-page.tsx',after='detail-candidate/product-page.tsx'
  let total=0;const output=[];
  for(const [label,opts] of Object.entries({noSelection:{noSelection:true},own:{},external:{own:false},empty:{empty:true},detailFailure:{fail:'detail'},earlyHistoryFailure:{fail:'price',delays:{price:5}},priceFailure:{fail:'price'},reviewFailure:{fail:'reviews'},bodyFailure:{fail:'body'},earlyCancel:{cancelAt:5},lateCancel:{cancelAt:75}})){
   const a=await run(before,opts),b=await run(after,opts);
-  assert.deepEqual(b.state.map(x=>x.slice(0,2)),a.state.map(x=>x.slice(0,2)),label+' state/error parity');
-  if(label==='own'){assert.equal(a.ready,150);assert.equal(b.ready,100);assert.equal(a.calls.find(x=>x.name==='reviews').start,100);assert.equal(b.calls.find(x=>x.name==='reviews').start,10);assert.deepEqual(b.calls.find(x=>x.name==='reviews').args,a.calls.find(x=>x.name==='reviews').args);}
-  if(['noSelection','external','empty','detailFailure','earlyCancel','earlyHistoryFailure'].includes(label))assert.ok(!b.calls.some(x=>x.name==='reviews'));
-  output.push({scenario:label,beforeReady:a.ready??null,afterReady:b.ready??null,beforeRequests:a.calls.length,afterRequests:b.calls.length,stateAndErrorParity:true});total++;
+  const ancillary=state=>state.filter(x=>!['PriceHistory','RankHistory'].includes(x[0])).map(x=>x.slice(0,2));
+  if(!['earlyHistoryFailure','priceFailure','lateCancel'].includes(label))assert.deepEqual(ancillary(b.state),ancillary(a.state),label+' ancillary state/error parity');
+  assert.ok(!b.calls.some(x=>['price','rank'].includes(x.name)),'history is owned by independent actual hook fixtures');
+  if(['earlyHistoryFailure','priceFailure'].includes(label)){assert.ok(b.state.some(x=>x[0]==='Detail'&&x[1]));assert.ok(b.calls.some(x=>x.name==='reviews'));}
+  if(opts.cancelAt!==undefined)assert.ok(!b.state.some(x=>x[2]>=opts.cancelAt));
+  if(label==='own'){assert.equal(a.ready,150);assert.equal(b.ready,70);assert.equal(a.calls.find(x=>x.name==='reviews').start,100);assert.equal(b.calls.find(x=>x.name==='reviews').start,10);assert.deepEqual(b.calls.find(x=>x.name==='reviews').args,a.calls.find(x=>x.name==='reviews').args);}
+  if(['noSelection','external','empty','detailFailure','earlyCancel'].includes(label))assert.ok(!b.calls.some(x=>x.name==='reviews'));
+  output.push({scenario:label,beforeReady:a.ready??null,afterReady:b.ready??null,beforeRequests:a.calls.length,afterRequests:b.calls.length,ancillaryChecksPassed:true});total++;
  }
  console.log(JSON.stringify({classification:'Deterministic synthetic schedule in virtual milliseconds; NOT production latency. Query counts here are function calls, not HTTP requests.',passed:total,scenarios:output},null,2));
 })().catch(e=>{console.error(e);process.exitCode=1});

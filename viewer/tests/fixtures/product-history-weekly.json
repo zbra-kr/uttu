@@ -1,0 +1,68 @@
+{
+  "mode": "weekly",
+  "scope": "product-wide-best",
+  "store": "musinsa",
+  "points": [
+    {
+      "date": "2026-09-13",
+      "rank": 2,
+      "price": 50023,
+      "weekEnd": "2026-09-13",
+      "category": "000",
+      "weekStart": "2026-09-07",
+      "currentWeek": false,
+      "observedDays": 3,
+      "discount_rate": 0
+    },
+    {
+      "date": "2026-09-20",
+      "rank": 2,
+      "price": 50016,
+      "weekEnd": "2026-09-20",
+      "category": "000",
+      "weekStart": "2026-09-14",
+      "currentWeek": false,
+      "observedDays": 7,
+      "discount_rate": 0
+    },
+    {
+      "date": "2026-09-27",
+      "rank": 2,
+      "price": 50009,
+      "weekEnd": "2026-09-27",
+      "category": "000",
+      "weekStart": "2026-09-21",
+      "currentWeek": false,
+      "observedDays": 7,
+      "discount_rate": 0
+    },
+    {
+      "date": "2026-10-04",
+      "rank": 2,
+      "price": 50002,
+      "weekEnd": "2026-10-04",
+      "category": "000",
+      "weekStart": "2026-09-28",
+      "currentWeek": false,
+      "observedDays": 7,
+      "discount_rate": 0
+    },
+    {
+      "date": "2026-10-06",
+      "rank": 2,
+      "price": 50000,
+      "weekEnd": "2026-10-11",
+      "category": "000",
+      "weekStart": "2026-10-05",
+      "currentWeek": true,
+      "observedDays": 2,
+      "discount_rate": 0
+    }
+  ],
+  "version": 1,
+  "threshold": 500,
+  "horizonEnd": "2026-10-06",
+  "latestDate": "2026-10-06",
+  "eligibleRows": 501,
+  "horizonStart": "2025-10-13"
+}

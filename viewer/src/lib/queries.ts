@@ -1,3 +1,4 @@
+import { parseProductHistoryReceipt } from './product-history-window';
 import { readCount, kstInsertDate, RUNNING_RECORD_LIMIT, type RunningRecords } from './collection-status';
 import { supabaseBrowser } from './supabase/client';
 import { kstDaysAgo } from './format';
@@ -1614,6 +1615,7 @@ export interface ProductDetail {
   discount_rate: number | null;
   review_score: number | null;     // 0~100 만족도% (ranking_snapshots)
   rank_position: number | null;
+  rank_snapshot_date?: string | null;
   review_count: number;
   satisfaction_score: number | null;  // 별점 4.9 (products)
   category_code: string;
@@ -1667,10 +1669,15 @@ export async function fetchProductDetail(musinsaNo: string): Promise<ProductDeta
     // 랭킹 스냅샷에서 최신 데이터 — 카테고리/성별 필터 없이 가장 최근 행 1개
     supabase
       .from('ranking_snapshots')
-      .select('rank_position, final_price, list_price, discount_rate, review_score, product_name, brand_name')
+      .select('snapshot_date, rank_position, final_price, list_price, discount_rate, review_score, product_name, brand_name')
       .eq('musinsa_no', no)
+      .eq('store_code', 'musinsa')
+      .not('rank_position', 'is', null).gt('rank_position', 0)
       .order('snapshot_date', { ascending: false })
       .order('rank_position', { ascending: true })
+      .order('category_code', { ascending: true })
+      .order('gender_filter', { ascending: true })
+      .order('age_filter', { ascending: true })
       .limit(1),
   ]);
 
@@ -1696,6 +1703,7 @@ export async function fetchProductDetail(musinsaNo: string): Promise<ProductDeta
     discount_rate: r?.discount_rate ?? null,
     review_score: r?.review_score ?? null,
     rank_position: r?.rank_position ?? null,
+    rank_snapshot_date: r?.snapshot_date ?? null,
     review_count: p?.review_count ?? 0,
     satisfaction_score: p?.satisfaction_score != null ? Number(p.satisfaction_score) : null,
     category_code: p?.category_code ?? '000',
@@ -1728,22 +1736,15 @@ export async function fetchProductDetail(musinsaNo: string): Promise<ProductDeta
   };
 }
 
-export async function fetchProductPriceHistory(musinsaNo: string): Promise<{ date: string; price: number; discount_rate: number | null }[]> {
-  const { data } = await supabase
-    .from('ranking_snapshots')
-    .select('snapshot_date, final_price, discount_rate, rank_position')
-    .eq('musinsa_no', parseInt(musinsaNo, 10))
-    .not('final_price', 'is', null)
-    .gt('final_price', 0)
-    .order('snapshot_date', { ascending: true })
-    .order('rank_position', { ascending: true })  // best rank first → 날짜별 가장 대표적인 행
-    .limit(500);
-  const seen = new Set<string>();
-  return (data ?? []).filter((r: any) => {
-    if (seen.has(r.snapshot_date)) return false;
-    seen.add(r.snapshot_date);
-    return true;
-  }).map((r: any) => ({ date: r.snapshot_date, price: r.final_price, discount_rate: r.discount_rate ?? null }));
+export async function fetchProductHistories(musinsaNo: string) {
+  if (!/^[1-9][0-9]{0,19}$/.test(musinsaNo)) throw Error('Invalid product history scope');
+  const { data, error } = await supabase.rpc('get_product_history_v1', { p_musinsa_no: musinsaNo, p_store_code: 'musinsa' });
+  if (error) throw Error('Product history unavailable');
+  return parseProductHistoryReceipt(data);
+}
+
+export async function fetchProductPriceHistory(musinsaNo: string) {
+  return (await fetchProductHistories(musinsaNo)).price;
 }
 
 // 카테고리별 진입 현황 — 최신 날짜 기준 카테고리별 최고 순위
@@ -1803,25 +1804,8 @@ export async function fetchProductCategoryRanks(musinsaNo: string): Promise<Cate
   return { snapshot_date: latestDate, rows };
 }
 
-export async function fetchProductRankHistory(musinsaNo: string): Promise<{ date: string; rank: number; category: string }[]> {
-  const { data } = await supabase
-    .from('ranking_snapshots')
-    .select('snapshot_date, rank_position, category_code')
-    .eq('musinsa_no', parseInt(musinsaNo, 10))
-    .not('rank_position', 'is', null)
-    .order('snapshot_date', { ascending: true })
-    .order('rank_position', { ascending: true })  // best rank first per date
-    .limit(500);
-  // 날짜별 best rank 1개만 — 여러 카테고리 중 가장 높은 순위
-  const seen = new Map<string, { rank: number; category: string }>();
-  for (const r of (data ?? []) as any[]) {
-    if (!seen.has(r.snapshot_date)) {
-      seen.set(r.snapshot_date, { rank: r.rank_position, category: r.category_code });
-    }
-  }
-  return [...seen.entries()]
-    .map(([date, v]) => ({ date, rank: v.rank, category: v.category }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+export async function fetchProductRankHistory(musinsaNo: string) {
+  return (await fetchProductHistories(musinsaNo)).rank;
 }
 
 // ── 홈 대시보드 전용 쿼리 ───────────────────────────────────────────────

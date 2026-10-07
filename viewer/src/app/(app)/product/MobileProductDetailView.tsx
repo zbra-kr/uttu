@@ -1,10 +1,12 @@
 'use client';
+import ProductHistoryCoverage from '@/components/product/ProductHistoryCoverage';
+import { useProductHistory } from '@/lib/use-product-history';
 import { formatFiveStarRating } from '@/lib/rating-format';
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import {
-  fetchProductDetail, fetchProductPriceHistory, fetchProductRankHistory,
+  fetchProductDetail,
   fetchProductCategoryRanks, fetchReviews, fetchBodyStats,
   CATEGORY_MAP, AGE_MAP,
   type ProductDetail, type ReviewRow, type CategoryRankRow, type BodyStats,
@@ -68,8 +70,7 @@ export default function MobileProductDetailView() {
   const { noteDrawerOpen, setNoteDrawerOpen } = useSourceNoteDrawer(no);
 
   const [detail,         setDetail]         = useState<ProductDetail | null>(null);
-  const [priceHistory,   setPriceHistory]   = useState<{ date: string; price: number; discount_rate: number | null }[]>([]);
-  const [rankHistory,    setRankHistory]    = useState<{ date: string; rank: number; category: string }[]>([]);
+  const { priceHistory, rankHistory, status: historyStatus, retry: retryHistory } = useProductHistory(no);
   const [categoryRanks,  setCategoryRanks]  = useState<CategoryRankRow[]>([]);
   const [categoryDate,   setCategoryDate]   = useState('');
   const [reviews,        setReviews]        = useState<ReviewRow[]>([]);
@@ -106,14 +107,10 @@ export default function MobileProductDetailView() {
     }, () => null);
     Promise.all([
       detailPromise,
-      fetchProductPriceHistory(no),
-      fetchProductRankHistory(no),
       fetchProductCategoryRanks(no),
-    ]).then(async ([det, price, rank, cr]) => {
+    ]).then(async ([det, cr]) => {
       if (!active) return;
       setDetail(det);
-      setPriceHistory(price);
-      setRankHistory(rank);
       setCategoryRanks(cr.rows);
       setCategoryDate(cr.snapshot_date);
       if (det?.is_own) {
@@ -140,7 +137,7 @@ export default function MobileProductDetailView() {
   const ranks = rankHistory.map(r => r.rank);
   const minRank = ranks.length > 0 ? Math.min(...ranks) : 0;
   const maxRank = ranks.length > 0 ? Math.max(...ranks) : 0;
-  const rankChartData = rankHistory.map(r => ({ date: fmtDate(r.date), rank: r.rank }));
+  const rankChartData = rankHistory.map(r => ({ date: r.date, rank: r.rank }));
   const rankFirst = ranks[0];
   const rankLast  = ranks[ranks.length - 1];
   const rankTrend = ranks.length > 1 ? (rankLast < rankFirst ? 'up' : rankLast > rankFirst ? 'dn' : 'flat') : 'flat';
@@ -168,11 +165,11 @@ export default function MobileProductDetailView() {
     ? Math.round(discountDays.reduce((s, d) => s + d, 0) / discountDays.length) : null;
 
   // 가격 차트
-  const prices    = priceHistory.map(p => p.price);
+  const prices    = priceHistory.map(p => p.price).filter((price): price is number => price !== null);
   const minPrice  = prices.length > 0 ? Math.min(...prices) : 0;
   const maxPrice  = prices.length > 0 ? Math.max(...prices) : 0;
   const pricePad  = Math.max(Math.round((maxPrice - minPrice) * 0.15), 1000);
-  const priceChartData = priceHistory.map(p => ({ date: fmtDate(p.date), price: p.price, discount: p.discount_rate ?? 0 }));
+  const priceChartData = priceHistory.map(p => ({ date: p.date, price: p.price, discount: p.discount_rate ?? 0 }));
 
   const activeFlags = FLAG_LABELS.filter(([key]) => (detail as any)[key]).map(([, label]) => label);
 
@@ -255,10 +252,11 @@ export default function MobileProductDetailView() {
       </div>
 
       {/* ── 랭킹 추이 ── */}
-      {rankHistory.length >= 2 && (
+      <ProductHistoryCoverage coverage={rankHistory.coverage} status={historyStatus} onRetry={retryHistory} />
+      {rankHistory.length >= 1 && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>랭킹 추이 ({rankHistory.length}일)</span>
+            <span style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>랭킹 추이 ({rankHistory.length}{rankHistory.coverage?.mode === 'weekly' ? '주' : '일'})</span>
             <span style={{ fontSize: 11, color: rankColor, fontFamily: 'var(--mono)', fontWeight: 600 }}>
               {rankTrend === 'up' ? '↑ ' : rankTrend === 'dn' ? '↓ ' : ''}#{rankFirst} → #{rankLast}
             </span>
@@ -279,25 +277,25 @@ export default function MobileProductDetailView() {
       )}
 
       {/* ── 가격 추이 ── */}
-      {priceHistory.length >= 2 && (
+      {priceHistory.length >= 1 && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>가격 추이 ({priceHistory.length}일)</span>
+            <span style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>가격 추이 ({priceHistory.length}{rankHistory.coverage?.mode === 'weekly' ? '주' : '일'})</span>
             <span style={{ fontSize: 11, color: 'var(--f3)', fontFamily: 'var(--mono)' }}>
-              {minPrice === maxPrice ? `${minPrice.toLocaleString()}원` : `${minPrice.toLocaleString()} ~ ${maxPrice.toLocaleString()}원`}
+              {prices.length === 0 ? '가격 관측 없음' : minPrice === maxPrice ? `${minPrice.toLocaleString()}원` : `${minPrice.toLocaleString()} ~ ${maxPrice.toLocaleString()}원`}
             </span>
           </div>
-          <ResponsiveContainer width="100%" height={130}>
+          {prices.length === 0 ? <p style={{ fontSize: 11, color: 'var(--f4)' }}>동일 순위 관측의 유효 가격이 없습니다.</p> : <ResponsiveContainer width="100%" height={130}>
             <LineChart data={priceChartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
               <XAxis dataKey="date" tick={{ fontSize: 9, fill: 'var(--f4)', fontFamily: 'var(--mono)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
               <YAxis domain={[minPrice - pricePad, maxPrice + pricePad]} tick={{ fontSize: 9, fill: 'var(--f4)' }} tickLine={false} axisLine={false} width={44} tickFormatter={v => `${Math.round(v / 1000)}k`} />
               <Tooltip contentStyle={{ background: 'var(--sur)', border: '0.5px solid var(--bs)', borderRadius: 5, fontSize: 11 }} formatter={(v: unknown) => [`${Number(v).toLocaleString()}원`, '가격']} labelStyle={{ fontSize: 10 }} />
-              <Line type="monotone" dataKey="price" stroke="var(--f1)" strokeWidth={2} dot={priceChartData.length <= 7} activeDot={{ r: 4 }} />
-              {priceChartData.filter(d => d.discount > 0).map(d => (
+              <Line type="monotone" dataKey="price" connectNulls={false} stroke="var(--f1)" strokeWidth={2} dot={priceChartData.length <= 7} activeDot={{ r: 4 }} />
+              {priceChartData.filter((d): d is typeof d & { price: number } => d.discount > 0 && d.price !== null).map(d => (
                 <ReferenceDot key={d.date} x={d.date} y={d.price} r={4} fill="var(--shf)" stroke="var(--sur)" strokeWidth={1.5} />
               ))}
             </LineChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer>}
         </div>
       )}
 

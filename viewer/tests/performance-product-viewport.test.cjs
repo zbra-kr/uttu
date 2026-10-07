@@ -6,8 +6,8 @@ function fixture(mobile, initialQuery = 'no=123') {
   let query = initialQuery; const calls = [], listeners = new Set();
   const media = { matches: mobile, addEventListener(_, fn) { listeners.add(fn); }, removeEventListener(_, fn) { listeners.delete(fn); } };
   const queries = { CATEGORY_MAP: {}, AGE_MAP: {} };
-  for (const name of ['fetchProductDetail', 'fetchProductPriceHistory', 'fetchProductRankHistory', 'fetchProductCategoryRanks']) {
-    queries[name] = async no => { calls.push([name, no]); return name === 'fetchProductDetail' ? null : name === 'fetchProductCategoryRanks' ? { rows: [], snapshot_date: '' } : []; };
+  for (const name of ['fetchProductHistories', 'fetchProductDetail', 'fetchProductCategoryRanks']) {
+    queries[name] = async no => { calls.push([name, no]); return name === 'fetchProductHistories' ? { price: [], rank: [] } : name === 'fetchProductDetail' ? null : name === 'fetchProductCategoryRanks' ? { rows: [], snapshot_date: '' } : []; };
   }
   function Mobile() { React.useEffect(() => { calls.push(['mobile-mount', query]); }, []); return React.createElement('main', null, 'Mobile product'); }
   const hidden = { __esModule: true, default: () => null };
@@ -41,7 +41,7 @@ test('cold mobile skips desktop reads and both resize directions retain existing
     await React.act(async () => { root = Renderer.create(React.createElement(f.Page)); });
     assert.deepEqual(f.calls, [['mobile-mount', 'no=123']]);
     await React.act(async () => f.resize(false));
-    for (const name of ['fetchProductDetail', 'fetchProductPriceHistory', 'fetchProductRankHistory', 'fetchProductCategoryRanks']) assert.equal(f.calls.filter(c => c[0] === name).length, 1);
+    for (const name of ['fetchProductDetail', 'fetchProductHistories', 'fetchProductCategoryRanks']) assert.equal(f.calls.filter(c => c[0] === name).length, 1);
     await React.act(async () => f.resize(true)); assert.equal(f.calls.filter(c => c[0] === 'mobile-mount').length, 2);
     assert.equal(f.calls.filter(c => c[0] === 'fetchProductDetail').length, 1);
   } finally { if (root) await React.act(async () => root.unmount()); assert.equal(f.listeners.size, 0); if (saved === undefined) delete global.window; else global.window = saved; }
@@ -50,7 +50,7 @@ test('cold desktop acquires each actual first-wave reader exactly once', async (
   const saved = global.window, f = fixture(false); global.window = { matchMedia: () => f.media, dispatchEvent() {} }; let root;
   try {
     await React.act(async () => { root = Renderer.create(React.createElement(f.Page)); });
-    assert.deepEqual(f.calls.map(c => c[0]), ['fetchProductDetail', 'fetchProductPriceHistory', 'fetchProductRankHistory', 'fetchProductCategoryRanks']);
+    assert.deepEqual(f.calls.map(c => c[0]).sort(), ['fetchProductDetail', 'fetchProductHistories', 'fetchProductCategoryRanks'].sort());
     assert.ok(JSON.stringify(root.toJSON()).includes('상품 정보를 찾을 수 없습니다'));
   } finally { if (root) await React.act(async () => root.unmount()); if (saved === undefined) delete global.window; else global.window = saved; }
 });

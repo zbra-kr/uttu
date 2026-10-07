@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const baseline = path.join(__dirname, 'fixtures/performance-baseline');
 const live = {
+  'product-history-window.ts': 'src/lib/product-history-window.ts',
   'queries.ts': 'src/lib/queries.ts',
   'ranking-page.tsx': 'src/app/(app)/ranking/page.tsx',
   'reviews-page.tsx': 'src/app/(app)/reviews/page.tsx',

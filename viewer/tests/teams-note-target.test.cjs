@@ -165,7 +165,7 @@ for (const [kind, mobile, parameter] of [['product', 'MobileProductDetailView', 
       mocks: {
         '@/lib/observation-review-context': { useObservationReviewState: () => null },
         '@/components/product/ProductReviewMode': { __esModule: true, default: ({ children }) => children },
-        '@/lib/queries': { fetchProductDetail: info, fetchProductPriceHistory: empty, fetchProductRankHistory: empty,
+        '@/lib/queries': { fetchProductDetail: info, fetchProductHistories:async()=>({price:[],rank:[]}),fetchProductPriceHistory: empty, fetchProductRankHistory: empty,
           fetchProductCategoryRanks: async () => ({ rows: [], snapshot_date: '' }), fetchReviews: async () => ({ rows: [] }),
           fetchBrandInfo: info, fetchBrandStats: async () => ({ skuCount: 0 }), fetchBrandProducts: empty,
           fetchBrandRankHistory: empty, fetchBrandRankingDistribution: empty,

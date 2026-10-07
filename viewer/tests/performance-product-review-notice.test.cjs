@@ -18,7 +18,7 @@ for (const mobile of [false, true]) for (const own of [false, true]) {
     const detail = { id: 'fixture-product', musinsa_no: 123, name: 'Fixture product', brand_name: 'Fixture brand', is_own: own,
       final_price: 1000, list_price: 1000, review_count: 0, rating: null, ranking_best_records: [], item_seasons: [], labels: [], colors: [], sizes: [] };
     const queries = { CATEGORY_MAP: {}, AGE_MAP: {} };
-    for (const [name, result] of Object.entries({ fetchProductDetail: detail, fetchProductPriceHistory: [], fetchProductRankHistory: [],
+    for (const [name, result] of Object.entries({ fetchProductDetail: detail, fetchProductHistories: { price: [], rank: [] },
       fetchProductCategoryRanks: { rows: [], snapshot_date: '' }, fetchReviews: { rows: mobile && !own ? [{ id: 'fixture-review', rating: 5, review_date: '2026-10-05', review_text: 'Saved competitor review', image_urls: [], satisfactions: [] }] : [], total: mobile && !own ? 1 : 0 }, fetchBodyStats: null })) {
       queries[name] = async (...args) => { calls.push([name, ...args]); return result; };
     }

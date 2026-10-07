@@ -24,7 +24,7 @@ async function detail(file, configs, navigationAt) {
       if (delays[name] === 0) return fail ? Promise.reject(Error(name)) : Promise.resolve(values[name]);
       return new Promise((resolve,reject) => events.push({at:now+delays[name], run:()=>fail?reject(Error(name)):resolve(values[name])}));
     };
-    const box = {React:{useEffect:f=>{cleanup=f();}},selectedNo:id,Promise, console:{error:e=>writes.push({id,key:'Error',value:e.message,at:now})},window:{dispatchEvent:event=>writes.push({id,key:'Event',value:event.type,at:now})},CustomEvent:function(type){this.type=type},fetchProductDetail:fn('detail'),fetchProductPriceHistory:fn('price'),fetchProductRankHistory:fn('rank'),fetchProductCategoryRanks:fn('category'),fetchReviews:fn('reviews'),fetchBodyStats:fn('body')};
+    const box = {React:{useEffect:f=>{cleanup=f();}},selectedNo:id,Promise, console:{error:e=>writes.push({id,key:'Error',value:e.message,at:now})},window:{dispatchEvent:event=>writes.push({id,key:'Event',value:event.type,at:now})},CustomEvent:function(type){this.type=type},fetchProductHistories:async(...args)=>{const [price,rank]=await Promise.all([fn('price')(...args),fn('rank')(...args)]);return {price,rank};},fetchProductDetail:fn('detail'),fetchProductPriceHistory:fn('price'),fetchProductRankHistory:fn('rank'),fetchProductCategoryRanks:fn('category'),fetchReviews:fn('reviews'),fetchBodyStats:fn('body')};
     for (const key of ['Loading','Detail','Reviews','RankHistory','CategoryRanks','CategoryRanksDate','PriceHistory','BodyStats']) box['set'+key] = value => writes.push({id,key,value,at:now});
     vm.runInNewContext(detailCode(file),box);
   };
@@ -36,21 +36,20 @@ async function detail(file, configs, navigationAt) {
 }
 (async () => {
   const before='source/product-page.tsx',after='detail-candidate/product-page.tsx',checks=[];
+  const ancillary=w=>w.filter(x=>!['PriceHistory','RankHistory'].includes(x.key)).map(({at,...x})=>x);
   // Rejections occur before first-wave completion, with real Node turn boundaries.
   for (const fail of [['reviews'],['body'],['reviews','body']]) {
     const opts={fail,delays:{reviews:0,body:0}};
     const a=await detail(before,[opts]), b=await detail(after,[opts]);
-    assert.deepEqual(b.writes.map(({at,...x})=>x),a.writes.map(({at,...x})=>x));
-    checks.push({case:'immediate rejection '+fail.join('+'),stateAndEventParity:true});
+    assert.deepEqual(ancillary(b.writes),ancillary(a.writes));
+    checks.push({case:'immediate rejection '+fail.join('+'),ancillaryStateAndEventParity:true});
   }
-  // A known first-wave failure prevents the later own-detail continuation from launching extras.
+  // History transport is independent; product identity/extras remain usable.
   const opts={fail:['price'],delays:{price:1,detail:10}};
-  const a=await detail(before,[opts]),b=await detail(after,[opts]);
-  assert.deepEqual(b.writes.map(({at,...x})=>x),a.writes.map(({at,...x})=>x));
-  assert.equal(a.calls.length,4);assert.equal(b.calls.length,4);
-  assert.ok(!b.calls.some(x=>x.name==='reviews'||x.name==='body'));
-  assert.equal(b.writes.find(x=>x.key==='Error').at,1);
-  checks.push({case:'history fails before detail',baselineCalls:4,candidateCalls:4,extrasStartAfterFailure:false});
+  const b=await detail(after,[opts]);assert.equal(b.calls.length,4);
+  assert.ok(b.calls.some(x=>x.name==='reviews'));assert.ok(b.writes.some(x=>x.key==='Detail'&&x.value));
+  assert.ok(!b.calls.some(x=>['price','rank'].includes(x.name)));
+  checks.push({case:'independent history panel cannot suppress product context',ancillaryReadersPreserved:true});
   // Navigate after first-wave publication while old extras remain pending; B wins.
   const nav = await detail(after,[{delays:{price:15,rank:15,category:15,reviews:100,body:100}},{delays:{detail:0,price:0,rank:0,category:0,reviews:0,body:0}}],20);
   assert.ok(!nav.writes.some(x=>x.id==='A'&&x.at>=20));
@@ -60,8 +59,8 @@ async function detail(file, configs, navigationAt) {
   // Non-throwing empty/partial helper outputs still flow to the existing UI boundary.
   const partial = {values:{price:[],rank:[],category:{rows:[],snapshot_date:''},reviews:{rows:[]},body:{byHeight:[],byWeight:[],totalSampled:0}}};
   const pa=await detail(before,[partial]),pb=await detail(after,[partial]);
-  assert.deepEqual(pb.writes.map(({at,...x})=>x),pa.writes.map(({at,...x})=>x));
-  assert.deepEqual(pb.calls.map(({at,...x})=>x),pa.calls.map(({at,...x})=>x));
-  checks.push({case:'empty ancillary/history responses',stateEventAndArgumentParity:true});
+  assert.deepEqual(ancillary(pb.writes),ancillary(pa.writes));
+  assert.deepEqual(pb.calls.map(({at,...x})=>x),pa.calls.filter(x=>!['price','rank'].includes(x.name)).map(({at,...x})=>x));
+  checks.push({case:'empty ancillary/history responses',ancillaryStateEventAndArgumentParity:true});
   console.log(JSON.stringify({classification:'Independent VM source checks; no framework runtime/typecheck, browser, or production latency verification',passed:checks.length,checks},null,2));
 })().catch(error=>{console.error(error);process.exitCode=1});

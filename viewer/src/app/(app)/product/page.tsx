@@ -1,4 +1,6 @@
 'use client';
+import ProductHistoryCoverage from '@/components/product/ProductHistoryCoverage';
+import { useProductHistory } from '@/lib/use-product-history';
 import { formatFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -18,7 +20,7 @@ import { IcSearch, IcEdit } from '@/components/ui/icons';
 import BookmarkToggle from '@/components/me/BookmarkToggle';
 import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
 import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
-import { searchProducts, fetchProductDetail, fetchProductPriceHistory, fetchProductRankHistory, fetchProductCategoryRanks, fetchReviews, fetchBodyStats, CATEGORY_MAP, AGE_MAP, type ProductDetail, type ReviewRow, type ProductSearchResult, type BodyStats, type CategoryRankRow } from '@/lib/queries';
+import { searchProducts, fetchProductDetail, fetchProductCategoryRanks, fetchReviews, fetchBodyStats, CATEGORY_MAP, AGE_MAP, type ProductDetail, type ReviewRow, type ProductSearchResult, type BodyStats, type CategoryRankRow } from '@/lib/queries';
 
 function ProductSearch({ onSelect }: { onSelect: (no: string) => void }) {
   const [query, setQuery] = React.useState('');
@@ -313,8 +315,7 @@ function ProductPageInner() {
 
   const selectedNo = noFromUrl;
   const [detail, setDetail] = React.useState<ProductDetail | null>(null);
-  const [priceHistory,   setPriceHistory]   = React.useState<{ date: string; price: number; discount_rate: number | null }[]>([]);
-  const [rankHistory,    setRankHistory]    = React.useState<{ date: string; rank: number; category: string }[]>([]);
+  const { priceHistory, rankHistory, status: historyStatus, retry: retryHistory } = useProductHistory(selectedNo);
   const [categoryRanks,  setCategoryRanks]  = React.useState<CategoryRankRow[]>([]);
   const [categoryRanksDate, setCategoryRanksDate] = React.useState<string>('');
   const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
@@ -335,7 +336,6 @@ function ProductPageInner() {
     setLoading(true);
     setDetail(null);
     setReviews([]);
-    setRankHistory([]);
     setCategoryRanks([]);
     setCategoryRanksDate('');
     let requestFailed = false;
@@ -352,10 +352,8 @@ function ProductPageInner() {
     }).catch(error => ({ error }));
     Promise.all([
       detailRequest,
-      fetchProductPriceHistory(selectedNo),
-      fetchProductRankHistory(selectedNo),
       fetchProductCategoryRanks(selectedNo),
-    ]).then(async ([d, ph, rh, cr]) => {
+    ]).then(async ([d, cr]) => {
       if (!active) return;
       setDetail(d);
       if (d) {
@@ -367,8 +365,6 @@ function ProductPageInner() {
           ...(d.rank_position ? [`현재 ${d.rank_position}위`] : []),
         ] }));
       }
-      setPriceHistory(ph);
-      setRankHistory(rh);
       setCategoryRanks(cr.rows);
       setCategoryRanksDate(cr.snapshot_date);
       if (d?.is_own) {
@@ -398,12 +394,12 @@ function ProductPageInner() {
   }, [detail?.id]);
 
   // ── 가격 차트 ─────────────────────────────────────────────
-  const prices = priceHistory.map(p => p.price);
+  const prices = priceHistory.map(p => p.price).filter((price): price is number => price !== null);
   const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
   const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
   const pricePad = Math.max(Math.round((maxPrice - minPrice) * 0.15), 1000);
   const priceChartData = priceHistory.map(p => ({
-    date: p.date.slice(5),   // MM-DD
+    date: p.date,   // MM-DD
     price: p.price,
     discount: p.discount_rate ?? 0,
   }));
@@ -413,9 +409,9 @@ function ProductPageInner() {
   const minRank = ranks.length > 0 ? Math.min(...ranks) : 0;
   const maxRank = ranks.length > 0 ? Math.max(...ranks) : 0;
   const rankPeriodLabel = rankHistory.length >= 2
-    ? `${rankHistory[0].date.slice(5)} ~ ${rankHistory[rankHistory.length - 1].date.slice(5)} (${rankHistory.length}일)`
+    ? `${rankHistory[0].date.slice(5)} ~ ${rankHistory[rankHistory.length - 1].date.slice(5)} (${rankHistory.length}${rankHistory.coverage?.mode === 'weekly' ? '주' : '일'})`
     : rankHistory.length === 1 ? rankHistory[0].date.slice(5) : '';
-  const rankChartData = rankHistory.map(r => ({ date: r.date.slice(5), rank: r.rank }));
+  const rankChartData = rankHistory.map(r => ({ date: r.date, rank: r.rank }));
   // Y축 반전: rank가 낮을수록(좋을수록) 위에 표시 → domain을 [max, min]으로
   const rankFirst = ranks[0];
   const rankLast  = ranks[ranks.length - 1];
@@ -634,10 +630,12 @@ function ProductPageInner() {
           {/* ── RIGHT COLUMN ── */}
           <div className="col-flex gap-12">
 
+            <ProductHistoryCoverage coverage={rankHistory.coverage} status={historyStatus} onRetry={retryHistory} />
+            {historyStatus === 'ready' && <>
             {/* Rank History */}
             <section className="panel">
               <div className="sec-head">
-                <h3>랭킹 추이 <span className="sub">{rankHistory.length}일 · 카테고리 최고순위</span></h3>
+                <h3>랭킹 추이 <span className="sub">{rankHistory.length}{rankHistory.coverage?.mode === 'weekly' ? '주' : '일'} · 카테고리 최고순위</span></h3>
                 {ranks.length > 1 && (
                   <span className="mono" style={{ fontSize: 11, color: rankColor }}>
                     {rankTrend === 'up' ? '↑ ' : rankTrend === 'dn' ? '↓ ' : ''}
@@ -645,9 +643,9 @@ function ProductPageInner() {
                   </span>
                 )}
               </div>
-              {rankHistory.length < 2 ? (
+              {rankHistory.length === 0 ? (
                 <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
-                  데이터 수집 중 — 2일치 이상 쌓이면 차트가 표시됩니다.
+                  조회 범위에 저장된 관측이 없습니다.
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={110}>
@@ -688,7 +686,7 @@ function ProductPageInner() {
             {/* Price History */}
             <section className="panel">
               <div className="sec-head">
-                <h3>가격 추이 <span className="sub">{priceHistory.length}일 수집</span></h3>
+                <h3>가격 추이 <span className="sub">{priceHistory.length}{rankHistory.coverage?.mode === 'weekly' ? '주' : '일'} 수집</span></h3>
                 {prices.length >= 2 && (
                   <span className="mono" style={{ fontSize: 11, color: 'var(--f3)' }}>
                     {minPrice === maxPrice
@@ -697,10 +695,12 @@ function ProductPageInner() {
                   </span>
                 )}
               </div>
-              {priceHistory.length < 2 ? (
+              {priceHistory.length === 0 ? (
                 <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
-                  데이터 수집 중 — 2일치 이상 쌓이면 차트가 표시됩니다.
+                  조회 범위에 저장된 관측이 없습니다.
                 </div>
+              ) : prices.length === 0 ? (
+                <p style={{ padding: '12px', color: 'var(--f4)', fontSize: 12 }}>동일 순위 관측의 유효 가격이 없습니다.</p>
               ) : (
                 <ResponsiveContainer width="100%" height={130}>
                   <LineChart data={priceChartData} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
@@ -717,13 +717,13 @@ function ProductPageInner() {
                       labelStyle={{ color: 'var(--f3)', fontSize: 10 }}
                     />
                     <Line
-                      type="monotone" dataKey="price"
+                      type="monotone" dataKey="price" connectNulls={false}
                       stroke="var(--f1)" strokeWidth={1.5}
                       dot={priceChartData.length <= 7}
                       activeDot={{ r: 3 }}
                     />
                     {priceChartData
-                      .filter(d => d.discount > 0)
+                      .filter((d): d is typeof d & { price: number } => d.discount > 0 && d.price !== null)
                       .map(d => (
                         <ReferenceDot key={d.date} x={d.date} y={d.price}
                           r={4} fill="var(--shf)" stroke="var(--sur)" strokeWidth={1.5} />
@@ -733,6 +733,7 @@ function ProductPageInner() {
               )}
             </section>
 
+            </>}
             {/* Ranking Best Records */}
             {detail.ranking_best_records.length > 0 && (
               <section className="panel">
