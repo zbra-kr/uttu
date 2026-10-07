@@ -126,3 +126,28 @@ request-builder check for `resolution=ignore-duplicates` and returned row
 representation, without constructing or calling a live database client. Required
 `ruff check worker` passes locally. Ubuntu/Python 3.12 CI and live populated-job,
 database-transaction, concurrency and notification acceptance have not run.
+
+
+## Source observations and publication counts (local review correction)
+
+Stored rows are retained source observations, not unique economic rounds. News and
+DART describing the same event remain two observations; a separate publication
+projection can describe them as one entry. Historical same-period amount conflicts
+stop new brief publication, retaining prior brief/freshness and all source evidence.
+
+The viewer deliberately shows raw evidence, labels each amount/type as reported by
+its source, explains possible duplicate events/conflicts/failed-attempt evidence,
+and labels its bounded list count as records currently displayed. Desktop/mobile
+headings and collection status do not claim a number of economic rounds. Conflict
+job errors explain that the new brief was withheld and old evidence remains.
+
+For new successful jobs, legacy `rounds_found` in the CLI result and job row counts
+current source identities confirmed in storage (including previously retained
+identities). `observations_confirmed` explicitly names that same CLI count;
+`publication_rounds` counts brief projection entries, not guaranteed distinct
+economic events. `history_observations` names the full retained history count;
+legacy `history_rounds` remains its alias. Notifications use source-record wording.
+Older job rows have no version marker, so the UI calls their legacy count collected
+records, without claiming newly inserted observations or economic events.
+Dry runs write nothing: their legacy count is candidate source observations and
+`observations_confirmed` is null; the brief preview uses the fresh projection.

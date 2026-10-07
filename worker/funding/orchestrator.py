@@ -27,6 +27,7 @@ from worker.funding.datago_source import fetch_datago_rounds
 from worker.funding.merge import merge_rounds
 from worker.funding.news_source import fetch_news_rounds
 from worker.funding.persistence import PersistenceFailure, persist_rounds, publish_company
+from worker.funding.publication import publication_rounds
 from worker.notifications.enqueue import enqueue_notification
 
 load_dotenv()
@@ -111,7 +112,7 @@ async def run_job(
     Returns
     -------
     dict:
-      rounds_found : int
+      rounds_found : int — source identities confirmed (legacy field, not economic rounds)
       by_source    : dict[source_type → count]
       dry_run      : bool
     """
@@ -206,8 +207,9 @@ async def run_job(
     # 6. merge
     merged = merge_rounds(all_rounds, company_id)
 
+    observations = merge_rounds(all_rounds, company_id, cross_validate=False)
     by_source: dict[str, int] = {}
-    for r in merged:
+    for r in observations:
         st = r.get("source_type", "unknown")
         by_source[st] = by_source.get(st, 0) + 1
 
@@ -216,9 +218,10 @@ async def run_job(
     if not dry_run:
         stage = "rounds"
         try:
-            stored = persist_rounds(db, company_id, merged)
+            stored = persist_rounds(db, company_id, observations)
             stage = "brief_generation"
-            brief_md = await generate_brief(company_name, stored.history)
+            projection = publication_rounds(stored.history, company_id)
+            brief_md = await generate_brief(company_name, projection)
             stage = "company_publication"
             publish_company(db, company_id, brief_md)
         except Exception as error:
@@ -243,7 +246,7 @@ async def run_job(
                         user_id=requested_by,
                         event_type="funding_collection_done",
                         title=f"투자정보 수집 완료 — {company_name}",
-                        body=f"{stored.confirmed}건 확인됨" if stored.confirmed else "신규 데이터 없음 — 기존 이력 유지",
+                        body=f"출처 기록 {stored.confirmed}건 확인 (라운드 수 아님)" if stored.confirmed else "신규 출처 기록 없음 — 기존 이력 유지",
                         link=f"/company?id={company_id}",
                         client=db,
                     )
@@ -275,13 +278,16 @@ async def run_job(
     brief_preview = brief_md[:200] if brief_md else None
 
     result = {
-        "rounds_found":   len(merged),
+        "rounds_found":   stored.confirmed if stored is not None else len(observations),
+        "observations_confirmed": stored.confirmed if stored is not None else None,
+        "publication_rounds": len(projection) if stored is not None else len(merged),
         "by_source":      by_source,
         "dry_run":        dry_run,
         "brief_preview":  brief_preview,
     }
     if stored is not None:
-        result.update(rounds_inserted=stored.inserted, history_rounds=len(stored.history))
+        result.update(rounds_inserted=stored.inserted, history_rounds=len(stored.history),
+                      history_observations=len(stored.history))
 
     logger.info("funding_job_done", **result)
     return result

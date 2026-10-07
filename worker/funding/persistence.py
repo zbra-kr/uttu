@@ -43,7 +43,7 @@ def load_history(db, company_id):
     """Read every page without re-merging or filtering historical observations."""
     history, seen_ids = [], set()
     offset, page_size = 0, 100
-    while True:
+    for _ in range(10000):
         response = (db.table('funding_rounds').select('*').eq('company_id', company_id)
                     .order('id').range(offset, offset + page_size - 1).execute())
         rows = _rows(response, 'funding_history_ack_unverified')
@@ -56,9 +56,10 @@ def load_history(db, company_id):
                 raise PersistenceFailure('funding_history_ack_unverified')
             seen_ids.add(row_id)
         history.extend(rows)
-        if len(rows) < page_size:
+        if not rows:
             return sorted(history, key=lambda row: row.get('announced_date') or '', reverse=True)
-        offset += page_size
+        offset += len(rows)
+    raise PersistenceFailure('funding_history_page_limit')
 
 
 def persist_rounds(db, company_id, rounds):

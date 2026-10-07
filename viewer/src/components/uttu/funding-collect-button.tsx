@@ -119,10 +119,10 @@ function FundingCollectControl({ companyId, fundingLastCollectedAt, onDone, scop
       <span style={{ fontSize: 12, color: 'var(--smf)' }}>🔄 수집 중…</span>
     );
     if (job.status === 'done') return (
-      <span style={{ fontSize: 12, color: 'var(--slf)' }}>완료 — {job.rounds_found}건 수집됨</span>
+      <span style={{ fontSize: 12, color: 'var(--slf)' }}>완료 — 수집 기록 {job.rounds_found}건 확인 (라운드 수 아님)</span>
     );
     if (job.status === 'failed') return (
-      <span style={{ fontSize: 12, color: 'var(--shf)' }}>실패 — {job.error ?? '알 수 없는 오류'}</span>
+      <span style={{ fontSize: 12, color: 'var(--shf)' }}>실패 — {job.error === 'funding_history_source_conflict' ? '뉴스·공시 금액 충돌로 새 브리핑을 발행하지 않았습니다. 이전 브리핑과 원본 출처 기록을 유지합니다.' : job.error ?? '알 수 없는 오류'}</span>
     );
     return null;
   })();

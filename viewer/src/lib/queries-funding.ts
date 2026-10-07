@@ -3,6 +3,7 @@ import { supabaseBrowser } from './supabase/client';
 
 // ── 타입 정의 ──────────────────────────────────────────────────────────
 
+/** A retained source observation; several observations may describe one economic round. */
 export interface FundingRound {
   id: string;
   company_id: string;
@@ -24,6 +25,7 @@ export interface FundingJob {
   requested_by: string | null;
   started_at: string | null;
   finished_at: string | null;
+  /** Legacy field: collected record count, never an economic round count. */
   rounds_found: number;
   error: string | null;
   created_at: string;
@@ -41,7 +43,7 @@ function readJob(data: unknown, companyId: string, jobId?: string): FundingJob |
   return job;
 }
 
-/** 회사의 투자 라운드 목록 (announced_date DESC) */
+/** 회사의 원본 출처 관측 목록 (announced_date DESC). 병합된 라운드 목록이 아님. */
 export async function getFundingRounds(
   companyId: string,
   limit = 50,

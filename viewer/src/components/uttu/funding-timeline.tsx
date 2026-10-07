@@ -81,7 +81,7 @@ function SourceBadge({ sourceType, confidence }: BadgeProps) {
 
 // ── 타임라인 아이템 ───────────────────────────────────────────────────
 
-function RoundItem({ round }: { round: FundingRound }) {
+function ObservationItem({ round }: { round: FundingRound }) {
   return (
     <div style={{
       display: 'grid',
@@ -96,7 +96,7 @@ function RoundItem({ round }: { round: FundingRound }) {
           {formatDate(round.announced_date)}
         </span>
         <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--f1)' }}>
-          {round.round_type ?? '—'}
+          출처 보고 유형: {round.round_type ?? '—'}
         </span>
       </div>
 
@@ -108,7 +108,7 @@ function RoundItem({ round }: { round: FundingRound }) {
           fontWeight: 700,
           color: round.amount_krw != null ? 'var(--f1)' : 'var(--f4)',
         }}>
-          {formatAmount(round.amount_krw)}
+          출처 보고 금액: {formatAmount(round.amount_krw)}
         </span>
 
         {/* 투자자 chips */}
@@ -171,11 +171,11 @@ export function FundingTimeline({ rounds }: Props) {
 
   return (
     <div>
-      <div style={{ fontSize: 10, color: 'var(--f4)', marginBottom: 8 }}>
-        비상장 제3자배정 사모 라운드는 공시 면제로 뉴스에만 의존합니다 · 미검증 뱃지는 NLP 추출 데이터
+      <div role="note" style={{ fontSize: 10, color: 'var(--f4)', marginBottom: 8 }}>
+        출처별 관측 기록입니다. 여러 기록이 같은 투자 라운드를 가리킬 수 있어 건수나 금액을 합산하지 않습니다. 뉴스 금액은 공시와 다르거나 충돌할 수 있습니다. 실패한 수집에서 보관된 근거도 포함되며, 아래 목록은 브리핑의 검증된 라운드 목록이 아닙니다.
       </div>
       {rounds.map((r) => (
-        <RoundItem key={r.id} round={r} />
+        <ObservationItem key={r.id} round={r} />
       ))}
     </div>
   );

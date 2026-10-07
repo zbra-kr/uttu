@@ -270,8 +270,8 @@ def test_full_history_brief_pages_past_postgrest_default_limit_and_keeps_null_re
     outcome = run(h.orchestrator.run_job('c1', job_id='j1'))
     assert not outcome.get('error') and outcome['history_rounds'] == 1003
     assert all(row in seen for row in legacy)
-    assert len(storage.history_ranges) == 11
-    assert storage.history_ranges[-1] == (1000, 1099)
+    assert len(storage.history_ranges) == 12
+    assert storage.history_ranges[-1] == (1003, 1102)
 
 
 @pytest.mark.parametrize('receipt', ['missing', 'wrong_brief', 'wrong_id', 'wrong_time'])

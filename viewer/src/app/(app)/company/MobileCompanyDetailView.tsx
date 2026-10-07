@@ -865,7 +865,7 @@ function TabFundingMobile({
         </div>
       </Section>
 
-      <Section title={`투자 라운드 타임라인${funding.rounds.length > 0 ? ` (${funding.rounds.length}건)` : ''}`}>
+      <Section title={`투자 출처 기록${funding.rounds.length > 0 ? ` (표시 중 ${funding.rounds.length}건)` : ''}`}>
         <div style={{ overflowX: 'auto' }}>
           <FundingRoundsView funding={funding} />
         </div>
