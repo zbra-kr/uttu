@@ -5,9 +5,9 @@ This runner does not install dependencies or activate application maintenance.
 """
 import asyncio
 import os
-from pathlib import Path
 import sys
 import tempfile
+from pathlib import Path
 
 
 def forbidden(*args, **kwargs):
@@ -37,10 +37,11 @@ def main():
                     raise PermissionError("Offline boundary: credential file read")
 
         sys.addaudithook(audit)
+        import anthropic
         import dotenv
         import requests
+
         import supabase
-        import anthropic
         dotenv.load_dotenv = lambda *args, **kwargs: False
         dotenv.dotenv_values = lambda *args, **kwargs: {}
         requests.sessions.Session.request = forbidden

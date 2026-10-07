@@ -1,11 +1,13 @@
+import builtins
+import contextlib
 import importlib.util
-import json
+import io
 import os
-from pathlib import Path
 import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 SOURCE = Path(__file__).parents[2] / 'worker/utils/maintenance_guard.py'
@@ -181,27 +183,32 @@ class GuardTests(unittest.TestCase):
 
     def test_existing_world_writable_state_is_refused_without_chmod(self):
         directory=self.root/'.maintenance';directory.mkdir();directory.chmod(0o777)
-        with self.assertRaises(guard.MaintenanceBlocked):guard.acquire_reader(self.root)
+        with self.assertRaises(guard.MaintenanceBlocked):
+            guard.acquire_reader(self.root)
         self.assertEqual(directory.stat().st_mode&0o777,0o777)
 
     def test_existing_nonprivate_lock_is_refused_without_replacing_inode(self):
         directory=guard.state_dir(self.root);path=directory/'funding-dart.lock';path.write_text('');path.chmod(0o644);inode=path.stat().st_ino
-        with self.assertRaises(guard.MaintenanceBlocked):guard.acquire_reader(self.root)
+        with self.assertRaises(guard.MaintenanceBlocked):
+            guard.acquire_reader(self.root)
         self.assertEqual(path.stat().st_ino,inode);self.assertEqual(path.stat().st_mode&0o777,0o644)
 
     def test_wrong_owner_is_refused(self):
         directory=guard.state_dir(self.root)
         with patch.object(guard.os,'getuid',return_value=directory.stat().st_uid+1):
-            with self.assertRaises(guard.MaintenanceBlocked):guard.acquire_reader(self.root)
+            with self.assertRaises(guard.MaintenanceBlocked):
+                guard.acquire_reader(self.root)
 
     def test_nonprivate_marker_is_refused_without_modification(self):
         directory=guard.state_dir(self.root);path=directory/'funding-dart.json';path.write_text('{}');path.chmod(0o644)
-        with self.assertRaises(guard.MaintenanceBlocked):guard.acquire_reader(self.root)
+        with self.assertRaises(guard.MaintenanceBlocked):
+            guard.acquire_reader(self.root)
         self.assertEqual(path.read_text(),'{}')
 
     def test_multiple_hardlinked_lock_is_refused(self):
         directory=guard.state_dir(self.root);path=directory/'funding-dart.lock';path.touch(mode=0o600);os.link(path,directory/'alias')
-        with self.assertRaises(guard.MaintenanceBlocked):guard.acquire_reader(self.root)
+        with self.assertRaises(guard.MaintenanceBlocked):
+            guard.acquire_reader(self.root)
 
     def test_marker_symlink_fails_closed(self):
         directory = guard.state_dir(self.root)
@@ -211,6 +218,93 @@ class GuardTests(unittest.TestCase):
             guard.acquire_reader(self.root)
         with self.assertRaises(guard.MaintenanceBlocked):
             self.installer().begin()
+
+
+
+    def test_missing_backend_import_has_explicit_error_before_any_state_write(self):
+        original_import = builtins.__import__
+
+        def without_fcntl(name, *args, **kwargs):
+            if name == "fcntl":
+                raise ModuleNotFoundError("No module named 'fcntl'", name="fcntl")
+            return original_import(name, *args, **kwargs)
+
+        missing = importlib.util.module_from_spec(spec)
+        with patch("builtins.__import__", without_fcntl):
+            spec.loader.exec_module(missing)
+        self.assertIsNone(missing.fcntl)
+        with self.assertRaises(missing.UnsupportedLockingError):
+            missing.acquire_reader(self.root)
+        self.assertFalse((self.root / ".maintenance").exists())
+
+
+    def test_unavailable_backend_cannot_create_reader_or_installer_state(self):
+        with patch.object(guard, "fcntl", None):
+            with self.assertRaises(guard.UnsupportedLockingError):
+                guard.acquire_reader(self.root)
+            with self.assertRaises(guard.UnsupportedLockingError):
+                self.installer()
+        self.assertFalse((self.root / ".maintenance").exists())
+
+
+    def test_unavailable_backend_is_nonzero_error_not_normal_deferral(self):
+        output, errors = io.StringIO(), io.StringIO()
+        with (
+            patch.object(guard, "fcntl", None),
+            contextlib.redirect_stdout(output),
+            contextlib.redirect_stderr(errors),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                guard.enter_cli(self.root, "Funding worker")
+        self.assertEqual(result.exception.code, 78)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("cannot start", errors.getvalue())
+        self.assertIn("POSIX fcntl locking", errors.getvalue())
+        self.assertNotIn("deferred", errors.getvalue())
+        self.assertFalse((self.root / ".maintenance").exists())
+
+
+    def test_missing_backend_does_not_reuse_a_cached_lease(self):
+        with (
+            patch.dict(guard._leases, {str(self.root.resolve()): object()}),
+            patch.object(guard, "fcntl", None),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            with self.assertRaises(SystemExit) as result:
+                guard.enter_cli(self.root, "Funding worker")
+        self.assertEqual(result.exception.code, 78)
+
+
+    def test_unrelated_backend_import_failure_is_not_swallowed(self):
+        original_import = builtins.__import__
+
+        def broken_fcntl(name, *args, **kwargs):
+            if name == "fcntl":
+                raise ModuleNotFoundError("Backend dependency missing", name="unrelated")
+            return original_import(name, *args, **kwargs)
+
+        missing = importlib.util.module_from_spec(spec)
+        with patch("builtins.__import__", broken_fcntl), self.assertRaises(ModuleNotFoundError):
+            spec.loader.exec_module(missing)
+
+
+    def test_lock_permission_failure_is_not_reported_as_normal_deferral(self):
+        output = io.StringIO()
+        handle = io.StringIO()
+        with (
+            patch.object(guard, "lock_file", return_value=handle),
+            patch.object(guard.fcntl, "flock", side_effect=PermissionError("denied")),
+            contextlib.redirect_stdout(output),
+        ):
+            with self.assertRaises(PermissionError):
+                guard.enter_cli(self.root, "Funding worker")
+        self.assertEqual(output.getvalue(), "")
+
+
+    def test_non_posix_platform_has_explicit_error(self):
+        with patch.object(guard.os, "name", "nt"):
+            with self.assertRaises(guard.UnsupportedLockingError):
+                guard.require_locking()
 
 
 if __name__ == '__main__':

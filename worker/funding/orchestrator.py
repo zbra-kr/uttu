@@ -18,8 +18,8 @@ from datetime import datetime, timezone
 import pytz
 from dotenv import load_dotenv
 from loguru import logger
-from supabase import Client, create_client
 
+from supabase import Client, create_client
 from worker.funding.audit_source import fetch_audit_rounds
 from worker.funding.brief_writer import generate_brief
 from worker.funding.dart_source import fetch_dart_rounds

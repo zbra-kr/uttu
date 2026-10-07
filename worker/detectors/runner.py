@@ -11,6 +11,7 @@ import argparse
 from datetime import date
 
 from dotenv import load_dotenv
+
 from worker.detectors.rank_observation import urgent_notification_eligible
 
 load_dotenv()

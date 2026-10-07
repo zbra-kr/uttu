@@ -5,17 +5,36 @@ crash and remains until a verifier accepts the complete installed/rollback set.
 Only enrolled entrypoints are covered; arbitrary direct imports are not fenced.
 """
 import atexit
-import fcntl
 import json
 import os
 import stat
+import sys
 import time
 import uuid
 from pathlib import Path
 
+try:
+    import fcntl
+except ModuleNotFoundError as error:
+    if error.name != 'fcntl':
+        raise
+    fcntl = None
+
 
 class MaintenanceBlocked(RuntimeError):
     pass
+
+
+class UnsupportedLockingError(RuntimeError):
+    """The required POSIX locking backend is unavailable; execution is unsafe."""
+
+
+def require_locking():
+    if os.name != 'posix' or fcntl is None:
+        raise UnsupportedLockingError(
+            'UTTU funding/DART maintenance requires POSIX fcntl locking '
+            '(Mac deployment/Linux CI); this platform or locking backend is unsupported'
+        )
 
 
 def validate_owned(info, directory=False):
@@ -36,6 +55,7 @@ def validate_file(path):
 
 
 def state_dir(root):
+    require_locking()
     directory = Path(root) / '.maintenance'
     try:
         directory.mkdir(mode=0o700)
@@ -48,6 +68,7 @@ def state_dir(root):
 
 
 def lock_file(directory, name):
+    require_locking()
     validate_owned(directory.lstat(), directory=True)
     validate_file(directory / name)
     fd = os.open(directory / name, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
@@ -106,6 +127,11 @@ _leases = {}
 
 
 def enter_cli(root, label):
+    try:
+        require_locking()
+    except UnsupportedLockingError as error:
+        print(f'{label} cannot start: {error}', file=sys.stderr)
+        raise SystemExit(78) from None
     key = str(Path(root).resolve())
     if key in _leases:
         return True
@@ -133,6 +159,7 @@ class Maintenance:
         self.control = self.exclusive = None
 
     def begin(self, timeout=30, recover=False, control=None):
+        require_locking()
         self.control = control if control is not None else lock_file(self.directory, 'installer.lock')
         try:
             owned = os.fstat(self.control.fileno())
@@ -173,6 +200,7 @@ class Maintenance:
             raise
 
     def assert_safe(self):
+        require_locking()
         if self.exclusive is None or self.control is None:
             raise MaintenanceBlocked('Maintenance ownership missing')
         validate_owned(self.directory.lstat(), directory=True)

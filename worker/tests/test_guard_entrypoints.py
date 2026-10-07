@@ -1,13 +1,14 @@
 """Execute real enrolled CLI source with synthetic dependencies and private state."""
 import ast
-import asyncio
 import builtins
+import contextlib
 import importlib.util
-from pathlib import Path
+import io
 import sys
 import tempfile
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 REVIEW=Path(__file__).parents[2]
@@ -28,7 +29,8 @@ class EntrypointTests(unittest.TestCase):
 
     def release(self):
         lease=guard._leases.pop(str(self.root.resolve()),None)
-        if lease:lease.close()
+        if lease:
+            lease.close()
 
     def assert_locked(self):
         self.assertIn(str(self.root.resolve()),guard._leases)
@@ -44,7 +46,8 @@ class EntrypointTests(unittest.TestCase):
                 self.assert_locked();self.imports.append(name)
                 return types.SimpleNamespace(run_job=run_job,poll_pending=poll_pending)
             if name in self.modules:
-                if name!='worker.utils.maintenance_guard':self.assert_locked()
+                if name!='worker.utils.maintenance_guard':
+                    self.assert_locked()
                 self.imports.append(name);return self.modules[name]
             if name in {'worker.dart.fetcher','worker.dart.fss_client'}:
                 self.assert_locked();self.imports.append(name)
@@ -87,7 +90,8 @@ class EntrypointTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as result:
                 self.execute('worker/main.py','worker/main.py',['--mode','funding-poll','--limit','3'])
             self.assertEqual(result.exception.code,0);self.assertEqual(self.imports,['worker.utils.maintenance_guard']);self.assertEqual(self.calls,[])
-        finally:owner.verified_finish(lambda:True)
+        finally:
+            owner.verified_finish(lambda:True)
 
     def test_dart_maintenance_before_shared_sdk_import(self):
         owner=guard.Maintenance(self.root,lambda:True,lambda:[]).begin()
@@ -95,7 +99,8 @@ class EntrypointTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as result:
                 self.execute('worker/scrapers/dart_scraper.py','worker/scrapers/dart_scraper.py',['--target','all'])
             self.assertEqual(result.exception.code,75);self.assertEqual(self.imports,['worker.utils.maintenance_guard'])
-        finally:owner.verified_finish(lambda:True)
+        finally:
+            owner.verified_finish(lambda:True)
 
     def test_dart_help_still_parses_without_clients_and_sdk_import_is_guarded(self):
         with self.assertRaises(SystemExit) as result:
@@ -124,4 +129,39 @@ class EntrypointTests(unittest.TestCase):
             self.assertTrue(all(guard_line < line for line in app_imports))
 
 
-if __name__=='__main__':unittest.main(verbosity=2)
+
+    def test_missing_backend_prevents_app_imports_claims_and_state_not_deferral(self):
+        for filename, relative, args in [
+            ("worker/main.py", "worker/main.py", ["--mode", "funding-poll", "--limit", "3"]),
+            (
+                "worker/main.py",
+                "worker/main.py",
+                ["--mode", "funding", "--company-id", "offline-id"],
+            ),
+            (
+                "worker/scrapers/dart_scraper.py",
+                "worker/scrapers/dart_scraper.py",
+                ["--target", "all"],
+            ),
+        ]:
+            with self.subTest(filename=filename, args=args):
+                self.imports.clear()
+                output, errors = io.StringIO(), io.StringIO()
+                with (
+                    patch.object(guard, "fcntl", None),
+                    contextlib.redirect_stdout(output),
+                    contextlib.redirect_stderr(errors),
+                ):
+                    with self.assertRaises(SystemExit) as result:
+                        self.execute(filename, relative, args)
+                self.assertEqual(result.exception.code, 78)
+                self.assertEqual(self.imports, ["worker.utils.maintenance_guard"])
+                self.assertEqual(self.calls, [])
+                self.assertEqual(output.getvalue(), "")
+                self.assertIn("cannot start", errors.getvalue())
+                self.assertNotIn("deferred", errors.getvalue())
+                self.assertFalse((self.root / ".maintenance").exists())
+
+
+if __name__=='__main__':
+    unittest.main(verbosity=2)

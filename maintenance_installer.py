@@ -7,12 +7,11 @@ import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
-import time
 import uuid
+from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('installer_guard', Path(__file__).parent/'worker/utils/maintenance_guard.py')
 guard = importlib.util.module_from_spec(spec)

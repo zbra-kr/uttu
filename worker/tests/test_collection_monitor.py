@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-
 SOURCE = Path(__file__).parents[2] / 'scripts' / 'collection_monitor.py'
 spec = importlib.util.spec_from_file_location('offline_collection_monitor', SOURCE)
 monitor = importlib.util.module_from_spec(spec)

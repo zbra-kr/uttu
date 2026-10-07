@@ -51,14 +51,22 @@ a job; DART exits 75. Wrapper log markers are not proof of completed collection.
 Direct imported calls to `main()`, `run_job`, `poll_pending`, DART functions,
 embedded/notebook/dynamic SDK imports, and other hosts are outside this fence.
 Known process-name inspection is conservative, not exhaustive. Inspect all
-potential SDK readers before any future cutover. Unsupported operating systems
-are outside this Unix maintenance implementation.
+potential SDK readers before any future cutover.
 
-Windows compatibility is a publication review item: these enrolled CLI modules
-import the `fcntl` helper before application imports, so they currently fail on
-Windows. This branch preserves the reviewed Mac implementation rather than
-silently weakening the guard on another platform. Do not publish it as a
-cross-platform worker update without a separately reviewed portability decision.
+The repository documents Mac mini worker deployment in `docs/skills/08-funding.md`
+and macOS crontab in `docs/UTTU-OVERVIEW.md`; `.github/workflows/ci.yml` checks the
+worker on Ubuntu with Python 3.12. No Windows worker deployment procedure,
+launcher, CI matrix or support requirement was found. The scope here is Mac
+deployment with Linux CI, not a new claim of general cross-platform support.
+Editing source on Windows does not establish a Windows worker requirement.
+
+On a non-POSIX platform or when `fcntl` is absent, the enrolled CLI reports a clear
+unsupported-locking error on stderr and exits 78 before state creation,
+application/SDK imports or job claims. It is not reported as maintenance deferral.
+Direct guard/installer usage raises `UnsupportedLockingError`. Other import or
+locking permission failures propagate; they are never silently accepted. Existing
+POSIX lock contention still uses the reviewed ordinary maintenance deferral.
+There is no Windows locking backend or no-op fallback in this change.
 
 `maintenance_installer.py` is an inactive standard-library engine, with no CLI or
 scheduler operations. A caller must supply a separately reviewed, environment-
@@ -96,9 +104,14 @@ Guard fixtures and installer imports resolve relative to this repository.
 
 The guard entrypoint fixture uses the accepted dictionary poll result; its
 pre-cutover integer mock has been updated to match the final runtime contract.
-The reviewed guard and installer implementation are otherwise unchanged.
+The reviewed POSIX lock algorithm is retained. The local follow-up adds the
+explicit unsupported-locking error and regression tests; Ruff corrections are
+limited to scoped import/unused-import and one-line statement formatting.
 
-Local verification on Python 3.14.4 passed 247 tests and 78 subtests. A separate
+Local verification on Mac/Python 3.14.4 passed 256 tests and 81 subtests. The
+repository-required `ruff check worker` and Ruff on all changed Python files also
+pass locally. Ubuntu/Python 3.12 CI has not been executed; these local checks do
+not substitute for that platform/runtime verification. A separate
 network-blocked check of the actual DART SDK 0.4.17 passed exception/status mapping,
 mocked filing search and five adapter boundary cases. These SDK checks use
 synthetic responses, not live DART data. Python's event-loop policy API emits a

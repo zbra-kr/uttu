@@ -17,6 +17,7 @@ DART 공시·재무 스크래퍼
 # Cooperative maintenance is acquired before application/SDK imports.
 if __name__ == "__main__":
     from pathlib import Path as _MaintenancePath
+
     from worker.utils.maintenance_guard import enter_cli as _enter_maintenance_cli
     if not _enter_maintenance_cli(_MaintenancePath(__file__).resolve().parents[2], "DART collector"):
         raise SystemExit(75)

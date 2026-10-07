@@ -10,7 +10,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-
 _DONE_MARKERS = {
     "ranking": ["=== done:"],
     "brand_ranking": ["=== done:"],
