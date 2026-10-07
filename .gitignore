@@ -32,3 +32,6 @@ logs/*.log
 # IDE
 .idea/
 .vscode/
+
+# Private cooperative maintenance locks and marker; never remove live lock inodes.
+.maintenance/

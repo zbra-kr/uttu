@@ -11,6 +11,7 @@ import argparse
 from datetime import date
 
 from dotenv import load_dotenv
+from worker.detectors.rank_observation import urgent_notification_eligible
 
 load_dotenv()
 
@@ -82,8 +83,8 @@ def _build_notification(a: Anomaly, detection_date: date) -> tuple[str, str, str
 
 
 def _enqueue_anomalies(anomalies: list[Anomaly], detection_date: date) -> None:
-    high = [a for a in anomalies if a.severity == "high"]
-    med  = [a for a in anomalies if a.severity == "medium"]
+    high = [a for a in anomalies if a.severity == "high" and urgent_notification_eligible(a)]
+    med  = [a for a in anomalies if a.severity == "medium" and urgent_notification_eligible(a)]
 
     for a in high:
         title, body, link = _build_notification(a, detection_date)

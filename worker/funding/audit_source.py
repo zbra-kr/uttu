@@ -13,9 +13,12 @@ import contextlib
 import io
 import os
 import re
+from html import unescape
 from typing import Any
 
 from loguru import logger
+
+from worker.funding.outcomes import DiscoveryFailure
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 
@@ -43,16 +46,27 @@ _NUM_TOK_RE = re.compile(
 
 
 def _api_key() -> str:
-    return os.environ["DART_API_KEY"]
+    key = os.environ.get("DART_API_KEY")
+    if not key:
+        raise DiscoveryFailure("audit_expected_credentials_missing")
+    return key
 
 
 def _normalize_title(title: str) -> str:
-    return re.sub(r"\s+", "", title or "")
+    return re.sub(r"\s+", "", unescape(title or ""))
 
 
 def _page_text(html: str) -> str:
-    text = re.sub(r"<[^>]+>", " ", html or "")
+    text = unescape(re.sub(r"<[^>]+>", " ", html or ""))
     return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def _normalize_sce_labels(text: str) -> str:
+    """Normalize whitespace within known statement labels, preserving numbers."""
+    for label in [_SCE_PAGE_KEY, "자본금", "기초", "기말", *_INCREASE_KEYWORDS]:
+        pattern = r"\s*".join(re.escape(char) for char in label if not char.isspace())
+        text = re.sub(pattern, label, text)
+    return text
 
 
 def _tok_to_int(tok: str) -> int | None:
@@ -123,8 +137,7 @@ def _parse_sce_text(
 
             amounts = _extract_row_amounts(text, idx, len(kw))
             if not amounts:
-                search_start = kw_end
-                continue
+                raise DiscoveryFailure("audit_financing_amount_unparsed")
 
             # 마지막 숫자 = 총계 컬럼
             row_total = amounts[-1]
@@ -184,13 +197,25 @@ def _parse_report_sce(
       · sce_page_found=True, round_dict=None → 페이지 있으나 유상증자 행 없음 (증자 없음)
       · sce_page_found=True, round_dict=dict  → 유상증자 발견
     """
-    pages = report.pages or []
+    pages = report.pages
+    if not isinstance(pages, list) or not pages:
+        raise DiscoveryFailure("audit_pages_missing_or_invalid")
     rcept_no = getattr(report, "rcept_no", "") or ""
 
     for page in pages:
-        title = _normalize_title(page.title or "")
+        raw_title = getattr(page, "title", None)
+        if not isinstance(raw_title, str) or not raw_title.strip():
+            continue  # Unidentified preceding pages cannot veto a later SCE page.
+        title = _normalize_title(raw_title)
         if _SCE_PAGE_KEY in title:
-            text = _page_text(page.html or "")
+            document = page.html
+            if not isinstance(document, str) or not document.strip():
+                raise DiscoveryFailure("audit_html_missing_or_invalid")
+            text = _normalize_sce_labels(_page_text(document))
+            if not text or not re.search(r"<table\b", document, re.IGNORECASE) or not re.search(r"</table\s*>", document, re.IGNORECASE):
+                raise DiscoveryFailure("audit_sce_document_unverified")
+            if not ("자본금" in text and ("기초" in text or "기말" in text)):
+                raise DiscoveryFailure("audit_sce_content_unverified")
             result = _parse_sce_text(text, fiscal_year, corp_code, rcept_no)
             logger.debug(
                 "sce_page_parsed",
@@ -222,6 +247,7 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
     import datetime
 
     import dart_fss as dart
+    from dart_fss.errors import NoDataReceived
 
     dart.set_api_key(_api_key())
 
@@ -232,7 +258,7 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
     corp_obj = next((c for c in corp_list if c.corp_code == corp_code), None)
     if not corp_obj:
         logger.warning("audit_corp_not_found", corp_code=corp_code)
-        return []
+        raise DiscoveryFailure("audit_corp_lookup_missing")
 
     current_year = datetime.datetime.now().year
     bgn_de = f"{current_year - years}0101"
@@ -243,9 +269,15 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
             filings = corp_obj.search_filings(
                 bgn_de=bgn_de, end_de=end_de, page_count=100
             )
-    except Exception as e:
-        logger.debug("audit_search_no_result", corp_code=corp_code, error=str(e))
+    except NoDataReceived:
+        # v0.4.17 check_status maps only documented status 013 to this class.
+        # This is a bounded no-filings result, not an auth/network/parser failure.
         return []
+    except Exception as e:
+        raise DiscoveryFailure("audit_search_failed") from e
+
+    if len(filings) >= 100:
+        raise DiscoveryFailure("audit_page_scope_unverified")
 
     audit_reports = [
         f for f in filings
@@ -266,7 +298,7 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
             year_match = re.search(r"(\d{4})년", report.report_nm or "")
         if not year_match:
             logger.debug("audit_year_parse_skip", report_nm=report.report_nm)
-            continue
+            raise DiscoveryFailure("audit_report_year_unknown")
         fiscal_year = int(year_match.group(1))
 
         try:
@@ -277,17 +309,13 @@ def fetch_audit_rounds(corp_code: str, years: int = 5) -> list[dict]:
                 "audit_sce_parse_failed",
                 corp_code=corp_code,
                 fiscal_year=fiscal_year,
-                error=str(e),
+                error="audit_parser_failed",
                 note="parse_failed — 빈 결과를 '증자 없음'으로 오인 금지",
             )
-            raise  # 예외 무음 통과 금지
+            raise DiscoveryFailure("audit_parser_failed") from e
 
         if not sce_found:
-            logger.debug(
-                "audit_sce_page_missing",
-                corp_code=corp_code,
-                fiscal_year=fiscal_year,
-            )
+            raise DiscoveryFailure("audit_sce_section_missing")
         if result:
             all_rounds.append(result)
 

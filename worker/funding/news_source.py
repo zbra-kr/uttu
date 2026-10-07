@@ -20,6 +20,7 @@ from loguru import logger
 
 from worker.agent.funding_extractor import extract_funding_rounds
 from worker.funding.name_utils import is_high_risk, name_in_text
+from worker.funding.outcomes import DiscoveryFailure
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ def _core_name(corp_name: str) -> str:
 def _fetch_brand_names(company_id: str) -> list[str]:
     """
     brands 테이블에서 해당 회사의 브랜드 이름 목록을 반환 (최대 5개).
-    실패 시 빈 리스트 반환.
+    응답 누락/오류는 DiscoveryFailure; 확인된 빈 브랜드 목록만 빈 리스트.
     """
     if not company_id:
         return []
@@ -77,10 +78,11 @@ def _fetch_brand_names(company_id: str) -> list[str]:
         service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_SERVICE_KEY"]
         sb = create_client(os.environ["SUPABASE_URL"], service_key)
         r = sb.from_("brands").select("name").eq("company_id", company_id).limit(5).execute()
-        return [b["name"] for b in (r.data or []) if b.get("name")]
+        if not isinstance(r.data, list) or any(not isinstance(b, dict) for b in r.data):
+            raise DiscoveryFailure("brand_receipt_missing_or_invalid")
+        return [b["name"] for b in r.data if b.get("name")]
     except Exception as e:
-        logger.warning("brand_fetch_failed", company_id=company_id, error=str(e))
-        return []
+        raise DiscoveryFailure("brand_lookup_failed") from e
 
 
 def _build_queries(corp_name: str, company_id: str = "") -> list[str]:
@@ -145,15 +147,17 @@ def _naver_search(client_id: str, client_secret: str, query: str) -> list[dict]:
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as e:
-        logger.warning("naver_search_http_error", query=query[:50], error=str(e))
-        return []
+        raise DiscoveryFailure("naver_http_failed") from e
     except Exception as e:
-        logger.warning("naver_search_error", query=query[:50], error=str(e))
-        return []
+        raise DiscoveryFailure("naver_query_failed") from e
 
-    items = data.get("items") or []
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        raise DiscoveryFailure("naver_invalid_payload")
+    items = data["items"]
     results: list[dict] = []
     for item in items:
+        if not isinstance(item, dict):
+            raise DiscoveryFailure("naver_invalid_item")
         results.append({
             "title":         _strip_html(item.get("title") or ""),
             "description":   _strip_html(item.get("description") or ""),
@@ -168,7 +172,7 @@ def _naver_search(client_id: str, client_secret: str, query: str) -> list[dict]:
 
 def _fetch_article_body_single(url: str) -> str | None:
     """
-    단일 URL에서 본문 텍스트 fetch. 실패 시 None 반환.
+    단일 URL 본문 fetch. 오류/100자 미만 본문은 DiscoveryFailure.
     """
     if not url:
         return None
@@ -192,18 +196,17 @@ def _fetch_article_body_single(url: str) -> str | None:
             clean = html.unescape(clean)
             clean = re.sub(r"\s{3,}", "\n\n", clean).strip()
             if len(clean) < 100:
-                return None
+                raise DiscoveryFailure("article_body_insufficient")
             return clean[:4000]
     except Exception as e:
-        logger.debug("article_body_fetch_failed", url=url[:80], error=str(e))
-        return None
+        raise DiscoveryFailure("article_body_failed") from e
 
 
 def _fetch_article_body(item: dict) -> str | None:
     """
     기사 dict에서 본문 텍스트 fetch.
     우선순위: Naver 리더(n.news.naver.com) → originallink → link(일반)
-    실패 시 None 반환 (fallback to description).
+    후보 URL을 모두 시도한다. 충분한 본문이 없으면 DiscoveryFailure.
     """
     link = item.get("link") or ""
     original = item.get("originallink") or ""
@@ -218,10 +221,13 @@ def _fetch_article_body(item: dict) -> str | None:
         urls_to_try.append(link)       # 기타 링크
 
     for url in urls_to_try:
-        body = _fetch_article_body_single(url)
+        try:
+            body = _fetch_article_body_single(url)
+        except Exception:
+            continue  # This candidate failed; try remaining allowed evidence URLs.
         if body:
             return body
-    return None
+    raise DiscoveryFailure("article_body_unavailable")
 
 
 def _passes_funding_gate(body: str, core_name: str) -> bool:
@@ -308,8 +314,7 @@ async def fetch_news_rounds(
     client_id     = os.environ.get("NAVER_CLIENT_ID")
     client_secret = os.environ.get("NAVER_CLIENT_SECRET")
     if not client_id or not client_secret:
-        logger.warning("news_source_no_naver_keys", company=search_name)
-        return []
+        raise DiscoveryFailure("news_expected_credentials_missing")
 
     # 핵심 사명 추출 + high-risk 판별 (짧거나 일반명)
     core = _core_name(search_name)
@@ -370,18 +375,16 @@ async def fetch_news_rounds(
         duplicates_removed=raw_total - dedup_total,
     )
 
-    # 상위 5건 본문 fetch (나머지는 description fallback)
+    # Evidence policy: first five require a >=100-character fetched body after
+    # all URL candidates; failure aborts discovery, never falls back silently.
+    # Remaining bounded search items explicitly use nonempty API descriptions.
     body_success = 0
     body_fallback = 0
     for i, article in enumerate(all_articles):
         if i < _BODY_FETCH_LIMIT:
             body = _fetch_article_body(article)
-            if body:
-                article["body"] = body
-                body_success += 1
-            else:
-                article["body"] = article.get("description") or ""
-                body_fallback += 1
+            article["body"] = body
+            body_success += 1
             if i < len(all_articles) - 1 and i < _BODY_FETCH_LIMIT - 1:
                 time.sleep(_MIN_DELAY_SEC + random.uniform(0, 0.3))
         else:
@@ -404,8 +407,8 @@ async def fetch_news_rounds(
     for article in all_articles:
         body = article.get("body") or ""
         url  = article.get("source_url") or ""
-        if not body:
-            continue
+        if not isinstance(body, str) or not body.strip():
+            raise DiscoveryFailure("article_evidence_missing")
 
         # ① 하드 게이트: core_name 토큰 경계 AND 펀딩키워드 동시 등장
         if not _passes_funding_gate(body, core):
@@ -446,11 +449,7 @@ async def fetch_news_rounds(
 
             all_rounds.extend(rounds)
         except Exception as e:
-            logger.warning(
-                "news_extract_failed",
-                url=url[:60],
-                error=str(e),
-            )
+            raise DiscoveryFailure("news_extraction_failed") from e
 
     logger.info(
         "funding_gate_stats",

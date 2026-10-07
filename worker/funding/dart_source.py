@@ -18,25 +18,33 @@ import httpx
 from loguru import logger
 
 from worker.dart.fetcher import BASE, RATE_LIMIT_SEC
+from worker.funding.outcomes import DiscoveryFailure
 
 # ── 내부 헬퍼 ───────────────────────────────────────────────────────────────────
 
 def _api_key() -> str:
-    return os.environ["DART_API_KEY"]
+    key = os.environ.get("DART_API_KEY")
+    if not key:
+        raise DiscoveryFailure("dart_expected_credentials_missing")
+    return key
 
 
 async def _get_json(client: httpx.AsyncClient, endpoint: str, params: dict[str, Any]) -> dict:
-    """DART API GET + rate limit. status 010/013 = 정상적인 빈 결과."""
+    """DART GET; 013 is scoped no-data, all other failures propagate."""
     await asyncio.sleep(RATE_LIMIT_SEC)
     resp = await client.get(f"{BASE}/{endpoint}", params=params, timeout=30)
     resp.raise_for_status()
     data = resp.json()
+    if not isinstance(data, dict):
+        raise DiscoveryFailure("dart_invalid_payload")
     status = data.get("status", "")
-    if status in ("010", "013"):
+    if not isinstance(status, str) or not re.fullmatch(r"\d{3}", status):
+        raise DiscoveryFailure("dart_invalid_status")
+    if status == "013":
         logger.debug("dart_no_result", endpoint=endpoint, corp_code=params.get("corp_code"))
         return {}
-    if status not in ("000", ""):
-        raise RuntimeError(f"DART API 오류 {status}: {data.get('message')}")
+    if status != "000":
+        raise DiscoveryFailure("dart_status_" + str(status))
     return data
 
 
@@ -84,11 +92,15 @@ def _parse_estkrs(groups: list[dict]) -> list[dict]:
     by_rcept: dict[str, dict] = {}
 
     for group in groups:
+        if not isinstance(group, dict) or not isinstance(group.get("list"), list):
+            raise DiscoveryFailure("dart_group_items_missing_or_invalid")
         title = group.get("title", "")
-        for item in group.get("list", []):
+        for item in group["list"]:
+            if not isinstance(item, dict):
+                raise DiscoveryFailure("dart_group_item_invalid")
             rcept_no = item.get("rcept_no", "")
             if not rcept_no:
-                continue
+                raise DiscoveryFailure("dart_reference_missing")
             if rcept_no not in by_rcept:
                 by_rcept[rcept_no] = {"rcept_no": rcept_no, "raw_groups": []}
             by_rcept[rcept_no]["raw_groups"].append({title: item})
@@ -244,7 +256,7 @@ def _parse_piic(items: list[dict]) -> list[dict]:
     for item in items:
         rcept_no = item.get("rcept_no", "")
         if not rcept_no:
-            continue
+            raise DiscoveryFailure("dart_reference_missing")
 
         # 자금사용목적 합산 (운영자금 + 시설자금 + 사업인수)
         total = 0
@@ -312,19 +324,27 @@ async def fetch_dart_rounds(
         try:
             data = await _get_json(client, "estkRs.json", params_base)
             if data:
-                groups = data.get("group", [])
+                groups = data.get("group")
+                if not isinstance(groups, list):
+                    raise DiscoveryFailure("dart_invalid_groups")
                 rounds.extend(_parse_estkrs(groups))
         except Exception as e:
-            logger.warning("estkrs_fetch_error", corp_code=corp_code, error=str(e))
+            if isinstance(e, DiscoveryFailure):
+                raise
+            raise DiscoveryFailure("dart_estkrs_failed") from e
 
         # 2. piicDecsn — 유상증자결정
         try:
             data2 = await _get_json(client, "piicDecsn.json", params_base)
             if data2:
-                items = data2.get("list", [])
+                items = data2.get("list")
+                if not isinstance(items, list):
+                    raise DiscoveryFailure("dart_invalid_items")
                 rounds.extend(_parse_piic(items))
         except Exception as e:
-            logger.warning("piic_fetch_error", corp_code=corp_code, error=str(e))
+            if isinstance(e, DiscoveryFailure):
+                raise
+            raise DiscoveryFailure("dart_piic_failed") from e
 
     logger.info(
         "dart_rounds_fetched",
