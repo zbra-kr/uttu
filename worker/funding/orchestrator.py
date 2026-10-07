@@ -13,7 +13,7 @@ UTTU 투자유치 수집 오케스트레이터
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytz
 from dotenv import load_dotenv
@@ -26,6 +26,7 @@ from worker.funding.dart_source import fetch_dart_rounds
 from worker.funding.datago_source import fetch_datago_rounds
 from worker.funding.merge import merge_rounds
 from worker.funding.news_source import fetch_news_rounds
+from worker.funding.persistence import PersistenceFailure, persist_rounds, publish_company
 from worker.notifications.enqueue import enqueue_notification
 
 load_dotenv()
@@ -52,16 +53,27 @@ def _set_job_status(
     now = datetime.now(KST).isoformat()
     update: dict = {"status": status}
     if status == "running":
-        update["started_at"] = now
+        update.update(started_at=now, finished_at=None, rounds_found=0, error=None)
     elif status in ("done", "failed"):
         update["finished_at"] = now
         update["rounds_found"] = rounds_found
-        if error:
-            update["error"] = error[:500]
+        update["error"] = error[:500] if error else None
     try:
         data = db.table("funding_collection_jobs").update(update).eq("id", job_id).execute().data
         if not isinstance(data, list) or len(data) != 1 or data[0].get("id") != job_id or data[0].get("status") != status:
             return False
+        if any(data[0].get(key) != value for key, value in update.items()
+               if key not in {'started_at', 'finished_at'}):
+            return False
+        for key in ('started_at', 'finished_at'):
+            if key not in update:
+                continue
+            actual, expected = data[0].get(key), update[key]
+            if expected is None:
+                if actual is not None:
+                    return False
+            elif datetime.fromisoformat(actual) != datetime.fromisoformat(expected):
+                return False
         logger.debug("job_status_updated", job_id=job_id, status=status)
         return True
     except Exception as e:
@@ -71,50 +83,13 @@ def _set_job_status(
 
 # ── DB 쓰기 ──────────────────────────────────────────────────────────────────────
 
-def _delete_existing_rounds(db: Client, company_id: str) -> None:
-    """기존 수집 결과 전체 삭제 — 재수집 전 호출."""
-    try:
-        db.table("funding_rounds").delete().eq("company_id", company_id).execute()
-        logger.info("funding_rounds_deleted", company_id=company_id)
-    except Exception as e:
-        logger.warning("funding_rounds_delete_failed", company_id=company_id, error=str(e))
-
-
-def _upsert_rounds(db: Client, rounds: list[dict]) -> int:
-    """
-    funding_rounds 테이블에 insert.
-    _delete_existing_rounds 호출 후 사용 (삭제 후 신규 적재 패턴).
-    PostgREST 1000행 상한 대응: 청크 처리.
-    """
-    if not rounds:
-        return 0
-
-    inserted = 0
-    chunk_size = 100  # PostgREST 안전 청크
-    for i in range(0, len(rounds), chunk_size):
-        chunk = rounds[i : i + chunk_size]
-        try:
-            result = (
-                db.table("funding_rounds")
-                .upsert(chunk, on_conflict="company_id,source_type,source_ref")
-                .execute()
-            )
-            inserted += len(result.data or chunk)
-        except Exception as e:
-            logger.error("funding_upsert_failed", chunk_start=i, error=str(e))
-
-    logger.info("funding_rounds_upserted", count=inserted)
-    return inserted
-
-
-def _update_company_collected_at(db: Client, company_id: str) -> None:
-    now = datetime.now(KST).isoformat()
-    try:
-        db.table("companies").update(
-            {"funding_last_collected_at": now}
-        ).eq("id", company_id).execute()
-    except Exception as e:
-        logger.warning("company_collected_at_update_failed", company_id=company_id, error=str(e))
+def _publication_failure(db, job_id, code, stage):
+    result = {"rounds_found": 0, "by_source": {}, "dry_run": False,
+              "error": code, "publication_stage": stage, "brief_preview": None,
+              "round_writes_may_have_committed": stage != "source_identity"}
+    if job_id and not _set_job_status(db, job_id, "failed", error=code):
+        result["job_error"] = "failed_status_ack_unverified"
+    return result
 
 
 # ── 핵심 잡 실행 ────────────────────────────────────────────────────────────────
@@ -146,6 +121,8 @@ async def run_job(
     try:
         r = db.table("companies").select("id, corp_name, corp_code").eq("id", company_id).single().execute()
         company = r.data
+        if not isinstance(company, dict) or company.get('id') != company_id:
+            raise RuntimeError('company_lookup_ack_unverified')
     except Exception as e:
         msg = f"company_not_found: {e}"
         logger.error("company_not_found", company_id=company_id, error=str(e))
@@ -167,8 +144,9 @@ async def run_job(
     )
 
     # 2. 잡 상태 running으로 전환
-    if job_id and not dry_run:
-        _set_job_status(db, job_id, "running")
+    if job_id and not dry_run and not _set_job_status(db, job_id, "running"):
+        return {"rounds_found": 0, "by_source": {}, "dry_run": False,
+                "error": "funding_job_start_ack_unverified", "brief_preview": None}
 
     all_rounds: list[dict] = []
     errors: list[str] = []
@@ -216,8 +194,7 @@ async def run_job(
     except Exception as e:
         errors.append(f"datago_error: {e}")
 
-    # Source failure containment only; the success publication path stays intact.
-    # Historical deletion and storage acknowledgments remain unresolved risks.
+    # Source failures stop before additive storage or company publication.
     if errors:
         code = "funding_source_discovery_failed"
         result = {"rounds_found": 0, "by_source": {}, "dry_run": dry_run,
@@ -234,26 +211,30 @@ async def run_job(
         st = r.get("source_type", "unknown")
         by_source[st] = by_source.get(st, 0) + 1
 
-    # 7. 브리핑 생성
-    brief_md = await generate_brief(company_name, merged)
-
-    # 8. DB 쓰기 (dry_run 아닐 때만)
+    # 7. Add new stable identities; never delete or overwrite historical rows.
+    stored = None
     if not dry_run:
-        _delete_existing_rounds(db, company_id)
-        upserted = _upsert_rounds(db, merged)
-        _update_company_collected_at(db, company_id)
-        # funding_brief_md, funding_brief_at 업데이트
+        stage = "rounds"
         try:
-            db.table("companies").update({
-                "funding_brief_md": brief_md,
-                "funding_brief_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", company_id).execute()
-            logger.info("funding_brief_saved", company=company_name, chars=len(brief_md))
-        except Exception as e:
-            logger.warning("funding_brief_save_failed", company=company_name, error=str(e))
+            stored = persist_rounds(db, company_id, merged)
+            stage = "brief_generation"
+            brief_md = await generate_brief(company_name, stored.history)
+            stage = "company_publication"
+            publish_company(db, company_id, brief_md)
+        except Exception as error:
+            code = error.code if isinstance(error, PersistenceFailure) else "funding_publication_failed"
+            if code in {"funding_source_identity_invalid", "funding_source_identity_duplicate"}:
+                stage = "source_identity"
+            logger.error("funding_publication_failed", stage=stage, code=code)
+            return _publication_failure(db, job_id, code, stage)
         if job_id:
-            _set_job_status(db, job_id, "done", rounds_found=upserted)
-            # 요청자에게 완료 알림
+            if not _set_job_status(db, job_id, "done", rounds_found=stored.confirmed):
+                # Publication is confirmed, terminal acknowledgment is not. Do not
+                # overwrite an ambiguously committed done state or enqueue success.
+                return {"rounds_found": stored.confirmed, "by_source": by_source,
+                        "dry_run": False, "error": "funding_done_ack_unverified",
+                        "publication_stage": "job_done", "publication_confirmed": True,
+                        "brief_preview": None}
             try:
                 job_row = db.table("funding_collection_jobs").select("requested_by").eq("id", job_id).single().execute()
                 requested_by = (job_row.data or {}).get("requested_by")
@@ -262,14 +243,17 @@ async def run_job(
                         user_id=requested_by,
                         event_type="funding_collection_done",
                         title=f"투자정보 수집 완료 — {company_name}",
-                        body=f"{upserted}건 수집됨" if upserted else "신규 데이터 없음",
+                        body=f"{stored.confirmed}건 확인됨" if stored.confirmed else "신규 데이터 없음 — 기존 이력 유지",
                         link=f"/company?id={company_id}",
                         client=db,
                     )
                     logger.info("funding_notify_sent", user_id=requested_by, company=company_name)
-            except Exception as e:
-                logger.warning("funding_notify_failed", job_id=job_id, error=str(e))
+            except Exception as error:
+                # Notification acknowledgment/outbox idempotency is a separate
+                # concern; never turn confirmed data publication into a retry.
+                logger.warning("funding_notify_failed", job_id=job_id, error=str(error))
     else:
+        brief_md = await generate_brief(company_name, merged)
         logger.info(
             "dry_run_result",
             company=company_name,
@@ -287,8 +271,6 @@ async def run_job(
                 confidence=r.get("confidence"),
                 investors=r.get("investors"),
             )
-        if job_id:
-            _set_job_status(db, job_id, "done", rounds_found=len(merged))
 
     brief_preview = brief_md[:200] if brief_md else None
 
@@ -298,8 +280,8 @@ async def run_job(
         "dry_run":        dry_run,
         "brief_preview":  brief_preview,
     }
-    if errors:
-        result["errors"] = errors
+    if stored is not None:
+        result.update(rounds_inserted=stored.inserted, history_rounds=len(stored.history))
 
     logger.info("funding_job_done", **result)
     return result

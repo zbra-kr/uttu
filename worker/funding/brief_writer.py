@@ -116,7 +116,7 @@ def _build_prompt(corp_name: str, rounds: list[dict]) -> str:
         r.get("amount_krw") or 0
         for r in rounds
         if r.get("amount_krw") and (
-            r.get("confidence", 0) >= 1.0
+            (r.get("confidence") or 0) >= 1.0
             or r.get("source_type") in ("dart_estkrs", "dart_piic")
         )
     )

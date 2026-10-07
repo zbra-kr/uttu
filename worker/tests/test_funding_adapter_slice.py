@@ -218,6 +218,7 @@ class Query:
     def __init__(self, db, name):
         self.db, self.name, self.op, self.payload = db, name, 'select', None
         self.filters, self.maximum, self.is_single = [], None, False
+        self.bounds, self.options = None, {}
     def select(self, *_a, **_kw):
         return self
     def eq(self, key, value):
@@ -231,6 +232,9 @@ class Query:
     def limit(self, value):
         self.maximum = value
         return self
+    def range(self, lower, upper):
+        self.bounds = lower, upper
+        return self
     def update(self, value):
         self.op, self.payload = 'update', value
         return self
@@ -239,6 +243,7 @@ class Query:
         return self
     def upsert(self, value, **_kw):
         self.op, self.payload = 'upsert', value
+        self.options = _kw
         return self
     def execute(self):
         selected = [r for r in self.db.tables[self.name]
@@ -256,10 +261,24 @@ class Query:
         elif self.op == 'delete':
             self.db.tables[self.name] = [r for r in self.db.tables[self.name] if r not in selected]
         elif self.op == 'upsert':
-            selected = copy.deepcopy(self.payload)
-            self.db.tables[self.name].extend(selected)
+            selected = []
+            for incoming in self.payload:
+                key = tuple(incoming.get(k) for k in ('company_id', 'source_type', 'source_ref'))
+                previous = next((row for row in self.db.tables[self.name] if
+                                 key == tuple(row.get(k) for k in ('company_id', 'source_type', 'source_ref'))), None)
+                if previous and self.options.get('ignore_duplicates'):
+                    continue
+                if previous:
+                    previous.update(copy.deepcopy(incoming))
+                    selected.append(copy.deepcopy(previous))
+                else:
+                    row = dict(copy.deepcopy(incoming), id='fixture-'+str(len(self.db.tables[self.name])))
+                    self.db.tables[self.name].append(row)
+                    selected.append(copy.deepcopy(row))
         if self.maximum is not None:
             selected = selected[:self.maximum]
+        if self.bounds is not None:
+            selected = selected[self.bounds[0]:self.bounds[1] + 1]
         data = copy.deepcopy(selected)
         if self.is_single:
             assert len(data) == 1
@@ -312,7 +331,7 @@ def test_positive_collection_retains_production_success_behavior(h, monkeypatch)
     assert db.tables['funding_collection_jobs'][0]['status'] == 'done'
     assert db.tables['funding_collection_jobs'][0]['rounds_found'] == 1
     assert any(r['source_ref'] == 'https://fixture/new' for r in db.tables['funding_rounds'])
-    assert not any(r['id'] == 'old-c1' for r in db.tables['funding_rounds'] if 'id' in r)
+    assert any(r['id'] == 'old-c1' for r in db.tables['funding_rounds'] if 'id' in r)
     assert (db.tables['companies'][1], next(r for r in db.tables['funding_rounds'] if r['company_id'] == 'c2')) == second
     assert h.effects[0] == 'brief' and h.effects[1]['event_type'] == 'funding_collection_done'
 
