@@ -125,7 +125,7 @@ export default function RankingDailyInsights({ scope, load, compact, sourceBack,
         </div>
       </div>
       {scope && <p className="dim" style={{ fontSize: 11, margin: '0 0 8px' }}>
-        Musinsa · {CATEGORY_MAP[scope.selectedCategory] || scope.selectedCategory} · {scope.gender === 'A' ? '전체 성별' : scope.gender === 'M' ? '남성' : '여성'} · {AGE_MAP[scope.age] || scope.age} · 순위 1–{DAILY_RANK_LIMIT} 관측 범위
+        Musinsa · {CATEGORY_MAP[scope.selectedCategory] || scope.selectedCategory} · {scope.gender === 'A' ? '전체 성별' : scope.gender === 'M' ? '남성' : '여성'} · {AGE_MAP[scope.age] || scope.age} · 조회 조건: 순위 {DAILY_RANK_LIMIT}위 이내
       </p>}
       {data?.date && <p className="mono dim" style={{ fontSize: 11, margin: '0 0 8px' }}>
         조회 기준 {data.date} · 비교 기준 {data.previousDate} · {today && data.date < today ? `현재 ${today}보다 이전 날짜` : today && data.date > today ? '현재 날짜 이후: 확인 필요' : '실시간 자료가 아님'}
