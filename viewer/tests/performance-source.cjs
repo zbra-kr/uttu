@@ -15,6 +15,7 @@ const live = {
   'useViewport.ts': 'src/hooks/useViewport.ts',
   'useResolvedViewport.ts': 'src/hooks/useResolvedViewport.ts',
   'useReviewStats.ts': 'src/hooks/useReviewStats.ts',
+  'useCsAnomalyReviews.ts': 'src/hooks/useCsAnomalyReviews.ts',
   'useReviewDashboardPanels.ts': 'src/hooks/useReviewDashboardPanels.ts',
   'format.ts': 'src/lib/format.ts',
 };
