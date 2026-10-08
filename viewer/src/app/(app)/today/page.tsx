@@ -5,6 +5,7 @@ import { fetchAllBriefings, fetchAvailableBriefingDates } from '@/lib/queries-br
 import { fetchBriefingKpiData } from '@/lib/queries-kpi';
 import { useBriefingScope, useBriefingRead } from '@/hooks/useBriefingRead';
 import { useKstToday } from '@/hooks/useKstToday';
+import StaffDailyPlanningCheck, { useStaffDailyPlanningCheck } from '@/components/briefing/StaffDailyPlanningCheck';
 import BriefingReadStatus from '@/components/briefing/BriefingReadStatus';
 import BriefingTabs from '@/components/briefing/BriefingTabs';
 import ExecutiveBriefingView from '@/components/briefing/ExecutiveBriefingView';
@@ -55,10 +56,11 @@ function TodayContent() {
 
   const today = useKstToday();
   const rawDate = searchParams.get('date');
-  const activeDate = activeTab === 'cs' ? rawDate ?? today
+  const activeDate = activeTab === 'cs' || activeTab === 'staff' ? rawDate ?? today
     : (rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) ? rawDate : today;
   const validDate = validCSDate(activeDate);
   const isFuture = validDate && activeDate > today;
+  const staffPlanning = useStaffDailyPlanningCheck(activeDate, today, activeTab === 'staff');
   const ownedReviews = useCSDailyReviewState();
   const reviewDate = csReviewDate(activeDate, today);
   const csReviews = ownedReviews?.briefingDate === activeDate && ownedReviews.reviewDate === reviewDate && ownedReviews.status !== 'inactive' ? ownedReviews
@@ -114,6 +116,7 @@ function TodayContent() {
         isFuture={isFuture}
         onDateChange={handleDateChange}
         csReviews={csReviews}
+        staffPlanning={staffPlanning}
         invalidDate={!validDate}
       />
     );
@@ -151,6 +154,7 @@ function TodayContent() {
         flexDirection: 'column',
         gap: 14,
       }}>
+        {activeTab === 'staff' && <StaffDailyPlanningCheck state={staffPlanning} compact={false} />}
         {activeTab === 'cs' && <CSDailyReviewCheck state={csReviews} />}
         {readStatus}
         {!validDate ? <p role="status">유효한 브리핑 날짜를 선택하세요.</p> : briefing.loading && !briefing.loaded ? (

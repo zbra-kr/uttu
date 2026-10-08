@@ -13,7 +13,7 @@ export const useRankingDailySession = () => React.useContext(Context);
 export default function RankingDailyProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const mobile = useIsMobile();
-  const active = pathname === '/ranking' || (pathname === '/' && mobile);
+  const active = pathname === '/ranking' || pathname === '/today' || (pathname === '/' && mobile);
   const [session] = React.useState(() => createDailyRankingSession(fetchRankingDaily));
   React.useEffect(() => {
     if (!active) { session.leave(); return; }

@@ -79,8 +79,8 @@ function SalesPlanningCheck({ item }: { item: DailyRiser }) {
   </p>;
 }
 
-export default function RankingDailyInsights({ scope, load, compact, sourceBack }: {
-  scope: RankingSourceContext | null; load: DailyLoad | null; compact: boolean; sourceBack?: string;
+export default function RankingDailyInsights({ scope, load, compact, sourceBack, heading }: {
+  scope: RankingSourceContext | null; load: DailyLoad | null; compact: boolean; sourceBack?: string; heading?: string;
 }) {
   const data = load?.data;
   const comparison = React.useMemo(() => data ? compareDailyRanking(data, scope) : null, [data, scope]);
@@ -117,7 +117,7 @@ export default function RankingDailyInsights({ scope, load, compact, sourceBack 
   return (
     <section className="panel" aria-labelledby="ranking-daily-title" style={{ padding: compact ? 12 : 16, marginBottom: 14 }}>
       <div className="sec-head" style={{ flexWrap: 'wrap', gap: 8, padding: 0, marginBottom: 10 }}>
-        <h3 id="ranking-daily-title" style={{ margin: 0 }}>{scope && dailyRequest(scope)?.date ? '지정 수집일 순위·할인 변화' : '최근 수집일 순위·할인 변화'}</h3>
+        <h3 id="ranking-daily-title" style={{ margin: 0 }}>{heading ?? (scope && dailyRequest(scope)?.date ? '지정 수집일 순위·할인 변화' : '최근 수집일 순위·할인 변화')}</h3>
         <div className="row-flex gap-6" style={{ flexWrap: 'wrap' }}>
           {load?.refresh && <button type="button" className="btn sm" onClick={load.refresh}>다시 조회</button>}
           {replayHref && <Link href={replayHref} className="btn sm">조건·날짜 다시보기</Link>}
