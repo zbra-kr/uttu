@@ -30,6 +30,7 @@ export async function fetchWeeklyReviews(scope: WeeklyScope, options: {
     .limit(evidence.length ? WEEKLY_EVIDENCE_LIMIT : WEEKLY_PAGE_SIZE + 1);
   if (parsed.scope.product) query = query.eq('product_id', parsed.scope.product);
   if (scope.rating === 'low') query = query.gte('rating', 1).lte('rating', 2);
+  if (scope.rating === 'high') query = query.gte('rating', 4).lte('rating', 5);
   if (evidence.length) query = query.in('id', parsed.evidence);
   else if (options.cursor) query = query.or(`review_date.lt.${options.cursor.date},and(review_date.eq.${options.cursor.date},id.lt.${options.cursor.id})`);
   if (options.signal) query = query.abortSignal(options.signal);
