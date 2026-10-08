@@ -3,6 +3,7 @@ import importlib.util
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -228,3 +229,131 @@ class LocalReviewSkipPreservationTests(unittest.TestCase):
             (root / 'logs').mkdir()
             (root / 'logs/reviews_20261007.log').write_text('Collection skipped: another review task is active\n')
             self.assertEqual(monitor.log_outcome('reviews', root, '20261007'), 'skipped')
+
+
+class LatestAttemptTests(unittest.TestCase):
+    def outcome(self, name, content):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'logs').mkdir()
+            (root / 'logs' / f'{name}_20261005.log').write_text(content)
+            return monitor.log_outcome(name, root, '20261005')
+
+    def test_new_ranking_start_invalidates_previous_completion(self):
+        self.assertIsNone(self.outcome('ranking', '=== done: old ===\n=== start: new ===\n'))
+
+    def test_review_retry_invalidates_previous_recovery_skip(self):
+        self.assertIsNone(self.outcome('reviews', 'Collection skipped: another review task is active\njob_tracker_start\n'))
+        self.assertEqual(self.outcome('reviews', 'Collection skipped: another review task is active\njob_tracker_start\nreview_smart_done\n'), 'completed')
+
+    def test_latest_review_skip_overrides_previous_completion(self):
+        self.assertEqual(self.outcome('reviews', 'review_smart_done\nCollection skipped: another review task is active\n'), 'skipped')
+
+    def test_full_collection_new_attempt_is_pending(self):
+        self.assertIsNone(self.outcome('full_collection', '=== ALL DONE: old ===\n=== START brand_detail: new ===\n'))
+
+
+class MonitorEventTests(unittest.TestCase):
+    def run_events(self, sink=None):
+        f = MonitorFixture()
+        records = []
+        code = monitor.run_monitor(Path('offline-root'), '20261005', f.notify,
+                                   clock=lambda: next(f.ticks), sleeper=f.sleep,
+                                   runner=f.runner, observe=f.observe,
+                                   event_sink=sink or records.append,
+                                   utcnow=lambda: datetime(2026, 10, 5, 17, tzinfo=timezone.utc))
+        return code, f, records
+
+    def test_owned_stages_have_correlated_start_exit_settlement_and_no_output(self):
+        code, f, records = self.run_events()
+        self.assertEqual(code, 0)
+        self.assertEqual(len({r['monitor_run_id'] for r in records}), 1)
+        self.assertTrue(all(r['recorded_at_utc'] == '2026-10-05T17:00:00+00:00' for r in records))
+        self.assertTrue(all(r['content_acceptance'] == 'unverified' for r in records))
+        for stage in ['detect', 'news', 'briefing']:
+            rows = [r for r in records if r.get('stage') == stage]
+            self.assertEqual([r['event'] for r in rows], ['stage_started', 'process_exited', 'stage_settled'])
+            self.assertEqual(rows[1]['exit_code'], 0)
+            self.assertEqual(rows[2]['evidence'], 'owned_process')
+            self.assertTrue(all(r['attempt'] == 1 for r in rows))
+        self.assertNotIn('offline fixture', str(records))
+        self.assertEqual([name for name, _ in f.calls], ['detect', 'news', 'briefing'])
+
+    def test_repeated_monitor_invocations_get_distinct_run_ids(self):
+        _, _, first = self.run_events()
+        _, _, second = self.run_events()
+        self.assertNotEqual(first[0]['monitor_run_id'], second[0]['monitor_run_id'])
+
+    def test_external_marker_is_observation_without_collector_identity(self):
+        _, _, records = self.run_events()
+        row = next(r for r in records if r.get('stage') == 'ranking')
+        self.assertEqual(row['evidence'], 'daily_log_marker')
+        self.assertEqual(row['collector_run_identity'], 'unavailable')
+        self.assertIsNone(row['attempt'])
+
+    def test_broken_metadata_sink_does_not_change_launches_or_settlement(self):
+        def broken(_):
+            raise OSError('offline sink')
+        code, f, _ = self.run_events(broken)
+        self.assertEqual(code, 0)
+        self.assertEqual([name for name, _ in f.calls], ['detect', 'news', 'briefing'])
+
+    def test_quoted_recovery_skip_is_not_a_skip_event(self):
+        self.assertIsNone(LatestAttemptTests().outcome('reviews', 'warning mentions Collection skipped: old\n'))
+
+
+class SettlementEvidenceTests(unittest.TestCase):
+    def records(self, fixture):
+        records = []
+        code = monitor.run_monitor(Path('offline-root'), '20261005', fixture.notify,
+                                   clock=lambda: next(fixture.ticks), sleeper=fixture.sleep,
+                                   runner=fixture.runner, observe=fixture.observe,
+                                   event_sink=records.append)
+        return code, records
+
+    def test_force_pass_is_policy_timeout_without_log_marker(self):
+        f = MonitorFixture(observe=lambda name, *_: 'completed' if name in monitor.SCRAPERS
+                           and name != 'full_collection' else None, ticks=[0, 21600])
+        code, records = self.records(f)
+        self.assertEqual(code, 1)
+        row = next(r for r in records if r.get('stage') == 'full_collection')
+        self.assertEqual(row['outcome'], 'timed_out')
+        self.assertEqual(row['evidence'], 'policy_timeout')
+        self.assertEqual([name for name, _ in f.calls], ['detect', 'news', 'briefing'])
+
+    def test_missing_executable_has_launch_error_without_process_exit(self):
+        f = MonitorFixture({'detect': FileNotFoundError('offline')})
+        code, records = self.records(f)
+        self.assertEqual(code, 1)
+        rows = [r for r in records if r.get('stage') == 'detect']
+        self.assertEqual([r['event'] for r in rows], ['stage_started', 'launch_error', 'stage_settled'])
+        self.assertEqual(rows[-1]['outcome'], 'blocked')
+        self.assertEqual(rows[-1]['evidence'], 'launch_error')
+        self.assertEqual([name for name, _ in f.calls], ['detect', 'news', 'briefing'])
+
+
+class PostExitEvidenceTests(unittest.TestCase):
+    def test_success_notification_oserror_preserves_confirmed_process_evidence(self):
+        f = MonitorFixture()
+        records = []
+        failed_once = False
+
+        def notify(title, body=None):
+            nonlocal failed_once
+            if title == '✅ 이상탐지 완료' and not failed_once:
+                failed_once = True
+                raise OSError('offline notification')
+            f.notify(title, body)
+
+        code = monitor.run_monitor(Path('offline-root'), '20261005', notify,
+                                   clock=lambda: next(f.ticks), sleeper=f.sleep,
+                                   runner=f.runner, observe=f.observe,
+                                   event_sink=records.append)
+        self.assertEqual(code, 1)
+        rows = [r for r in records if r.get('stage') == 'detect']
+        self.assertEqual([r['event'] for r in rows],
+                         ['stage_started', 'process_exited', 'post_exit_error', 'stage_settled'])
+        self.assertEqual(rows[1]['exit_code'], 0)
+        self.assertEqual(rows[-1]['evidence'], 'owned_process')
+        self.assertEqual(rows[-1]['outcome'], 'blocked')
+        self.assertEqual([name for name, _ in f.calls], ['detect', 'news', 'briefing'])
