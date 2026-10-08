@@ -9,11 +9,18 @@ DO $$ BEGIN
   IF to_regclass('public.reviews') IS NOT NULL THEN
     RAISE EXCEPTION 'Fixture requires absent reviews table';
   END IF;
+  IF to_regprocedure('public.get_review_stats_v1(date)') IS NOT NULL THEN
+    RAISE EXCEPTION 'Fixture requires absent aggregate routine';
+  END IF;
+  IF EXISTS (SELECT FROM pg_roles
+      WHERE rolname IN ('authenticated', 'anon') AND (rolsuper OR rolbypassrls)) THEN
+    RAISE EXCEPTION 'Fixture roles must be NOSUPERUSER and NOBYPASSRLS';
+  END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
-    CREATE ROLE authenticated NOLOGIN;
+    CREATE ROLE authenticated NOLOGIN NOSUPERUSER NOBYPASSRLS;
   END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN
-    CREATE ROLE anon NOLOGIN;
+    CREATE ROLE anon NOLOGIN NOSUPERUSER NOBYPASSRLS;
   END IF;
 END $$;
 CREATE TABLE public.reviews(rating smallint, has_image boolean, review_date date);

@@ -1,6 +1,6 @@
 # Review statistics aggregate candidate
 
-Base: a77b1790c4e0643693706226171484b6a374e9c8. Separate local candidate; no production application.
+Current comparison base: da469be40cd72de6b54b702aea481ab5b9d6bf14 (shipped release). Original source-reviewed aggregate: ed96d96cc1b9670ecaf579792521579814b5438a against a77b1790c4e0643693706226171484b6a374e9c8. Separate test-only candidate; no production application.
 
 The current reader sends six independent exact-count requests (five ratings and image reviews). The candidate uses one authenticated SECURITY INVOKER SQL routine with one SELECT and six COUNT FILTER expressions. The adapter derives the existing metrics and two-decimal average in the browser. Global review scope, inclusive KST-derived date cutoff, days=999 all-time sentinel, and no product/brand joins are preserved. No caches, indexes, table grants, RLS policies, or existing routines are changed. The new routine grants execution to authenticated only, revoking default PUBLIC and anonymous execution; underlying caller SELECT privileges and RLS still govern rows.
 
@@ -13,3 +13,5 @@ PostgreSQL is unavailable in this Mac environment. viewer/tests/sql/review-aggre
 Review blockers before deployment: actual PostgreSQL fixture execution, read-only confirmation of live review SELECT/RLS semantics for authenticated callers, migration numbering and routine collision check, and supported reviewed DB application. Apply the new routine before the adapter. Deployment without it fails closed. To roll back, restore the previous adapter before dropping only the new routine. No data deletion, ACL widening, or automated SQL application. One request is verified offline; no production latency or database-cost improvement is claimed, since a single aggregate scan may trade off against six specialized indexed counts.
 
 Final local checks: all 21 Viewer CI commands passed (lint, nineteen regression commands, production build); explicit TypeScript checking passed. Exact locked dependencies reused from the existing isolated verification installation, with sanitized placeholder settings and external networking blocked. No browser/dev server or production data reads performed.
+
+The disposable PostgreSQL Actions fixture and runner are copied byte-for-byte from the reviewed staged v2 package. Vercel Root Directory is verified as viewer. viewer/vercel.json disables Git deployment only for test/review-stats-aggregate-postgres-20261008; unspecified branches retain their default enabled behavior. This candidate is not merged or deployed to main, and the SQL is not applied to Supabase. Actual PostgreSQL execution is still pending publication of this isolated test branch after review.

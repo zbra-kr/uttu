@@ -1,0 +1,52 @@
+name: Review statistics PostgreSQL fixture
+
+on:
+  push:
+    branches: [test/review-stats-aggregate-postgres-20261008]
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/review-stats-postgres-fixture.yml
+      - supabase/migrations/01413_get_review_stats_v1.sql
+      - viewer/tests/sql/review-aggregate-postgres.sql
+      - viewer/tests/sql/run-review-aggregate-postgres.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-fixture:
+    name: Disposable PostgreSQL aggregate and RLS fixture
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    # The client and service share only the runner's private Docker network.
+    # No host ports are published and no external DB URL is accepted.
+    container: postgres:17-bookworm
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: uttu_review_aggregate_fixture
+          POSTGRES_USER: fixture_admin
+          POSTGRES_PASSWORD: disposable_fixture_password
+        options: >-
+          --health-cmd "pg_isready -U fixture_admin -d uttu_review_aggregate_fixture"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGDATABASE: uttu_review_aggregate_fixture
+      PGUSER: fixture_admin
+      PGPASSWORD: disposable_fixture_password
+      PGCONNECT_TIMEOUT: '10'
+      PGOPTIONS: '-c statement_timeout=30000 -c lock_timeout=5000'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify disposable fixture and caller privileges
+        shell: sh
+        run: sh viewer/tests/sql/run-review-aggregate-postgres.sh
