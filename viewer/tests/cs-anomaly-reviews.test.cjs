@@ -11,14 +11,20 @@ function fixture() {
   const productReads = [], reviewReads = [], renders = [];
   const queries = { fetchProductBrief(id) { const d = deferred(); productReads.push({ id, ...d }); return d.promise; },
     fetchReviews(options) { const d = deferred(); reviewReads.push({ options, ...d }); return d.promise; } };
-  const { useCsAnomalyReviews } = load('src/hooks/useCsAnomalyReviews.ts', { '@/lib/queries': queries });
+  let authListener;
+  const authClient = { auth: {
+    onAuthStateChange(listener) { authListener = listener; listener('INITIAL_SESSION', { user: { id: 'user-A' } }); return { data: { subscription: { unsubscribe() { authListener = null; } } } }; },
+    getUser: async () => ({ data: { user: { id: 'user-A' } }, error: null }),
+  } };
+  const { useCsAnomalyReviews } = load('src/hooks/useCsAnomalyReviews.ts', { '@/lib/queries': queries, '@/lib/supabase/client': { supabaseBrowser: () => authClient } });
   let current;
-  function Probe({ selected = alert('A'), rating = 'all', page = 0 }) {
-    current = useCsAnomalyReviews(selected, rating, page, 20); renders.push(current);
+  function Probe({ selected = alert('A'), rating = 'all', page = 0, limit = 20, suspend = false }) {
+    current = useCsAnomalyReviews(selected, rating, page, limit); renders.push(current);
+    if (suspend) throw new Promise(() => {});
     return React.createElement('div', null, JSON.stringify({ product: current.product, reviews: current.reviews, total: current.total,
       productState: current.productState, reviewState: current.reviewState }));
   }
-  return { productReads, reviewReads, renders, Probe, get current() { return current; } };
+  return { productReads, reviewReads, renders, Probe, authChange(id) { authListener('SIGNED_IN', id ? { user: { id } } : null); }, get current() { return current; } };
 }
 async function mount(f, props) { let root; await React.act(async () => { root = Renderer.create(React.createElement(f.Probe, props)); }); return root; }
 async function update(root, f, props) { await React.act(async () => root.update(React.createElement(f.Probe, props))); }
@@ -96,6 +102,79 @@ test('genuine empty success differs from failure and clearing selection aborts/h
     assert.equal(f.current.reviewState, 'error'); assert.equal(f.current.total, null);
     await update(root, f, { selected: null });
     assert.equal(f.reviewReads[1].options.signal.aborted, true); assert.equal(f.current.reviewState, 'idle'); assert.equal(f.current.product, null);
+  } finally { await unmount(root); }
+});
+
+for (const [name, middle] of [['rating', { rating: 'low' }], ['page', { page: 1 }], ['limit', { limit: 10 }]]) {
+  for (const receipt of ['ready', 'error']) {
+    test(`${name} ABA hides old ${receipt} before effects and while fresh request is pending`, async () => {
+      const f = fixture(), root = await mount(f);
+      try {
+        await React.act(async () => {
+          if (receipt === 'ready') f.reviewReads[0].resolve(reviews('old', 99));
+          else f.reviewReads[0].reject(Error('old failure'));
+        });
+        await update(root, f, middle);
+        const begin = f.renders.length;
+        await update(root, f, {});
+        for (const render of f.renders.slice(begin)) {
+          assert.equal(render.reviewState, 'loading');
+          assert.deepEqual(render.reviews, []); assert.equal(render.total, null);
+        }
+        assert.equal(f.reviewReads.length, 3);
+        assert.equal(f.reviewReads[1].options.signal.aborted, true);
+        await React.act(async () => f.reviewReads[1].resolve(reviews('cancelled-middle')));
+        assert.equal(f.current.reviewState, 'loading'); assert.equal(f.current.total, null);
+        await React.act(async () => f.reviewReads[2].resolve(reviews('fresh', 2)));
+        assert.equal(f.current.reviews[0].id, 'fresh'); assert.equal(f.current.total, 2);
+      } finally { await unmount(root); }
+    });
+  }
+}
+
+for (const initial of ['ready', 'pending']) {
+  for (const nextUser of [null, 'user-B']) {
+    test(`auth change ${initial} to ${nextUser ?? 'signedout'} clears evidence and rejects late reads`, async () => {
+      const f = fixture(), root = await mount(f);
+      try {
+        if (initial === 'ready') await React.act(async () => {
+          f.productReads[0].resolve(product('old')); f.reviewReads[0].resolve(reviews('old', 99));
+        });
+        const begin = f.renders.length;
+        await React.act(async () => f.authChange(nextUser));
+        for (const render of f.renders.slice(begin)) {
+          assert.equal(render.product, null); assert.deepEqual(render.reviews, []); assert.equal(render.total, null);
+          assert.equal(render.reviewState, nextUser ? 'loading' : 'idle');
+        }
+        assert.equal(f.reviewReads[0].options.signal.aborted, true);
+        await React.act(async () => {
+          f.productReads[0].resolve(product('late-old')); f.reviewReads[0].resolve(reviews('late-old'));
+        });
+        assert.equal(f.current.product, null); assert.deepEqual(f.current.reviews, []);
+        assert.equal(f.reviewReads.length, nextUser ? 2 : 1);
+        if (nextUser) {
+          await React.act(async () => { f.productReads[1].resolve(product('fresh')); f.reviewReads[1].resolve(reviews('fresh', 1)); });
+          assert.equal(f.current.product.musinsa_no, 'fresh'); assert.equal(f.current.total, 1);
+          await React.act(async () => f.authChange('user-B'));
+          assert.equal(f.reviewReads.length, 2); // same-user token event preserves current receipt
+        }
+      } finally { await unmount(root); }
+    });
+  }
+}
+
+test('abandoned suspended selection cannot poison the committed request', async () => {
+  const f = fixture();
+  let root;
+  const view = props => React.createElement(React.Suspense, { fallback: 'suspended' }, React.createElement(f.Probe, props));
+  await React.act(async () => { root = Renderer.create(view({})); });
+  try {
+    await React.act(async () => React.startTransition(() => root.update(view({ selected: alert('B'), suspend: true }))));
+    assert.equal(f.reviewReads.length, 1); assert.equal(f.reviewReads[0].options.signal.aborted, false);
+    await React.act(async () => { f.productReads[0].resolve(product('A')); f.reviewReads[0].resolve(reviews('A', 3)); });
+    await React.act(async () => root.update(view({})));
+    assert.equal(f.reviewReads.length, 1);
+    assert.equal(f.current.reviewState, 'ready'); assert.equal(f.current.total, 3); assert.equal(f.current.product.musinsa_no, 'A');
   } finally { await unmount(root); }
 });
 
