@@ -27,7 +27,7 @@ for (const mobile of [false,true]) test(`actual ${mobile?'mobile':'desktop'} sta
   const mocks = {'next/link':{__esModule:true,default:link}};
   for (const name of ['BriefingHeadline','BriefingKpiRow','BriefingInsight','mobile/MobileBriefingTabs','mobile/MobileBriefingHeadline','mobile/MobileBriefingInsight','mobile/MobileNewsPickList','CSDailyReviewCheck']) mocks['@/components/briefing/'+name] = {__esModule:true,default:blank};
   // Relative imports use the same mock identities.
-  for (const name of ['./BriefingHeadline','./BriefingKpiRow','./BriefingInsight','./MobileBriefingTabs','./MobileBriefingHeadline','./MobileBriefingInsight','./MobileNewsPickList','../CSDailyReviewCheck']) mocks[name]={__esModule:true,default:blank};
+  for (const name of ['./BriefingHeadline','./BriefingKpiRow','./BriefingInsight','./MobileBriefingTabs','./MobileBriefingHeadline','./MobileBriefingInsight','./MobileNewsPickList','../CSDailyReviewCheck','../StaffDailyPlanningCheck']) mocks[name]={__esModule:true,default:blank};
   const briefing={briefing_date:'2026-10-02',audience:'staff',headline:'fixture',daily_brief:[],card_comments:{anomaly:'수집된 가격 변화 확인',own_ranking:'랭킹 관측'},insights:[]};
   const C=load(mobile?'src/components/briefing/mobile/MobileTodayView.tsx':'src/components/briefing/StaffBriefingView.tsx',mocks).default;
   const props=mobile?{activeTab:'staff',data:{staff:briefing},loading:false,activeDate:briefing.briefing_date,availableDates:[],onTabSelect(){},onDateChange(){}}:{briefing,kpiData:null};

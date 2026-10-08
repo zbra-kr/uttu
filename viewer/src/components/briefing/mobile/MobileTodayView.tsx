@@ -8,6 +8,7 @@ import MobileBriefingHeadline from './MobileBriefingHeadline';
 import MobileBriefingCard from './MobileBriefingCard';
 import MobileBriefingInsight from './MobileBriefingInsight';
 import MobileNewsPickList from './MobileNewsPickList';
+import StaffDailyPlanningCheck, { type useStaffDailyPlanningCheck } from '../StaffDailyPlanningCheck';
 import CSDailyReviewCheck from '../CSDailyReviewCheck';
 import type { CSDailyReviewState } from '@/hooks/useCSDailyReviewCheck';
 
@@ -114,6 +115,7 @@ export interface MobileTodayViewProps {
   isFuture: boolean;
   onDateChange: (date: string) => void;
   csReviews?: CSDailyReviewState;
+  staffPlanning?: ReturnType<typeof useStaffDailyPlanningCheck>;
   invalidDate?: boolean;
   unavailable?: boolean;
   readStatus?: React.ReactNode;
@@ -129,6 +131,7 @@ export default function MobileTodayView({
   isFuture,
   onDateChange,
   csReviews,
+  staffPlanning,
   invalidDate,
   unavailable,
   readStatus,
@@ -152,6 +155,7 @@ export default function MobileTodayView({
         padding: '12px 12px 16px',
         display: 'flex', flexDirection: 'column', gap: 10,
       }}>
+        {activeTab === 'staff' && staffPlanning && <StaffDailyPlanningCheck state={staffPlanning} compact />}
         {activeTab === 'cs' && csReviews && <CSDailyReviewCheck state={csReviews} />}
         {readStatus}
         {invalidDate ? <p role="status">유효한 브리핑 날짜를 선택하세요.</p> : loading ? (

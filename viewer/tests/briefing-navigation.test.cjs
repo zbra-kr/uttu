@@ -55,6 +55,7 @@ function harness(initialUrl, mobile = true, detail = false) {
     '@/hooks/useKstToday': { useKstToday: () => TODAY },
     // This harness isolates existing URL/briefing navigation; the new source
     // reader's SDK ownership and responsive lifecycle have their own tests.
+    '@/components/briefing/StaffDailyPlanningCheck': { __esModule: true, default: () => null, useStaffDailyPlanningCheck: () => ({ scope: null, load: null }) },
     '@/lib/cs-daily-review-context': { useCSDailyReviewState: () => null },
     '@/lib/queries-briefing': {
       kstToday: () => TODAY, fetchAvailableBriefingDates: () => Promise.resolve([TODAY, '2026-10-02']),
@@ -136,12 +137,12 @@ for (const query of ['', '?tab=invalid', '?tab=CS&date=not-a-date']) test(`missi
   const h = harness(`/today${query}`);
   try { assert.equal(h.tabs().activeTab, 'executive'); assert.equal(h.tabs().activeDate, TODAY); } finally { h.dispose(); }
 });
-test('future date and malformed date handling match the existing desktop contract', () => {
+test('future dates are blocked and malformed Staff dates are preserved for validation', () => {
   const h = harness('/today?tab=cs&date=2099-01-01');
   try {
     assert.equal(h.tabs().isFuture, true); assert.equal(h.tabs().activeDate, '2099-01-01');
     h.commit('/today?tab=staff&date=2026-1-1');
-    assert.equal(h.tabs().activeDate, TODAY); assert.equal(h.tabs().activeTab, 'staff');
+    assert.equal(h.tabs().activeDate, '2026-1-1'); assert.equal(h.tabs().invalidDate, true); assert.equal(h.tabs().activeTab, 'staff');
   } finally { h.dispose(); }
 });
 test('an older date response cannot replace newer date data or reset the audience', async () => {
@@ -165,7 +166,7 @@ test('a stale response cannot clear the newer date loading state', async () => {
   } finally { h.dispose(); }
 });
 test('MobileTodayView renders its controlled audience and forwards the supplied callback', () => {
-  const View = load('src/components/briefing/mobile/MobileTodayView.tsx').default;
+  const View = load('src/components/briefing/mobile/MobileTodayView.tsx', { '../StaffDailyPlanningCheck': { __esModule: true, default: () => null } }).default;
   const data = snapshot(TODAY), onTabSelect = () => {};
   for (const audience of audiences) {
     const props = { activeTab: audience, onTabSelect, data, kpiData: null, loading: false, activeDate: TODAY, availableDates: [TODAY], isFuture: false, onDateChange() {} };
