@@ -9,7 +9,7 @@ import { restoreWeeklyDraft, serializeWeeklyDraft, weeklyDraftKey, weeklySubmiss
 import { fetchWeeklyReviews, fetchWeeklyMemos, type WeeklySavedMemo } from '@/lib/queries-weekly-review';
 import { WEEKLY_EVIDENCE_LIMIT, WEEKLY_MEMO_TAG, buildWeeklyMemo, formatWeeklyTime, kstClosedWeek,
   parseWeeklyLocation, uniqueWeeklyEvidence, weeklyHref, weeklyMemoHref, weeklyPeriodError,
-  type WeeklyEvidence, type WeeklyCursor } from '@/lib/weekly-review';
+  type WeeklyEvidence, type WeeklyCursor, type WeeklyScope } from '@/lib/weekly-review';
 import WeeklyEvidenceList from './WeeklyEvidenceList';
 import styles from './weekly-review.module.css';
 
@@ -34,7 +34,7 @@ export default function WeeklyReviewWorkspace() {
   const [brandInput, setBrandInput] = React.useState(scope?.brand ?? '');
   const [from, setFrom] = React.useState(scope?.from ?? kstClosedWeek().from);
   const [to, setTo] = React.useState(scope?.to ?? kstClosedWeek().to);
-  const [rating, setRating] = React.useState<'all' | 'low'>(scope?.rating ?? 'all');
+  const [rating, setRating] = React.useState<WeeklyScope['rating']>(scope?.rating ?? 'all');
   const [formError, setFormError] = React.useState<string | null>(null);
   const [reviewState, setReviewState] = React.useState<ReviewState>(() => emptyReviews(requestKey));
   const reviewRequest = React.useRef<{ controller: AbortController; version: number; timeout: ReturnType<typeof setTimeout> | null } | null>(null);
@@ -259,10 +259,11 @@ export default function WeeklyReviewWorkspace() {
         </label>
         <label className={styles.field}>작성 시작일 (KST)<input type="date" required value={from} max={kstClosedWeek().to} onChange={event => setFrom(event.target.value)} /></label>
         <label className={styles.field}>작성 종료일 (KST)<input type="date" required value={to} max={kstClosedWeek().to} onChange={event => setTo(event.target.value)} /></label>
-        <label className={styles.field}>별점 범위<select value={rating} onChange={event => setRating(event.target.value as 'all' | 'low')}><option value="all">전체 별점</option><option value="low">1~2점 사례만</option></select></label>
+        <label className={styles.field}>별점 범위<select value={rating} onChange={event => setRating(event.target.value as WeeklyScope['rating'])}><option value="all">전체 별점</option><option value="low">1~2점 사례만</option><option value="high">4~5점 사례만</option></select></label>
         <button className={styles.primary} disabled={brandState !== 'ready' || !brandInput}>범위 적용</button>
       </form>
       <p className={styles.muted}>기본은 오늘을 제외한 최근 7개 작성일입니다. 원문은 최신 작성일 순이며, 낮은 별점도 급증·불량 확정이 아닌 개별 사례입니다.</p>
+      {scope?.rating === 'high' && <p className={styles.muted}>4~5점 원문에서 고객이 직접 언급한 강점을 읽고, 다음 샘플에서 유지하거나 확인할 내용을 남기세요. 별점만으로 선호 이유나 매출의 원인을 판단할 수 없습니다.</p>}
       {brandState === 'loading' && <p role="status">자사 브랜드를 불러오는 중…</p>}
       {brandState === 'error' && <p role="alert">브랜드를 불러오지 못했습니다. <button className={styles.secondary} onClick={() => setBrandRetry(value => value + 1)}>다시 시도</button></p>}
       {brandState === 'ready' && brands.length === 0 && <p role="status">조회 가능한 자사 브랜드가 없습니다. 브랜드 설정을 확인해 주세요.</p>}
@@ -276,7 +277,7 @@ export default function WeeklyReviewWorkspace() {
       <section aria-labelledby="weekly-evidence-heading" className={styles.stack}>
         <div>
           <h2 id="weekly-evidence-heading">{selectedBrand.name} · {evidence.length ? '연결된 원문 근거' : '이번 검토의 원문'}</h2>
-          <p className={styles.muted}>작성 {scope.from} ~ {scope.to} (KST) · {scope.rating === 'low' ? '1~2점만' : '전체 별점'}{scope.product ? ' · 선택 상품만' : ' · 현재 자사 상품'}</p>
+          <p className={styles.muted}>작성 {scope.from} ~ {scope.to} (KST) · {scope.rating === 'low' ? '1~2점만' : scope.rating === 'high' ? '4~5점만' : '전체 별점'}{scope.product ? ' · 선택 상품만' : ' · 현재 자사 상품'}</p>
           {scope.product && <p className={styles.muted}>선택 상품: {view.rows[0]?.product_name ?? scope.product}</p>}
           <div className={styles.status}>
             조회 기준 {formatWeeklyTime(scope.at)}까지 저장된 행을 확인합니다.<br />
@@ -296,7 +297,7 @@ export default function WeeklyReviewWorkspace() {
           {view.loading && <p role="status">{view.rows.length ? '다음 원문을 불러오는 중…' : '작성일이 확인된 원문을 불러오는 중…'}</p>}
           {view.error && <div role="alert" className={styles.status}><p>{view.error}</p><button className={styles.secondary} onClick={() => view.pages ? loadNext() : setRetry(value => value + 1)} disabled={view.loading}>같은 범위로 다시 시도</button></div>}
           {!view.loading && !view.error && view.pages > 0 && evidence.length > 0 && missingEvidence.length > 0 && <p role="status" className={styles.status}>연결된 근거 {missingEvidence.length}건을 이 범위에서 확인할 수 없습니다. 삭제·변경 또는 접근 범위를 확인해 주세요. 다른 원문으로 대체하지 않습니다.</p>}
-          {!view.loading && !view.error && view.pages > 0 && view.rows.length === 0 && !evidence.length && <div className={styles.empty}><h3>이 범위에서 저장된 원문을 찾지 못했습니다</h3><p>작성 {scope.from} ~ {scope.to} (KST), {scope.rating === 'low' ? '1~2점' : '전체 별점'} 조건입니다.<br />문제가 없거나 수집이 완료됐다는 뜻은 아닙니다. 위에서 기간이나 별점을 직접 바꿔 확인해 주세요.</p></div>}
+          {!view.loading && !view.error && view.pages > 0 && view.rows.length === 0 && !evidence.length && <div className={styles.empty}><h3>이 범위에서 저장된 원문을 찾지 못했습니다</h3><p>작성 {scope.from} ~ {scope.to} (KST), {scope.rating === 'low' ? '1~2점' : scope.rating === 'high' ? '4~5점' : '전체 별점'} 조건입니다.<br />문제가 없거나 수집이 완료됐다는 뜻은 아닙니다. 위에서 기간이나 별점을 직접 바꿔 확인해 주세요.</p></div>}
         </div>
         {!draftMatches && <p role="status" className={styles.status}>다른 조회 범위의 메모를 작성 중입니다. <a href="#weekly-memo-heading">작성 중인 메모로 이동</a>해서 저장하거나 비운 뒤 새 근거를 선택해 주세요.</p>}
         {!draftUser && <p role="status" className={styles.muted}>로그인을 확인하는 동안 근거 선택을 잠시 기다려 주세요. 계속 선택할 수 없다면 다시 로그인해 주세요.</p>}
@@ -328,7 +329,7 @@ export default function WeeklyReviewWorkspace() {
       {saved && saved.owner === draftUser && <p role="status">{saved.brandName} 검토 메모를 저장했습니다. <Link href={`/me/notes/${saved.id}?view=memo`}>저장된 메모 보기</Link></p>}
       {draft && <form onSubmit={saveMemo} className={styles.stack}>
         <div className={styles.status}>
-          {draft.brandName} · 작성 {draft.scope.from} ~ {draft.scope.to} (KST) · 조회 기준 {formatWeeklyTime(draft.scope.at)}<br />
+          {draft.brandName} · 작성 {draft.scope.from} ~ {draft.scope.to} (KST) · 조회 기준 {formatWeeklyTime(draft.scope.at)} · {draft.scope.rating === 'low' ? '1~2점' : draft.scope.rating === 'high' ? '4~5점' : '전체 별점'}<br />
           선택한 근거 {draft.evidence.length}건 / 최대 10건. 읽고 선택한 사례이며 전체 이슈 건수·비율이 아닙니다.
           {!draftMatches && <p>화면 범위가 바뀌어도 작성 중인 메모는 위 범위로 유지됩니다. 다른 범위의 근거를 더하려면 이 메모를 먼저 저장하거나 비워 주세요.</p>}
         </div>

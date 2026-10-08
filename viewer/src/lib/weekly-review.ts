@@ -5,7 +5,7 @@ export const WEEKLY_MEMO_TAG = '상품개선검토';
 export const WEEKLY_MEMO_HEADER = '[UTTU 상품 개선 검토 v1]';
 const DAY = 86_400_000;
 export interface WeeklyScope {
-  brand: string; from: string; to: string; rating: 'all' | 'low'; product: string | null; at: string;
+  brand: string; from: string; to: string; rating: 'all' | 'low' | 'high'; product: string | null; at: string;
 }
 export interface WeeklyCursor { date: string; id: string }
 export interface WeeklyEvidence {
@@ -53,7 +53,7 @@ export function parseWeeklyLocation(params: URLSearchParams, now = new Date()): 
     : weeklyPeriodError(from, to, now)
       ?? (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(at) || !Number.isFinite(Date.parse(at))
         || new Date(at).toISOString() !== at || Date.parse(at) > now.getTime() + 60_000 ? '조회 기준시각이 올바르지 않습니다. 범위를 다시 선택해 주세요.' : null)
-      ?? (rating !== 'all' && rating !== 'low' ? '별점 조건을 확인해 주세요.' : null)
+      ?? (rating !== 'all' && rating !== 'low' && rating !== 'high' ? '별점 조건을 확인해 주세요.' : null)
       ?? (evidence.length > WEEKLY_EVIDENCE_LIMIT || evidence.some(id => !isWeeklyId(id))
         || new Set(evidence).size !== evidence.length ? '연결된 근거 식별자를 확인해 주세요.' : null);
   return { scope: error ? null : { brand, from, to, rating: rating as WeeklyScope['rating'], product, at }, evidence, error: error || null };
@@ -83,17 +83,19 @@ export function buildWeeklyMemo(input: {
 }): string {
   const rows = uniqueWeeklyEvidence(input.evidence);
   const parsed = parseWeeklyLocation(new URLSearchParams(weeklyHref(input.scope, rows.map(row => row.id)).split('?')[1]));
-  const invalidEvidence = rows.some(row => !isWeeklyId(row.id) || !isWeeklyId(row.product_id)
+  // Validate every high-scope input before identity dedup can hide an invalid row.
+  const invalidEvidence = (input.scope.rating === 'high' ? input.evidence : rows).some(row => !isWeeklyId(row.id) || !isWeeklyId(row.product_id)
     || !isWeeklyDate(row.review_date) || row.review_date < input.scope.from || row.review_date > input.scope.to
     || !Number.isFinite(Date.parse(row.created_at)) || Date.parse(row.created_at) > Date.parse(input.scope.at)
     || (input.scope.product !== null && row.product_id.toLowerCase() !== input.scope.product.toLowerCase())
     || !Number.isInteger(row.rating) || row.rating < 1 || row.rating > 5
-    || (input.scope.rating === 'low' && row.rating > 2));
+    || (input.scope.rating === 'low' && row.rating > 2)
+    || (input.scope.rating === 'high' && row.rating < 4));
   if (parsed.error || !parsed.scope || invalidEvidence || !rows.length || rows.length > WEEKLY_EVIDENCE_LIMIT
     || !input.observation.trim() || !input.nextCheck.trim() || !isWeeklyDate(input.nextDate)
     || input.observation.length > 2000 || input.nextCheck.length > 2000) throw new Error('검토 근거와 다음 확인 내용을 입력해 주세요.');
   return [WEEKLY_MEMO_HEADER, `브랜드: ${input.brandName}`, `작성일 범위: ${input.scope.from} ~ ${input.scope.to} (KST)`,
-    `조회 기준: ${formatWeeklyTime(input.scope.at)}`, `별점 조건: ${input.scope.rating === 'low' ? '1~2점' : '전체'}`,
+    `조회 기준: ${formatWeeklyTime(input.scope.at)}`, `별점 조건: ${input.scope.rating === 'low' ? '1~2점' : input.scope.rating === 'high' ? '4~5점' : '전체'}`,
     `선택한 원문: ${rows.length}건 (브랜드 전체의 이슈 건수·비율이 아님)`,
     ...rows.map(row => `- ${row.product_name} · 작성 ${row.review_date} · ${row.rating}/5 · 원천 ID ${row.musinsa_review_id || '확인 불가'} · 저장 ${formatWeeklyTime(row.created_at)} · 저장 ID ${row.id}`),
     '', `관찰: ${input.observation.trim()}`, `다음 확인: ${input.nextCheck.trim()}`, `다음 확인일: ${input.nextDate}`,

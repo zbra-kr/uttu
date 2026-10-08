@@ -233,3 +233,41 @@ test('cached-list pagination is cancelled on scope navigation and cannot append 
     assert.equal(control(h, '자사 브랜드').props.value, B);
   } finally { h.dispose(); }
 });
+
+for (const target of ['low', 'all']) test(`high draft survives switching to ${target}, prevents mixed evidence, and Back restores high pages`, async () => {
+  const high = { ...SCOPE, rating: 'high', product: PA }, h = harness(w.weeklyHref(high));
+  try {
+    await readyBrands(h); await readyReviews(h, [row(1, { rating: 4 })], cursor());
+    assert.equal(control(h, '별점 범위').props.value, 'high'); assert.match(h.html(), /4~5점 사례만/); assert.match(h.html(), /고객이 직접 언급한 강점/); assert.match(h.html(), /별점만으로 선호 이유나 매출의 원인을 판단할 수 없습니다/);
+    select(h); fill(h); assert.match(h.html(), /조회 기준 2024-03-06 09:00 KST · 4~5점/);
+    change(h, '별점 범위', target); h.nodes().find(n => n.type === 'form' && !walk(n).some(c => c.type === 'textarea')).props.onSubmit(event());
+    const p = new URLSearchParams(h.navigation.at(-1).href.split('?')[1]); assert.equal(p.get('rating'), target); assert.equal(p.get('product'), PA);
+    h.commit(w.weeklyHref({ ...high, rating: target })); await readyReviews(h, [row(2)]);
+    assert.equal(boxes(h)[0].props.disabled, true); boxes(h)[0].props.onChange(); h.tree(); assert.match(h.html(), /선택한 근거 1건 \/ 최대 10건/);
+    assert.equal(h.find('a', '선택한 근거만 다시 보기').props.href, w.weeklyHref(high, [row().id]));
+    const count = h.reviews.length; h.commit(w.weeklyHref(high)); await h.flush(); assert.equal(h.reviews.length, count); assert.equal(control(h, '별점 범위').props.value, 'high'); assert.equal(boxes(h)[0].props.disabled, false);
+    const stored = draftLib.restoreWeeklyDraft(h.storage.get(draftLib.weeklyDraftKey(UA))); assert.equal(stored.scope.rating, 'high'); assert.equal(stored.evidence[0].rating, 4); assert.equal(stored.evidence[0].review_text, '');
+    const saving = memoForm(h).props.onSubmit(event()); await h.waitForSaves(1); assert.match(h.saves[0].args[0].body, /별점 조건: 4~5점/); assert.equal(w.weeklyMemoHref(h.saves[0].args[0].body), w.weeklyHref(high, [row().id])); h.saves[0].resolve({ data: { id: id(900) }, error: null }); await saving; await h.flush();
+  } finally { h.dispose(); }
+});
+test('high genuine empty and missing linked original retain precise cohort labels', async () => {
+  const high = { ...SCOPE, rating: 'high' }, h = harness(w.weeklyHref(high));
+  try { await readyBrands(h); await readyReviews(h, []); assert.match(h.html(), /4~5점 조건입니다/); assert.match(h.html(), /문제가 없거나 수집이 완료됐다는 뜻은 아닙니다/); h.commit(w.weeklyHref(high, [row().id])); await readyReviews(h, []); assert.match(h.html(), /연결된 근거 1건을 이 범위에서 확인할 수 없습니다/); assert.doesNotMatch(h.html(), /이 범위에서 저장된 원문을 찾지 못했습니다/); } finally { h.dispose(); }
+});
+
+test('high pagination cancellation, timeout, and account-private draft/save behavior use existing safeguards', async () => {
+  const high = { ...SCOPE, rating: 'high' }, h = harness(w.weeklyHref(high));
+  try {
+    await readyBrands(h); await readyReviews(h, [row(1, { rating: 5 })], cursor()); select(h); fill(h);
+    const loading = nextButton(h).props.onClick(); h.tree(); const old = h.reviews.at(-1);
+    h.commit(w.weeklyHref({ ...high, rating: 'low' })); assert.equal(old.args[1].signal.aborted, true);
+    await readyReviews(h, [row(2)]); old.resolve(page([row(3, { rating: 4, review_text: 'Stale high original' })])); await loading; await h.flush(); assert.doesNotMatch(h.html(), /Stale high original/);
+    h.commit(w.weeklyHref(high)); await h.flush();
+    const saving = memoForm(h).props.onSubmit(event()), duplicate = memoForm(h).props.onSubmit(event()); await h.waitForSaves(1); assert.equal(h.saves.length, 1);
+    assert.equal(h.saves[0].args[0].send_teams, false); assert.deepEqual(h.saves[0].args[0].mentioned_user_ids, []);
+    h.auth(UB); await h.flush(); assert.equal(memoForm(h), undefined); h.saves[0].resolve({ data: { id: id(900) }, error: null }); await Promise.all([saving, duplicate]); await h.flush(); assert.doesNotMatch(h.html(), /검토 메모를 저장했습니다/);
+    h.auth(UA); await h.flush(); assert.equal(control(h, '읽고 확인한 관찰').props.value, 'Read selected original carefully');
+    h.commit(w.weeklyHref({ ...high, product: PA })); const pending = h.reviews.at(-1); pending.args[1].signal.addEventListener('abort', () => pending.reject(pending.args[1].signal.reason), { once: true });
+    assert.ok([...h.timers.values()].every(t => t.delay === 8000)); h.fireTimeouts(); await h.flush(); assert.match(h.html(), /0건으로 판단하지 마세요/); assert.doesNotMatch(h.html(), /이 범위에서 저장된 원문을 찾지 못했습니다/);
+  } finally { h.dispose(); }
+});

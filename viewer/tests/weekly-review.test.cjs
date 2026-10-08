@@ -138,3 +138,31 @@ test('content-addressed submission key remains stable after restore and differs 
   assert.notEqual(await drafts.weeklySubmissionId(id(4), body), key); assert.notEqual(await drafts.weeklySubmissionId(USER, `${body}\nedit`), key);
   await assert.rejects(drafts.weeklySubmissionId('bad', body)); await assert.rejects(drafts.weeklySubmissionId(USER, ''));
 });
+
+for (const rating of [4, 5]) test(`high scope URL, v1 memo, private draft and replay key roundtrip at ${rating} stars`, async () => {
+  const high = { ...scope, product: PRODUCT, rating: 'high' }, original = input({ scope: high, evidence: [row(1, { rating })] });
+  assert.deepEqual(parse(params(high, [row().id])).scope, high);
+  const body = w.buildWeeklyMemo(original), restored = drafts.restoreWeeklyDraft(drafts.serializeWeeklyDraft(original));
+  assert.match(body, /별점 조건: 4~5점/); assert.equal(w.weeklyMemoHref(body), w.weeklyHref(high, [row().id]));
+  assert.deepEqual(restored.scope, high); assert.equal(w.buildWeeklyMemo(restored), body);
+  assert.equal(restored.evidence[0].review_text, ''); assert.equal(restored.evidence[0].purchase_option, null);
+  assert.equal(await drafts.weeklySubmissionId(USER, body), await drafts.weeklySubmissionId(USER, w.buildWeeklyMemo(restored)));
+});
+for (const changes of [{ rating: 1 }, { rating: 2 }, { rating: 3 }, { rating: 0 }, { rating: 6 }, { rating: 4.5 }, { rating: NaN }, { rating: Infinity }, { rating: '4' }, { product_id: id(999) }, { review_date: '2024-02-27' }, { review_date: '2024-03-06' }, { review_date: 'bad' }, { created_at: '2024-03-06T00:00:00.001Z' }, { created_at: 'bad' }, { id: 'bad' }]) test(`high memo and restored draft reject out-of-scope evidence ${JSON.stringify(changes)}`, () => {
+  const original = input({ scope: { ...scope, product: PRODUCT, rating: 'high' }, evidence: [row(1, { rating: 4, ...changes })] });
+  assert.throws(() => w.buildWeeklyMemo(original)); assert.equal(drafts.restoreWeeklyDraft(drafts.serializeWeeklyDraft(original)), null);
+});
+test('high queries keep exact own brand/product/date/cutoff/order, sentinel/keyset, and linked evidence bounds', async () => {
+  const high = { ...scope, product: PRODUCT, rating: 'high' }, filters = [['eq', 'product_id', PRODUCT], ['gte', 'rating', 4], ['lte', 'rating', 5]], cursor = { date: row().review_date, id: row().id };
+  const h = harness([ok(Array.from({ length: 31 }, (_, i) => dbrow(500 - i, { rating: 4 }))), ok([dbrow(1, { rating: 5 })])]);
+  const result = await h.q.fetchWeeklyReviews(high, { cursor });
+  assert.deepEqual(ops(h.calls[0]), [...BASE, ...filters, ['or', `review_date.lt.${cursor.date},and(review_date.eq.${cursor.date},id.lt.${cursor.id})`]]);
+  assert.equal(result.rows.length, 30); assert.equal(result.fetchedRows, 30); assert.ok(result.next);
+  const linked = await h.q.fetchWeeklyReviews(high, { evidence: [row().id], cursor });
+  assert.deepEqual(ops(h.calls[1]), [...BASE.slice(0, -1), ['limit', 10], ...filters, ['in', 'id', [row().id]]]); assert.equal(linked.next, null);
+});
+
+test('high memo cannot hide below-four evidence behind source deduplication', () => {
+  const original = input({ scope: { ...scope, rating: 'high' }, evidence: [row(1, { rating: 4 }), row(2, { rating: 3, musinsa_review_id: row().musinsa_review_id })] });
+  assert.throws(() => w.buildWeeklyMemo(original)); assert.equal(drafts.restoreWeeklyDraft(drafts.serializeWeeklyDraft(original)), null);
+});
