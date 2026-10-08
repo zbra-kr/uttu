@@ -2432,34 +2432,33 @@ export async function fetchCompetitorBrands(ownBrandId: string): Promise<Competi
 
   if (!rows.length) return rows;
 
-  // 재무 데이터 (dart_financials) — 회사별 최신 연도
+  // Both enrichment reads depend only on the competitor list, not each other.
   const companyIds = [...new Set(rows.map(r => r.company_id).filter(Boolean))] as string[];
-  if (companyIds.length) {
-    const { data: fins } = await supabase
+  const brandIds = rows.map(r => r.brand_id);
+  const [financialsRes, ranksRes] = await Promise.all([
+    companyIds.length ? supabase
       .from('dart_financials')
       .select('company_id, fiscal_year, revenue, operating_income')
       .in('company_id', companyIds)
-      .order('fiscal_year', { ascending: false });
-    const finMap = new Map<string, any>();
-    for (const f of (fins ?? []) as any[]) {
-      if (!finMap.has(f.company_id)) finMap.set(f.company_id, f);
-    }
-    rows.forEach(r => {
-      const fin = r.company_id ? finMap.get(r.company_id) : null;
-      if (fin) { r.revenue = fin.revenue; r.operating_income = fin.operating_income; r.fiscal_year = fin.fiscal_year; }
-    });
+      .order('fiscal_year', { ascending: false }) : Promise.resolve({ data: [] }),
+    supabase
+      .from('brand_ranking_snapshots')
+      .select('brand_id, rank_position, snapshot_date')
+      .in('brand_id', brandIds)
+      .eq('category_code', '000')
+      .eq('gender_filter', 'A')
+      .eq('age_filter', 'AGE_BAND_ALL')
+      .order('snapshot_date', { ascending: false }),
+  ]);
+  const finMap = new Map<string, any>();
+  for (const f of (financialsRes.data ?? []) as any[]) {
+    if (!finMap.has(f.company_id)) finMap.set(f.company_id, f);
   }
-
-  // 브랜드 순위 (brand_ranking_snapshots) — 전체 카테고리 최신
-  const brandIds = rows.map(r => r.brand_id);
-  const { data: ranks } = await supabase
-    .from('brand_ranking_snapshots')
-    .select('brand_id, rank_position, snapshot_date')
-    .in('brand_id', brandIds)
-    .eq('category_code', '000')
-    .eq('gender_filter', 'A')
-    .eq('age_filter', 'AGE_BAND_ALL')
-    .order('snapshot_date', { ascending: false });
+  rows.forEach(r => {
+    const fin = r.company_id ? finMap.get(r.company_id) : null;
+    if (fin) { r.revenue = fin.revenue; r.operating_income = fin.operating_income; r.fiscal_year = fin.fiscal_year; }
+  });
+  const ranks = ranksRes.data;
   const rankMap = new Map<string, number>();
   for (const rk of (ranks ?? []) as any[]) {
     if (!rankMap.has(rk.brand_id)) rankMap.set(rk.brand_id, rk.rank_position);

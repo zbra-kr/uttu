@@ -18,7 +18,7 @@
     "test:recommend-mobile": "node --test --unhandled-rejections=strict tests/mobile-recommend-*.test.cjs",
     "test:review-stats": "node --test tests/review-stats-*.test.cjs",
     "test:review-panels": "node --test tests/review-dashboard-panels*.test.cjs",
-    "test:matching": "node --test tests/matching-score.test.cjs",
+    "test:matching": "node --test tests/matching-score.test.cjs tests/competitor-brand-fetch.test.cjs",
     "test:collection-status": "node --test tests/collection-status.test.cjs",
     "test:funding-viewer": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/funding-viewer.test.cjs tests/funding-read-deadline.test.cjs",
     "test:magazine-viewer": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/magazine-read-state.test.cjs",
