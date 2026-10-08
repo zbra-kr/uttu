@@ -613,33 +613,28 @@ export async function fetchReviewStats(days = 30, signal?: AbortSignal): Promise
     ? kstDaysAgo(days)
     : null;
 
-  const makeQ = () => {
-    const q = supabase.from('reviews').select('*', { count: 'exact', head: true });
-    const filtered = dateFilter ? q.gte('review_date', dateFilter) : q;
-    return signal ? filtered.abortSignal(signal) : filtered;
-  };
-
-  const [res5, res4, res3, res2, res1, imgRes] = await Promise.all([
-    makeQ().eq('rating', 5),
-    makeQ().eq('rating', 4),
-    makeQ().eq('rating', 3),
-    makeQ().eq('rating', 2),
-    makeQ().eq('rating', 1),
-    makeQ().eq('has_image', true),
-  ]);
-
-  if ([res5, res4, res3, res2, res1, imgRes].some(result =>
-    result.error || !Number.isSafeInteger(result.count) || result.count! < 0))
+  const query = supabase.rpc('get_review_stats_v1', { p_from_date: dateFilter });
+  const { data, error } = await (signal ? query.abortSignal(signal) : query);
+  if (signal?.aborted) throw new Error('Review statistics unavailable');
+  if (error || !Array.isArray(data) || data.length !== 1)
     throw new Error('Review statistics unavailable');
-
-  const ratingDist = [res5.count ?? 0, res4.count ?? 0, res3.count ?? 0, res2.count ?? 0, res1.count ?? 0];
+  const row: unknown = data[0];
+  if (!row || typeof row !== 'object' || Array.isArray(row))
+    throw new Error('Review statistics unavailable');
+  const aggregate = row as Record<string, unknown>;
+  const receiptCounts = [aggregate.rating_5, aggregate.rating_4, aggregate.rating_3, aggregate.rating_2, aggregate.rating_1, aggregate.image_count];
+  if (receiptCounts.some(count => typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0))
+    throw new Error('Review statistics unavailable');
+  const counts = receiptCounts as number[];
+  const ratingDist = counts.slice(0, 5);
   const total = ratingDist.reduce((s, c) => s + c, 0);
+  if (!Number.isSafeInteger(total)) throw new Error('Review statistics unavailable');
   const avgRating = total > 0
     ? [5, 4, 3, 2, 1].reduce((s, star, i) => s + star * ratingDist[i], 0) / total
     : 0;
   const lowCount = ratingDist[3] + ratingDist[4]; // ★2 + ★1
 
-  return { total, avgRating: Math.round(avgRating * 100) / 100, lowCount, ratingDist, imageCount: imgRes.count ?? 0 };
+  return { total, avgRating: Math.round(avgRating * 100) / 100, lowCount, ratingDist, imageCount: counts[5] };
 }
 
 

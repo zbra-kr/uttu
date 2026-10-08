@@ -27,6 +27,17 @@ const plain = value => JSON.parse(JSON.stringify(value));
 const helperLedger = fixture => plain(fixture.helpers.map(x => ({ ...x, args: x.args.filter(arg => !(arg instanceof AbortSignal)).map(arg => { if (!arg || typeof arg !== 'object') return arg; const { signal, ...rest } = arg; return rest; }) })));
 const dispatchLedger = (fixture, comparisonProjection = false) => {
   const ledger = plain(fixture.requests).map(x => ({ ...x, ops: x.ops.filter(op => op[0] !== 'abortSignal') }));
+  // Normalize only the six frozen-baseline count reads to their equivalent new
+  // aggregate request, keeping all unrelated dispatches and their filters exact.
+  const legacyCounts = ledger.filter(call => call.table === 'reviews' && call.ops.some(op => op[0] === 'select' && op[2]?.head === true));
+  if (legacyCounts.length) {
+    assert.equal(legacyCounts.length, 6);
+    const cutoff = legacyCounts[0].ops.find(op => op[0] === 'gte')?.[2] ?? null;
+    const aggregate = { table: 'rpc:get_review_stats_v1', ops: [['args', { p_from_date: cutoff }]] };
+    const first = ledger.indexOf(legacyCounts[0]);
+    for (let i = ledger.length - 1; i >= 0; i--) if (legacyCounts.includes(ledger[i])) ledger.splice(i, 1);
+    ledger.splice(first, 0, aggregate);
+  }
   if (comparisonProjection) {
     const prior = ledger.find(call => call.table === 'ranking_snapshots' && call.ops.find(op => op[0] === 'select')?.[1] !== 'snapshot_date');
     if (prior) prior.ops.find(op => op[0] === 'select')[1] = 'rank_position, musinsa_no, products!inner(is_own)';

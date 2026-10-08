@@ -25,6 +25,7 @@ function createFixture(variant, mobile, route='ranking', search='', tab='dash'){
   if(table==='brands')data=[{id:'brand-1',name:'Fixture'}];
   return Promise.resolve({data,error:null,count:data.length}).then(resolve,reject);
  };return(...args)=>{call.ops.push([name,...args]);return query}}});return query}};
+ sb.rpc=(name,args)=>{const call={table:'rpc:'+name,ops:[['args',args]]};const query=new Proxy({}, {get(_,method){if(method==='then')return(resolve,reject)=>{requests.push(call);assert.equal(name,'get_review_stats_v1');return Promise.resolve({data:[{rating_5:0,rating_4:0,rating_3:0,rating_2:0,rating_1:0,image_count:0}],error:null}).then(resolve,reject);};return(...values)=>{call.ops.push([method,...values]);return query;}}});return query;};
  sb.auth={getUser:async()=>({data:{user:{id:'fixture-user',email:'fixture@example.invalid'}}}),onAuthStateChange(){return{data:{subscription:{unsubscribe(){}}}}}};
  const cache={};const noop=()=>null;
  const inert=new Proxy({__esModule:true,default:noop},{get:(t,k)=>k in t?t[k]:noop});
