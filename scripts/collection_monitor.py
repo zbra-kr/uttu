@@ -1,185 +1,250 @@
+"""Collection reporting; settled attempts retain the existing dependency policy.
+
+Importing this module never loads credentials, sends messages, or starts jobs.
 """
-수집 진행상황 모니터링 + 텔레그램 알림
-- 각 스크래퍼 완료 시 즉시 알림
-- 1시간마다 전체 현황 요약
-- 이상탐지·외부뉴스·브리핑: 의존성 기반 자동 실행
-  ranking+brand_ranking → detect
-  detect+full_collection → news_collector → briefing_writer (리뷰 수집 완료 불필요)
-"""
-import os, sys, re, time, subprocess
-from datetime import datetime
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent.parent / ".env")
-from worker.notifications.channels.telegram import send_telegram
-
-CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-DATE = datetime.now().strftime("%Y%m%d")
-LOG_DIR = Path(__file__).parent.parent / "logs"
-ROOT = Path(__file__).parent.parent
-
-def tg(title, body=None):
-    send_telegram(CHAT_ID, title, body, None)
-    print(f"[TG] {title}")
-
-# 태스크별 완료 마커 (여러 개면 하나라도 있으면 완료)
 _DONE_MARKERS = {
-    "ranking":         ["=== done:"],
-    "brand_ranking":   ["=== done:"],
-    "event":           ["=== done:"],
-    "dart":            ["=== done:", "=== skip:"],   # skip도 완료로 처리
+    "ranking": ["=== done:"],
+    "brand_ranking": ["=== done:"],
+    "event": ["=== done:"],
+    "dart": ["=== done:", "=== skip:"],
     "full_collection": ["all done"],
-    "reviews":         ["review_smart_done", "job_tracker_finish"],
-    "detect":          ["bookmark_detect_done"],
-    "news":            ["news_collection_done"],
-    "briefing":        ["briefing_run_done"],
+    "reviews": ["review_smart_done", "job_tracker_finish"],
+    "detect": ["bookmark_detect_done"],
+    "news": ["news_collection_done"],
+    "briefing": ["briefing_run_done"],
 }
+SCRAPERS = ["ranking", "brand_ranking", "event", "dart", "full_collection", "reviews"]
+ALL_STEPS = [*SCRAPERS, "detect", "news", "briefing"]
 
-def log_done(name):
-    p = LOG_DIR / f"{name}_{DATE}.log"
-    if not p.exists():
-        return False
-    content = p.read_text(errors="replace").lower()
-    for marker in _DONE_MARKERS.get(name, ["=== done:"]):
-        if marker.lower() in content:
-            return True
-    return False
 
-def tail_stat(name, keyword):
-    p = LOG_DIR / f"{name}_{DATE}.log"
-    if not p.exists():
-        return "로그없음"
-    lines = [l for l in p.read_text().splitlines() if keyword in l]
-    return lines[-1].split(" - ")[-1] if lines else "진행중"
+def completion_message(line, markers):
+    """Match the exact event in bare/default Loguru text or shell marker lines."""
+    message = line.strip().lower()
+    # Strip only recognized log envelopes, never arbitrary quoted/error text.
+    message = re.sub(
+        r"^\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)?\s+\|\s+\w+\s+\|"
+        r"\s+[\w.]+:[\w<>]+:\d+\s+-\s+", "", message)
+    message = re.sub(r"^\d{2}:\d{2}:\d{2}(?:\.\d+)?\s+\|\s+\w+\s+\|\s+", "", message)
+    token = message.split(maxsplit=1)
+    for marker in markers:
+        if marker == "all done":
+            if re.match(r"^===\s+all done(?::|\s+===)", message):
+                return message
+        elif marker.startswith("==="):
+            if message.startswith(marker + " "):
+                return message
+        elif token and token[0] == marker:
+            return message
+    return None
 
-# 초기 알림
-tg("🚀 UTTU 수집 시작", "랭킹·브랜드랭킹·이벤트·DART·Full·리뷰 동시 시작")
 
-notified = set()
-last_hourly = time.time()
-start_time = time.time()
+def log_outcome(name, root, date_token):
+    """Observe existing daily completion markers, without claiming process health."""
+    path = root / "logs" / f"{name}_{date_token}.log"
+    if not path.exists():
+        return None
+    content = path.read_text(errors="replace")
+    markers = _DONE_MARKERS.get(name, ["=== done:"])
+    state = None
+    for line in content.splitlines():
+        # A later attempt invalidates earlier settlement in an appended daily log.
+        starts = ["=== start:", "job_tracker_start"]
+        if name == "full_collection":
+            starts.append("=== start brand_detail:")
+        if completion_message(line, starts) is not None:
+            state = None
+        if name == "reviews" and line.strip().startswith("Collection skipped:"):
+            state = "skipped"
+        message = completion_message(line, markers)
+        if message is not None:
+            # Retain DART's existing failed-skip settlement policy.
+            state = "failed" if name == "dart" and "=== skip: failed" in message else "completed"
+    return state
 
-SCRAPERS = [
-    ("ranking",         "ranking_combo_done"),
-    ("brand_ranking",   "brand_ranking_combo_done"),
-    ("event",           "job_tracker_finish"),
-    ("dart",            "job_tracker_finish"),
-    ("full_collection", "ALL DONE"),
-    ("reviews",         "job_tracker_finish"),
-]
 
-ALL_STEPS = [
-    "ranking", "brand_ranking", "event", "dart",
-    "full_collection", "reviews",
-    "detect", "news", "briefing",
-]
+def emit_monitor_event(record):
+    """Allowlisted metadata only: never child output, arguments or credentials."""
+    print("[MONITOR] " + json.dumps(record, sort_keys=True), flush=True)
 
-while True:
-    now = time.time()
 
-    # ── 완료 감지 → 즉시 알림 ──────────────────────────────────────────────────
-    for name, kw in SCRAPERS:
-        if name in notified:
-            continue
-        if log_done(name):
-            elapsed = int((now - start_time) / 60)
-            tg(f"✅ {name} 완료", f"경과 {elapsed}분")
-            notified.add(name)
 
-            # 랭킹+브랜드랭킹 둘 다 완료 → 이상탐지 실행
-            if {"ranking", "brand_ranking"} <= notified and "detect" not in notified:
-                if log_done("detect"):
-                    notified.add("detect")  # 이미 완료 (수동 실행 등)
-                else:
-                    tg("🔍 이상탐지 시작")
-                    ret = subprocess.run(
-                        ["worker/.venv/bin/python3", "-m", "worker.detectors.runner"],
-                        capture_output=True, text=True, cwd=str(ROOT)
-                    )
-                    output = ret.stdout + ret.stderr
-                    saved_line = next((l for l in output.splitlines() if "anomalies_saved" in l), "")
-                    failed = ret.returncode != 0 or ("count=0" in saved_line and "total=0" not in output)
-                    if failed:
-                        tg("🚨 이상탐지 실패", output[-300:])
+def outcome_summary(outcomes):
+    groups = [("completed", "완료 기록"), ("failed", "실패"),
+              ("timed_out", "시간 초과"), ("blocked", "시작 불가/미실행"),
+              ("unknown", "모니터 중단, 수집기 상태 미확인"),
+              ("skipped", "별도 수집/복구 작업으로 생략")]
+    lines = [f"{label}: {', '.join(name for name in ALL_STEPS if outcomes.get(name) == state) or '없음'}"
+             for state, label in groups]
+    pending = [name for name in ALL_STEPS if name not in outcomes]
+    lines.append(f"진행/미확인: {', '.join(pending) or '없음'}")
+    return "\n".join(lines)
+
+
+def run_step(name, root, notify, runner, event=lambda *args, **kwargs: None):
+    modules = {"detect": "worker.detectors.runner", "news": "worker.agent.news_collector",
+               "briefing": "worker.agent.briefing_writer"}
+    labels = {"detect": "이상탐지", "news": "외부 뉴스 수집", "briefing": "브리핑 생성"}
+    label = labels[name]
+    event("stage_started", name, attempt=1)
+    notify(f"▶ {label} 시작")
+    options = {"capture_output": True, "text": True, "cwd": str(root)}
+    if name in {"news", "briefing"}:
+        options["timeout"] = 1800 if name == "news" else 7200
+    runner_returned = False
+    try:
+        result = runner(["worker/.venv/bin/python3", "-m", modules[name]], **options)
+        runner_returned = True
+        output = (result.stdout or "") + (result.stderr or "")
+        event("process_exited", name, attempt=1, exit_code=result.returncode)
+        saved = next((line for line in output.splitlines() if "anomalies_saved" in line), "")
+        failed = result.returncode != 0 or (name == "detect" and
+                  "count=0" in saved and "total=0" not in output)
+        if failed:
+            notify(f"🚨 {label} 실패", output[-400:])
+            return "failed"
+        notify(f"✅ {label} 완료")
+        return "completed"
+    except subprocess.TimeoutExpired:
+        notify(f"🚨 {label} 시간 초과")
+        return "timed_out"
+    except OSError as exc:
+        event("post_exit_error" if runner_returned else "launch_error", name,
+              attempt=1, error_type=type(exc).__name__)
+        notify(f"🚨 {label} 시작 불가", type(exc).__name__)
+        return "blocked"
+    except Exception as exc:
+        notify(f"🚨 {label} 실행 실패", type(exc).__name__)
+        return "failed"
+
+
+def run_monitor(root, date_token, notify, clock=time.time, sleeper=time.sleep,
+                runner=subprocess.run, observe=log_outcome,
+                event_sink=emit_monitor_event, utcnow=lambda: datetime.now(timezone.utc)):
+    """Outcomes affect reporting/exit; settled membership still controls scheduling."""
+    root = Path(root)
+    settled, attempted, outcomes = set(), set(), {}
+    execution_evidence = {}
+    start = last_hourly = clock()
+    run_id = uuid4().hex
+
+    def event(kind, stage=None, **fields):
+        if kind == "process_exited":
+            execution_evidence[stage] = "owned_process"
+        elif kind == "launch_error":
+            execution_evidence[stage] = "launch_error"
+        record = {"event": kind, "monitor_run_id": run_id, "date_token": date_token,
+                  "recorded_at_utc": utcnow().isoformat(), "content_acceptance": "unverified"}
+        if stage is not None:
+            record["stage"] = stage
+        record.update(fields)
+        # Reporting failure must not change settlement, launch order or retries.
+        try:
+            event_sink(record)
+        except Exception:
+            pass
+
+    event("monitor_started")
+
+    def settle(name, state, evidence=None):
+        settled.add(name)
+        outcomes[name] = state
+        event("stage_settled", name, outcome=state,
+              evidence=evidence or (execution_evidence.get(name, "execution_unconfirmed")
+                                    if name in attempted else "daily_log_marker"),
+              attempt=1 if name in attempted else None,
+              collector_run_identity="unavailable")
+
+    def execute(name):
+        attempted.add(name)
+        return run_step(name, root, notify, runner, event)
+
+    def finish(interrupted=False):
+        if interrupted:
+            for name in ALL_STEPS:
+                if name not in settled:
+                    # Independent collectors are not owned/stopped by this monitor.
+                    # An interrupted downstream attempt may also still be running.
+                    outcomes[name] = "unknown" if name in SCRAPERS or name in attempted else "blocked"
+        success = not interrupted and all(outcomes.get(name) == "completed" for name in ALL_STEPS)
+        title = "✅ 전체 수집·브리핑 완료 기록" if success else "⚠ 수집·브리핑 종료 — 실패/미완료 포함"
+        event("monitor_finished", interrupted=interrupted, outcomes=dict(outcomes))
+        notify(title, outcome_summary(outcomes))
+        return 130 if interrupted else 0 if success else 1
+
+    notify("🚀 UTTU 수집 시작", "랭킹·브랜드랭킹·이벤트·DART·Full·리뷰 동시 시작")
+    try:
+        while True:
+            now = clock()
+            for name in SCRAPERS:
+                if name in settled:
+                    continue
+                state = observe(name, root, date_token)
+                if state is not None:
+                    settle(name, state)
+                    if state == "skipped":
+                        notify("⏭️ 정기 리뷰 수집 생략", "다른 리뷰 수집/복구 작업 실행 중. 완료 여부는 해당 작업에서 확인합니다.")
                     else:
-                        tg("✅ 이상탐지 완료", saved_line.split(" - ")[-1] if saved_line else "")
-                    notified.add("detect")
+                        notify(f"{name} 완료 기록" if state == "completed" else f"{name} 실패 기록")
 
-    # ── full_collection 6시간 타임아웃 — product_detail 장기화 대비 ───────────
-    if "full_collection" not in notified:
-        fc_elapsed = int((now - start_time) / 60)
-        if fc_elapsed >= 360:  # 6시간
-            tg("⏰ full_collection 타임아웃 (6h) — 강제 통과", f"경과 {fc_elapsed}분")
-            notified.add("full_collection")
+                # Preserve the ranking/brand settled gate and single detection attempt.
+                if {"ranking", "brand_ranking"} <= settled and "detect" not in settled:
+                    state = observe("detect", root, date_token)
+                    settle("detect", state if state is not None else execute("detect"))
 
-    # ── detect + full_collection 완료 → 뉴스·브리핑 순차 실행 ─────────────────
-    # 브리핑은 review_date=어제 데이터를 쓰므로 오늘 리뷰 수집 완료를 기다릴 필요 없음
-    if {"detect", "full_collection"} <= notified and "news" not in notified:
+            # Preserve the explicit full-collection timeout/force-pass policy.
+            if "full_collection" not in settled and now - start >= 6 * 3600:
+                notify("⏰ full_collection 시간 초과 (6h) — 기존 정책에 따라 후속 진행")
+                settle("full_collection", "timed_out", evidence="policy_timeout")
 
-        # [a] 외부 뉴스 수집
-        if log_done("news"):
-            notified.add("news")  # 이미 완료 (수동 실행 등)
-        else:
-            tg("📰 외부 뉴스 수집 시작")
-            try:
-                ret = subprocess.run(
-                    ["worker/.venv/bin/python3", "-m", "worker.agent.news_collector"],
-                    capture_output=True, text=True, cwd=str(ROOT),
-                    timeout=1800,
-                )
-                output = ret.stdout + ret.stderr
-                if ret.returncode != 0:
-                    tg("🚨 외부 뉴스 수집 실패", output[-400:])
-                else:
-                    m = re.search(r"total_inserted=(\d+)", output)
-                    n_news = m.group(1) if m else "?"
-                    tg(f"✅ 외부 뉴스 수집 완료 ({n_news}건)")
-            except subprocess.TimeoutExpired:
-                tg("🚨 외부 뉴스 수집 타임아웃 (30분 초과)")
-            notified.add("news")  # 실패해도 브리핑 진행
+            if {"detect", "full_collection"} <= settled and "news" not in settled:
+                state = observe("news", root, date_token)
+                settle("news", state if state is not None else execute("news"))
+                # News remains optional: failure/timeout still proceeds to briefing.
+                state = observe("briefing", root, date_token)
+                settle("briefing", state if state is not None else execute("briefing"))
 
-        # [b] 브리핑 생성
-        if log_done("briefing"):
-            notified.add("briefing")  # 이미 완료 (수동 실행 등)
-        else:
-            tg("✍️ 브리핑 생성 시작")
-            try:
-                ret = subprocess.run(
-                    ["worker/.venv/bin/python3", "-m", "worker.agent.briefing_writer"],
-                    capture_output=True, text=True, cwd=str(ROOT),
-                    timeout=7200,
-                )
-                output = ret.stdout + ret.stderr
-                if ret.returncode != 0:
-                    tg("🚨 브리핑 생성 실패", output[-400:])
-                else:
-                    m = re.search(r"success=(\d+)", output)
-                    n_br = m.group(1) if m else "?"
-                    tg(f"✅ 브리핑 생성 완료 ({n_br}/3 audience)")
-            except subprocess.TimeoutExpired:
-                tg("🚨 브리핑 생성 타임아웃 (2시간 초과)")
-            notified.add("briefing")
+            if now - last_hourly >= 3600:
+                notify("📊 수집 현황 (1시간 요약)", outcome_summary(outcomes))
+                last_hourly = now
+            if all(name in settled for name in ALL_STEPS):
+                return finish()
+            sleeper(30)
+    except KeyboardInterrupt:
+        return finish(interrupted=True)
+    except Exception as exc:
+        notify("🚨 모니터 중단", type(exc).__name__)
+        finish(interrupted=True)
+        return 1
 
-    # ── 1시간마다 현황 요약 ────────────────────────────────────────────────────
-    if now - last_hourly >= 3600:
-        done    = [n for n in ALL_STEPS if n in notified]
-        pending = [n for n in ALL_STEPS if n not in notified]
-        elapsed = int((now - start_time) / 60)
-        body = (
-            f"경과 {elapsed}분\n"
-            f"✅ 완료: {', '.join(done) or '없음'}\n"
-            f"⏳ 진행중: {', '.join(pending) or '없음'}"
-        )
-        tg("📊 수집 현황 (1시간 요약)", body)
-        last_hourly = now
 
-    # ── 전부 완료 ──────────────────────────────────────────────────────────────
-    all_done = all(n in notified for n in ALL_STEPS)
-    if all_done:
-        elapsed = int((now - start_time) / 60)
-        tg("🎉 전체 수집·브리핑 완료", f"총 {elapsed}분 소요")
-        break
+def main():
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root))
+    from dotenv import load_dotenv
 
-    time.sleep(30)
+    from worker.notifications.channels.telegram import send_telegram
+
+    load_dotenv(root / ".env")
+    chat_id = os.environ["TELEGRAM_CHAT_ID"]
+
+    def notify(title, body=None):
+        send_telegram(chat_id, title, body, None)
+        print(f"[TG] {title}")
+        if body:
+            print(body)
+
+    return run_monitor(root, datetime.now().strftime("%Y%m%d"), notify)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

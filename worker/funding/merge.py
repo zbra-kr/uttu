@@ -133,7 +133,7 @@ def _cross_validate(merged: list[dict], company_id: str) -> list[dict]:
     return authoritative + others + kept_news
 
 
-def merge_rounds(rounds: list[dict], company_id: str) -> list[dict]:
+def merge_rounds(rounds: list[dict], company_id: str, *, cross_validate: bool = True) -> list[dict]:
     """
     여러 소스에서 수집된 라운드 리스트를 dedup·정규화해 DB upsert 준비 상태로 반환.
 
@@ -230,7 +230,8 @@ def merge_rounds(rounds: list[dict], company_id: str) -> list[dict]:
     # ── 공시 교차검증 ─────────────────────────────────────────────────────
     # news 라운드를 공시(dart_*/dart_audit)와 대조 → 매칭/충돌/유지
     # 공시 라운드는 삭제·강등 금지
-    merged = _cross_validate(merged, company_id)
+    if cross_validate:
+        merged = _cross_validate(merged, company_id)
 
     # 정렬: announced_date desc nulls last
     def _sort_key(r: dict):

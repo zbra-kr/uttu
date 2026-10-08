@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useResolvedViewport } from '@/hooks/useResolvedViewport';
 import { useReviewStats } from '@/hooks/useReviewStats';
+import { useCsAnomalyReviews } from '@/hooks/useCsAnomalyReviews';
 import { useReviewDashboardPanels, type DashboardPanelState } from '@/hooks/useReviewDashboardPanels';
 import MobileReviewsView from './MobileReviewsView';
 import NoteDrawer from '@/components/me/NoteDrawer';
@@ -12,7 +13,7 @@ import { exportBrowseReviews, exportProductReviews } from '@/lib/excel-export';
 import { PeriodFilter, FilterBlock, CheckRow } from '@/components/ui/filters';
 import {
   fetchReviews, fetchOwnBrands,
-  fetchCsAnomalies, fetchProductBrief, fetchOwnProductsWithPrices,
+  fetchCsAnomalies, fetchOwnProductsWithPrices,
   CATEGORY_MAP,
   type ReviewRow, type CsAnomaly, type OwnProductWithPrice,
 } from '@/lib/queries';
@@ -973,15 +974,14 @@ function RvAnomalyReviews() {
   const [loading, setLoading]         = React.useState(true);
 
   const [selectedAnomaly, setSelectedAnomaly] = React.useState<CsAnomaly | null>(null);
-  const [product, setProduct]   = React.useState<{ name: string; musinsa_no: string; brand_name: string } | null>(null);
-  const [reviews, setReviews]   = React.useState<ReviewRow[]>([]);
-  const [rvTotal, setRvTotal]   = React.useState(0);
   const [rvPage, setRvPage]     = React.useState(0);
   const [ratingTab, setRatingTab] = React.useState<'all' | 'low' | 'mid' | 'hi'>('all');
-  const [rvLoading, setRvLoading] = React.useState(false);
   const [noteReviewId, setNoteReviewId] = React.useState<string | null>(null);
 
   const RV_PAGE = 20;
+  const { product, reviews, total: rvTotal, productState, reviewState, retryProduct, retryReviews, authState, retryAuth } =
+    useCsAnomalyReviews(selectedAnomaly, ratingTab, rvPage, RV_PAGE);
+  const rvLoading = reviewState === 'loading';
 
   // 이상탐지 목록 로드
   React.useEffect(() => {
@@ -992,38 +992,11 @@ function RvAnomalyReviews() {
       .finally(() => setLoading(false));
   }, [sevFilter]);
 
-  // 선택된 이상 → 상품 정보 + 리뷰 로드
-  React.useEffect(() => {
-    if (!selectedAnomaly) { setReviews([]); setProduct(null); return; }
-    setProduct(null);
-    fetchProductBrief(selectedAnomaly.entity_id).then(setProduct).catch(console.error);
-  }, [selectedAnomaly]);
-
-  React.useEffect(() => {
-    if (!selectedAnomaly) return;
-    let cancelled = false;
-    setRvLoading(true);
-    const ratingMin = ratingTab === 'low' ? 1 : ratingTab === 'mid' ? 3 : 1;
-    const ratingMax = ratingTab === 'low' ? 2 : ratingTab === 'mid' ? 3 : ratingTab === 'hi' ? 5 : 5;
-    const ratingMinFinal = ratingTab === 'hi' ? 4 : ratingMin;
-    fetchReviews({
-      productId: selectedAnomaly.entity_id,
-      ratingMin: ratingMinFinal,
-      ratingMax,
-      sort: 'recent',
-      limit: RV_PAGE,
-      offset: rvPage * RV_PAGE,
-    }).then(({ rows: r, total: t }) => {
-      if (!cancelled) { setReviews(r); setRvTotal(t); }
-    }).catch(console.error)
-      .finally(() => { if (!cancelled) setRvLoading(false); });
-    return () => { cancelled = true; };
-  }, [selectedAnomaly, ratingTab, rvPage]);
-
   const selectAnomaly = (a: CsAnomaly) => {
     setSelectedAnomaly(a);
     setRvPage(0);
     setRatingTab('all');
+    setNoteReviewId(null);
   };
 
   const sevColor = (s: string) => SEV_COLOR(s);
@@ -1154,10 +1127,17 @@ function RvAnomalyReviews() {
                 </div>
               </section>
 
+              <div className="dim" style={{ fontSize: 11 }}>
+                현재 저장된 상품 리뷰 · 탐지 당시 근거의 스냅샷이 아닙니다.
+                {productState === 'loading' && <span role="status"> 상품 정보 조회 중…</span>}
+                {productState === 'error' && <span role="alert"> 상품 정보를 확인할 수 없습니다.{' '}
+                  <button className="btn sm" onClick={retryProduct}>상품 정보 다시 조회</button></span>}
+              </div>
+
               {/* 리뷰 필터 탭 */}
               <div className="row-flex center gap-4">
                 {([
-                  ['all', `전체 (${rvTotal})`],
+                  ['all', `전체 (${rvTotal ?? '—'})`],
                   ['low', '★1~2'],
                   ['mid', '★3'],
                   ['hi',  '★4~5'],
@@ -1172,29 +1152,45 @@ function RvAnomalyReviews() {
 
               {/* 리뷰 목록 */}
               <section className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-                {rvLoading ? (
+                {authState === 'checking' ? (
+                  <div role="status" style={{ padding: '32px 0', textAlign: 'center', fontSize: 12 }}>로그인 상태 확인 중…</div>
+                ) : authState === 'signedout' ? (
+                  <div role="status" style={{ padding: '32px 0', textAlign: 'center', fontSize: 12 }}>
+                    리뷰를 확인하려면 로그인하세요. <a className="btn sm" href="/login">로그인</a>
+                  </div>
+                ) : authState === 'unavailable' ? (
+                  <div role="alert" style={{ padding: '32px 0', textAlign: 'center', fontSize: 12 }}>
+                    로그인 상태를 확인하지 못했습니다.{' '}
+                    <button className="btn sm" onClick={retryAuth}>로그인 상태 다시 확인</button>
+                  </div>
+                ) : rvLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
                       <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3, width: '50%', marginBottom: 6 }} />
                       <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3 }} />
                     </div>
                   ))
-                ) : reviews.length === 0 ? (
-                  <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
-                    리뷰 없음
+                ) : reviewState === 'error' ? (
+                  <div role="alert" style={{ padding: '32px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+                    리뷰를 불러오지 못했습니다.{' '}
+                    <button className="btn sm" onClick={retryReviews}>리뷰 다시 조회</button>
                   </div>
-                ) : reviews.map(r => (
+                ) : reviewState === 'ready' && reviews.length === 0 ? (
+                  <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
+                    현재 조건에 일치하는 저장 리뷰가 없습니다.
+                  </div>
+                ) : reviewState === 'ready' ? reviews.map(r => (
                   <ReviewCard key={r.id} r={r} onNote={id => setNoteReviewId(id)} />
-                ))}
+                )) : null}
 
-                {reviews.length > 0 && (
+                {reviews.length > 0 && rvTotal !== null && (
                   <div className="row-flex between center" style={{ padding: '10px 14px', borderTop: '0.5px solid var(--bs)' }}>
                     <span className="mono dim" style={{ fontSize: 11 }}>
                       {`${rvPage * RV_PAGE + 1}–${Math.min((rvPage + 1) * RV_PAGE, rvTotal)} / ${rvTotal.toLocaleString()}`}
                     </span>
                     <div className="row-flex gap-4">
                       <button className="btn sm" onClick={() => setRvPage(p => Math.max(0, p - 1))} disabled={rvPage === 0}>←</button>
-                      <span className="mono dim" style={{ fontSize: 11 }}>{rvPage + 1} / {Math.ceil(rvTotal / RV_PAGE) || 1}</span>
+                      <span className="mono dim" style={{ fontSize: 11 }}>{rvPage + 1} / {Math.ceil((rvTotal ?? 0) / RV_PAGE) || 1}</span>
                       <button className="btn sm" onClick={() => setRvPage(p => p + 1)} disabled={(rvPage + 1) * RV_PAGE >= rvTotal}>→</button>
                     </div>
                   </div>

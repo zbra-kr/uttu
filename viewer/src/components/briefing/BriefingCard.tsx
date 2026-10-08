@@ -6,9 +6,10 @@ interface Props {
   title: string;
   comment: string;
   href: string;
+  evidenceDate?: string;
 }
 
-export default function BriefingCard({ icon, title, comment, href }: Props) {
+export default function BriefingCard({ icon, title, comment, href, evidenceDate }: Props) {
   return (
     <Link
       href={href}
@@ -47,6 +48,9 @@ export default function BriefingCard({ icon, title, comment, href }: Props) {
       }}>
         {comment}
       </p>
+        {evidenceDate && <span style={{ fontSize: 11, color: 'var(--f3)', lineHeight: 1.5 }}>
+          {evidenceDate} 브리핑 · 해당일 감지 기록
+        </span>}
     </Link>
   );
 }

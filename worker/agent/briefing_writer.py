@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import re
 import sys
@@ -505,6 +506,43 @@ async def generate_briefing(
 
 # ── 인사이트 상세 페이지 생성 ─────────────────────────────────────────────────
 
+def _validate_insight_detail(parsed: dict) -> dict:
+    """Validate fields consumed by the detail renderer; not a factual verification."""
+    def text(value):
+        return isinstance(value, str) and bool(value.strip())
+
+    if not isinstance(parsed, dict) or not text(parsed.get("article")):
+        raise ValueError("insight article must be a nonblank string")
+    metrics = parsed.get("key_metrics")
+    if metrics is None:
+        metrics = []
+    if (not isinstance(metrics, list) or len(metrics) > 4
+            or any(not isinstance(m, dict) or not text(m.get("label"))
+                   or not text(m.get("value"))
+                   or ("change" in m and not isinstance(m["change"], str)) for m in metrics)):
+        raise ValueError("invalid insight key_metrics")
+    chart = parsed.get("chart")
+    if chart is not None:
+        if (not isinstance(chart, dict) or chart.get("type") not in ("bar", "line")
+                or not text(chart.get("title"))
+                or not isinstance(chart.get("x_labels"), list) or not chart["x_labels"]
+                or not all(text(label) for label in chart["x_labels"])
+                or not isinstance(chart.get("series"), list) or not chart["series"]
+                or ("reversed" in chart and not isinstance(chart["reversed"], bool))):
+            raise ValueError("invalid insight chart")
+        for series in chart["series"]:
+            if (not isinstance(series, dict) or not text(series.get("name"))
+                    or not isinstance(series.get("values"), list)
+                    or len(series["values"]) != len(chart["x_labels"])
+                    or any(type(value) not in (int, float) or not math.isfinite(value)
+                           for value in series["values"])):
+                raise ValueError("invalid insight chart series")
+        names = [series["name"] for series in chart["series"]]
+        if "name" in names or len(set(names)) != len(names):
+            raise ValueError("chart series names must be unique and not replace x labels")
+    return {"article": parsed["article"], "key_metrics": metrics, "chart": chart}
+
+
 async def generate_insight_page(
     idx: int,
     insight: dict,
@@ -513,6 +551,11 @@ async def generate_insight_page(
     client: anthropic.AsyncAnthropic,
 ) -> dict:
     """단일 인사이트에 대한 상세 페이지 생성."""
+    if (not isinstance(insight, dict)
+            or any(not isinstance(insight.get(key), str) or not insight[key].strip()
+                   for key in ("title", "body"))
+            or not isinstance(insight.get("link", ""), str)):
+        raise ValueError("invalid insight summary fields")
     user_msg = (
         f"## 인사이트 ({audience}, #{idx + 1})\n"
         f"제목: {insight.get('title', '')}\n"
@@ -527,27 +570,19 @@ async def generate_insight_page(
             system=_SYSTEM_INSIGHT_PAGE,
             messages=[{"role": "user", "content": user_msg}],
         )
-        parsed = _extract_json_dict(resp.content[0].text)
+        parsed = _validate_insight_detail(_extract_json_dict(resp.content[0].text))
         return {
             "idx":         idx,
             "title":       insight.get("title", ""),
             "body":        insight.get("body", ""),
             "link":        insight.get("link", ""),
-            "article":     parsed.get("article", ""),
-            "key_metrics": parsed.get("key_metrics") or [],
-            "chart":       parsed.get("chart"),
+            "article":     parsed["article"],
+            "key_metrics": parsed["key_metrics"],
+            "chart":       parsed["chart"],
         }
     except Exception as e:
         logger.warning("insight_page_failed", idx=idx, audience=audience, error=str(e))
-        return {
-            "idx":         idx,
-            "title":       insight.get("title", ""),
-            "body":        insight.get("body", ""),
-            "link":        insight.get("link", ""),
-            "article":     insight.get("body", ""),
-            "key_metrics": [],
-            "chart":       None,
-        }
+        raise
 
 
 async def generate_insight_pages(
@@ -556,7 +591,11 @@ async def generate_insight_pages(
     client: anthropic.AsyncAnthropic,
 ) -> list[dict]:
     """브리핑 결과의 모든 인사이트에 대해 상세 페이지를 병렬 생성."""
-    insights = result.get("insights") or []
+    insights = result.get("insights")
+    if insights is None:
+        insights = []
+    if not isinstance(insights, list):
+        raise ValueError("insights must be an array")
     audience = result["audience"]
     tasks = [
         generate_insight_page(i, ins, inputs, audience, client)
@@ -568,8 +607,13 @@ async def generate_insight_pages(
 
 # ── DB 적재 ───────────────────────────────────────────────────────────────────
 
-def _upsert_briefing(db, result: dict, briefing_date: date) -> None:
-    db.table("daily_briefings").upsert(
+def _upsert_briefing(db, result: dict, briefing_date: date, pages: list[dict]) -> None:
+    """Publish one complete revision; concurrent attempts use last committed write.
+
+    A response failure cannot prove whether the atomic write committed. Never
+    retry automatically or perform a separate late detail-page update.
+    """
+    response = db.table("daily_briefings").upsert(
         {
             "briefing_date": briefing_date.isoformat(),
             "audience":      result["audience"],
@@ -578,6 +622,8 @@ def _upsert_briefing(db, result: dict, briefing_date: date) -> None:
             "weekly_brief":  result["weekly_brief"],
             "card_comments": result["card_comments"],
             "insights":      result["insights"],
+            "insight_pages": pages,
+            "generated_at":  datetime.now(KST).isoformat(),
             "news_picks":    result["news_picks"],
             "model":         result["model"],
             "input_tokens":  result["input_tokens"],
@@ -586,6 +632,10 @@ def _upsert_briefing(db, result: dict, briefing_date: date) -> None:
         },
         on_conflict="briefing_date,audience",
     ).execute()
+    if (not isinstance(response.data, list) or len(response.data) != 1
+            or response.data[0].get("briefing_date") != briefing_date.isoformat()
+            or response.data[0].get("audience") != result["audience"]):
+        raise RuntimeError("briefing publication response could not be confirmed")
 
 
 # ── 메인 실행 ─────────────────────────────────────────────────────────────────
@@ -599,7 +649,8 @@ async def run(
     브리핑 생성 메인 (Stage 8: audience별 입력 분리).
     반환값: upsert 성공 건수 (dry_run 시 0).
     """
-    target_audiences = audiences or AUDIENCES
+    # Preserve direct-call defaults for [] and separate attempts for duplicates.
+    target_audiences = list(audiences or AUDIENCES)
 
     db   = _supabase()
     anth = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
@@ -662,20 +713,31 @@ async def run(
         for i, r in zip(failed_idx, retry_results):
             results[i] = r
 
-    # 4. upsert 성공한 것만
+    # 4. Prepare all details before any complete-revision publication.
     success_count = 0
     error_msgs: list[str] = []
-    upserted_results: list[dict] = []
+    prepared_results = [r for r in results if not isinstance(r, Exception)]
+    all_pages = await asyncio.gather(
+        *[generate_insight_pages(r, inputs_map[r["audience"]], anth)
+          for r in prepared_results],
+        return_exceptions=True,
+    )
+    # Gather preserves order; audience names need not be unique for direct callers.
+    page_results = iter(all_pages)
 
     for r in results:
         if isinstance(r, Exception):
             error_msgs.append(str(r))
             logger.error("briefing_generation_failed", error=str(r))
             continue
+        pages = next(page_results)
+        if isinstance(pages, Exception):
+            error_msgs.append(f"details/{r['audience']}: {pages}")
+            logger.error("insight_pages_failed", audience=r["audience"], error=str(pages))
+            continue
         try:
-            _upsert_briefing(db, r, target_date)
+            _upsert_briefing(db, r, target_date, pages)
             success_count += 1
-            upserted_results.append(r)
             logger.info(
                 "briefing_upserted",
                 audience=r["audience"],
@@ -688,32 +750,6 @@ async def run(
             error_msgs.append(f"upsert/{r['audience']}: {e}")
             logger.error("briefing_upsert_failed", audience=r["audience"], error=str(e))
 
-    # 4-1. 인사이트 상세 페이지 생성 (upsert 성공한 것만, 병렬)
-    if upserted_results and not dry_run:
-        logger.info("insight_pages_start", count=len(upserted_results))
-        page_tasks = [
-            generate_insight_pages(r, inputs_map[r["audience"]], anth)
-            for r in upserted_results
-        ]
-        all_pages = await asyncio.gather(*page_tasks, return_exceptions=True)
-        for r, pages in zip(upserted_results, all_pages):
-            if isinstance(pages, Exception):
-                logger.warning("insight_pages_failed", audience=r["audience"], error=str(pages))
-                continue
-            try:
-                db.table("daily_briefings").update(
-                    {"insight_pages": pages}
-                ).eq("briefing_date", target_date.isoformat()).eq(
-                    "audience", r["audience"]
-                ).execute()
-                logger.info(
-                    "insight_pages_saved",
-                    audience=r["audience"],
-                    count=len(pages),
-                )
-            except Exception as e:
-                logger.warning("insight_pages_save_failed", audience=r["audience"], error=str(e))
-
     # 5. collection_jobs 상태 업데이트
     if tracker.job_id is not None:
         finished_at = datetime.now(KST).isoformat()
@@ -721,7 +757,8 @@ async def run(
             await tracker.error("\n".join(error_msgs))
         elif error_msgs:
             db.table("collection_jobs").update({
-                "status":      "partial",
+                # The required run failed; confirmed audience outputs remain.
+                "status":      "error",
                 "rows_done":   success_count,
                 "error_msg":   "\n".join(error_msgs)[:500],
                 "finished_at": finished_at,
@@ -748,10 +785,13 @@ async def run(
         except Exception as e:
             logger.warning("briefing_notification_failed", error=str(e))
 
-    logger.info(
-        "briefing_run_done",
+    complete = success_count == len(target_audiences)
+    log_outcome = logger.info if complete else logger.warning
+    log_outcome(
+        "briefing_run_done" if complete else "briefing_run_incomplete",
         date=target_date,
         success=success_count,
+        requested=len(target_audiences),
         errors=len(error_msgs),
     )
     return success_count
@@ -779,10 +819,33 @@ def main() -> None:
     args = parser.parse_args()
 
     target_date      = args.date or _today_kst()
-    target_audiences = [args.audience] if args.audience else None
+    target_audiences = [args.audience] if args.audience else list(AUDIENCES)
 
-    n = asyncio.run(run(target_date, dry_run=args.dry_run, audiences=target_audiences))
-    sys.exit(0 if n >= 0 else 1)
+    try:
+        n = asyncio.run(run(target_date, dry_run=args.dry_run, audiences=target_audiences))
+    except Exception as exc:
+        # Render safe diagnostics in the default message-only sink. Exception
+        # text/traceback locals may contain credentials or dependency URLs.
+        if isinstance(exc, KeyError):
+            reason = "required configuration or briefing field is missing"
+        elif isinstance(exc, (ValueError, TypeError)):
+            reason = "invalid configuration or briefing data"
+        elif isinstance(exc, OSError):
+            reason = "dependency access failed"
+        else:
+            reason = "worker execution or publication tracking failed"
+        logger.error("briefing_cli_failed: {kind}; {reason}",
+                     kind=type(exc).__name__, reason=reason)
+        sys.exit(1)
+    complete = args.dry_run or n == len(target_audiences)
+    log_outcome = logger.info if complete else logger.error
+    log_outcome(
+        "briefing_cli_complete" if complete else "briefing_cli_incomplete",
+        success=n,
+        requested=len(target_audiences),
+        dry_run=args.dry_run,
+    )
+    sys.exit(0 if complete else 1)
 
 
 if __name__ == "__main__":

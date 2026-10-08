@@ -1043,7 +1043,7 @@ function TabFunding({
         </div>
       </SecPanel>
 
-      <SecPanel title={`투자 라운드 타임라인${funding.rounds.length > 0 ? ` (${funding.rounds.length}건)` : ''}`}>
+      <SecPanel title={`투자 출처 기록${funding.rounds.length > 0 ? ` (표시 중 ${funding.rounds.length}건)` : ''}`}>
         <FundingRoundsView funding={funding} />
       </SecPanel>
 

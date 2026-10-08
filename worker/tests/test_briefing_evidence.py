@@ -3,10 +3,11 @@
 import ast
 import asyncio
 import json
+import math
 import re
 import time
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -63,10 +64,11 @@ def offline_runtime():
     """Execute the real pure/async function bodies with explicit offline dependencies."""
     tree = ast.parse(SOURCE.read_text())
     names = {'_extract_json_dict', 'generate_briefing', 'generate_insight_pages',
-             'generate_insight_page', '_upsert_briefing'}
+             'generate_insight_page', '_validate_insight_detail', '_upsert_briefing'}
     nodes = [ast.ImportFrom(module='__future__', names=[ast.alias(name='annotations')], level=0)]
     nodes += [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names]
-    env = {**prompt_constants(), 'json': json, 're': re, 'time': time, 'asyncio': asyncio,
+    env = {**prompt_constants(), 'json': json, 'math': math, 're': re, 'time': time, 'asyncio': asyncio,
+           'datetime': datetime, 'KST': timezone.utc,
            'MODEL': 'offline-test', 'format_user_message': lambda *_: 'offline input',
            '_j': json.dumps, 'logger': SimpleNamespace(warning=Mock())}
     exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), str(SOURCE), 'exec'), env)
@@ -93,7 +95,9 @@ class EmptyInsightRuntimeTests(unittest.IsolatedAsyncioTestCase):
             detail.assert_not_awaited()
             # The persistence adapter accepts an empty array unchanged, with a fake DB only.
             db = Mock()
-            env['_upsert_briefing'](db, result, date(2026, 10, 3))
+            db.table.return_value.upsert.return_value.execute.return_value.data = [
+                {'briefing_date': '2026-10-03', 'audience': audience}]
+            env['_upsert_briefing'](db, result, date(2026, 10, 3), [])
             self.assertEqual(db.table.return_value.upsert.call_args.args[0]['insights'], [])
 
     async def test_missing_optional_insights_schedule_no_details(self):
@@ -104,15 +108,12 @@ class EmptyInsightRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await env['generate_insight_pages'](result, {}, object()), [])
         detail.assert_not_awaited()
 
-    async def test_detail_failure_preserves_summary_without_invented_metrics(self):
+    async def test_detail_failure_propagates_without_publishing_a_fallback_revision(self):
         env = offline_runtime()
         client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock(side_effect=RuntimeError('offline failure'))))
         insight = {'title': '확인 필요', 'body': '근거 부족', 'link': '/reviews?brand=example'}
-        result = await env['generate_insight_page'](0, insight, {}, 'cs', client)
-        self.assertEqual(result['article'], insight['body'])
-        self.assertEqual(result['link'], insight['link'])
-        self.assertEqual(result['key_metrics'], [])
-        self.assertIsNone(result['chart'])
+        with self.assertRaisesRegex(RuntimeError, 'offline failure'):
+            await env['generate_insight_page'](0, insight, {}, 'cs', client)
 
 
 if __name__ == '__main__':

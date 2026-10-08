@@ -17,6 +17,7 @@ from loguru import logger
 
 from worker.agent.claude_client import FUNDING_EXTRACT_MODEL, extract_json
 from worker.funding.name_utils import name_equals
+from worker.funding.outcomes import DiscoveryFailure
 
 # ── 상수 ────────────────────────────────────────────────────────────────────────
 
@@ -41,15 +42,20 @@ def _build_prompt(article_text: str) -> str:
 
 def _parse_result(result: dict | list | None) -> list[dict]:
     """extract_json 결과에서 rounds 배열 추출."""
-    if result is None:
-        return []
-    if isinstance(result, list):
-        return result
-    if isinstance(result, dict):
-        rounds = result.get("rounds", [])
-        if isinstance(rounds, list):
-            return rounds
-    return []
+    if isinstance(result, dict) and "rounds" in result:
+        rounds = result["rounds"]
+    elif isinstance(result, list):
+        rounds = result
+    else:
+        raise DiscoveryFailure("nlp_missing_or_malformed_result")
+    if not isinstance(rounds, list) or any(not isinstance(r, dict) for r in rounds):
+        raise DiscoveryFailure("nlp_invalid_rounds")
+    for row in rounds:
+        if not isinstance(row.get("company"), str) or not row["company"].strip():
+            raise DiscoveryFailure("nlp_subject_missing")
+        if not isinstance(row.get("investors", []), list):
+            raise DiscoveryFailure("nlp_invalid_investors")
+    return rounds
 
 
 def _match_company(round_dict: dict, company_name: str) -> bool:

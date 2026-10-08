@@ -259,3 +259,44 @@ test('late create error/finally cannot clear active-company busy state, and auth
     assert.equal(f.timers.size,0);assert.equal(f.done(),0);assert.match(text(root),/로그인 후/);assert.doesNotMatch(text(root),/수집 중…/);
   }finally{await act(async()=>root?.unmount());f.restore();}
 });
+
+
+test('raw matched and conflicting observations remain separate records with non-round labels',async()=>{
+  const f=sdkFixture(), q=load('src/lib/queries-funding.ts',{'./supabase/client':{supabaseBrowser:()=>f.sdk}});
+  const {FundingTimeline}=load('src/components/uttu/funding-timeline.tsx');
+  for(const amount of [1_000_000_000,9_000_000_000]){
+    const records=[{...row(),id:'news',source_url:'https://fixture/news',amount_krw:amount},
+      {...row(),id:'dart',source_type:'dart_piic',source_url:'https://fixture/dart',confidence:1,amount_krw:1_000_000_000}];
+    f.plans.push({data:records,error:null});
+    const observations=await q.getFundingRounds('a');assert.deepEqual(observations,records);
+    let root;try{
+      await act(async()=>{root=Renderer.create(React.createElement(FundingTimeline,{rounds:observations}));});
+      const rendered=text(root);assert.match(rendered,/출처별 관측 기록/);
+      assert.match(rendered,/같은 투자 라운드/);assert.match(rendered,/합산하지 않습니다/);
+      assert.match(rendered,/충돌/);assert.match(rendered,/실패한 수집/);
+      assert.equal(root.root.findAllByType('a').length,2);
+      assert.equal((rendered.match(/출처 보고 금액/g)||[]).length,2);
+      if(amount===9_000_000_000)assert.match(rendered,/90/);
+    }finally{await act(async()=>root?.unmount());}
+  }
+});
+test('done count denotes records and conflict status explains retained evidence and prior brief',async()=>{
+  for(const status of ['done','failed']){
+    const f=sdkFixture(),client={supabaseBrowser:()=>f.sdk};
+    const {FundingCollectButton}=load('src/components/uttu/funding-collect-button.tsx',{'@/lib/supabase/client':client,'./supabase/client':client});
+    f.plans.push({data:{...job('a','j1',status),error:status==='failed'?'funding_history_source_conflict':null},error:null});
+    let root;try{
+      await act(async()=>{root=Renderer.create(React.createElement(FundingCollectButton,{companyId:'a',fundingLastCollectedAt:null}));});
+      const rendered=text(root);
+      if(status==='done'){assert.match(rendered,/수집 기록/);assert.match(rendered,/라운드 수 아님/);assert.doesNotMatch(rendered,/건 수집됨/);}
+      else{assert.match(rendered,/뉴스·공시 금액 충돌/);assert.match(rendered,/새 브리핑을 발행하지 않았습니다/);assert.match(rendered,/원본 출처 기록을 유지/);}
+    }finally{await act(async()=>root?.unmount());assert.equal(f.listeners.size,0);}
+  }
+});
+test('desktop and mobile section counts describe displayed source records, not economic rounds',()=>{
+  const fs=require('node:fs'),path=require('node:path');
+  for(const filename of ['page.tsx','MobileCompanyDetailView.tsx']){
+    const source=fs.readFileSync(path.join(__dirname,'../src/app/(app)/company',filename),'utf8');
+    assert.match(source,/투자 출처 기록/);assert.match(source,/표시 중/);assert.doesNotMatch(source,/투자 라운드 타임라인/);
+  }
+});

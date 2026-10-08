@@ -7,10 +7,11 @@ interface Props {
   title: string;
   comment: string;
   href: string;
+  evidenceDate?: string;
   onClick?: () => void;
 }
 
-export default function MobileBriefingCard({ icon, title, comment, href, onClick }: Props) {
+export default function MobileBriefingCard({ icon, title, comment, href, evidenceDate, onClick }: Props) {
   const [pressed, setPressed] = React.useState(false);
 
   const inner = (
@@ -30,6 +31,9 @@ export default function MobileBriefingCard({ icon, title, comment, href, onClick
         }}>
           {comment}
         </p>
+        {evidenceDate && <span style={{ fontSize: 11, color: 'var(--f3)', lineHeight: 1.5 }}>
+          {evidenceDate} 브리핑 · 해당일 감지 기록
+        </span>}
       </div>
       <span style={{ fontSize: 13, color: 'var(--f4)', flexShrink: 0, marginTop: 1, fontFamily: 'var(--mono)' }}>→</span>
     </>

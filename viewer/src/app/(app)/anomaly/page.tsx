@@ -9,7 +9,8 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import SavedFiltersDropdown from '@/components/me/SavedFiltersDropdown';
 import NoteDrawer from '@/components/me/NoteDrawer';
 import { fetchNoteCountForEntity } from '@/lib/queries-me';
-import { kstToday } from '@/lib/format';
+import { useAnomalyDateScope } from '@/hooks/useAnomalyDateScope';
+import { realCalendarDate } from '@/lib/briefing-anomaly-date';
 import { isDailyRankObservation, observationExplanation, prioritySeverity } from '@/lib/anomaly-priority';
 import { useAnomalyRecords } from '@/hooks/useAnomalyRecords';
 
@@ -41,12 +42,6 @@ function areaKey(t: string): string {
   if (t.startsWith('rank_') || ['new_entrant_top10', 'sold_out', 'price_drop', 'price_rise'].includes(t)) return '상품';
   if (t === 'promo_heavy_discount') return '프로모션';
   return '리뷰';
-}
-
-function kstDaysAgo(n: number): string {
-  const d = new Date(Date.now() + 9 * 3_600_000);
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
 }
 
 function formatTs(ts: string): string {
@@ -87,15 +82,6 @@ function eventLabel(row: ARow): string {
     default:
       return row.description || anomalyLabel(row.anomaly_type);
   }
-}
-
-function computeDateRange(period: string, fromDate: string, toDate: string) {
-  const today = kstToday();
-  if (period === 'today') return { from: today,          to: today };
-  if (period === '7d')    return { from: kstDaysAgo(6),  to: today };
-  if (period === '30d')   return { from: kstDaysAgo(29), to: today };
-  if (period === '90d')   return { from: kstDaysAgo(89), to: today };
-  return { from: fromDate, to: toDate };
 }
 
 function MetaMetrics({ row }: { row: ARow }) {
@@ -281,10 +267,10 @@ function AnomalyDrawer({ item, onClose, onPrev, onNext }: {
 function AnomalyPage() {
   const params  = useSearchParams();
   const jumpId  = params.get('id') ?? '';
+  const urlDate = realCalendarDate(params.get('date'));
 
-  const [period,   setPeriod]   = React.useState('today');
-  const [fromDate, setFromDate] = React.useState(() => kstDaysAgo(6));
-  const [toDate,   setToDate]   = React.useState(kstToday);
+  const { period, setPeriod, fromDate, setFromDate, toDate, setToDate, from, to }
+    = useAnomalyDateScope(params.get('date'));
 
   const detailIntent = React.useRef(0);
   const invalidatePendingDetail = React.useCallback(() => { detailIntent.current++; }, []);
@@ -295,30 +281,43 @@ function AnomalyPage() {
     setSev(new Set(p && ['hi', 'md', 'lo'].includes(p) ? [p] : ['hi', 'md', 'lo']));
   }, [params, invalidatePendingDetail]);
   const [area,   setArea]   = React.useState(new Set(ALL_AREAS));
-  const [detail, setDetail] = React.useState<ARow | null>(null);
-  const chooseDetail = (next: ARow | null) => { invalidatePendingDetail(); setDetail(next); };
+  const [detailRecord, setDetailRecord] = React.useState<{ scope: string; item: ARow } | null>(null);
 
-  const { from, to } = computeDateRange(period, fromDate, toDate);
   const records = useAnomalyRecords(from, to);
   const rows: ARow[] = records.rows.map(r => ({ ...r, sev: prioritySeverity(r), area: areaKey(r.anomaly_type) }));
   const { loading, error: errMsg } = records;
+  const detailScope = JSON.stringify([from, to, records.identityKey, jumpId]);
+  const currentDetailScope = React.useRef(detailScope);
+  currentDetailScope.current = detailScope;
+  const detail = detailRecord?.scope === detailScope ? detailRecord.item : null;
+  const setDetail = React.useCallback((next: ARow | null) => {
+    setDetailRecord(next ? { scope: currentDetailScope.current, item: next } : null);
+  }, []);
+  const chooseDetail = (next: ARow | null) => {
+    if (currentDetailScope.current !== detailScope) return;
+    invalidatePendingDetail(); setDetail(next);
+  };
   const [observationsOpen, setObservationsOpen] = React.useState(false);
-  React.useEffect(() => { invalidatePendingDetail(); setDetail(null); setObservationsOpen(false); }, [from, to, records.identityKey, invalidatePendingDetail]);
+  React.useEffect(() => { invalidatePendingDetail(); setDetail(null); setObservationsOpen(false); }, [from, to, records.identityKey, invalidatePendingDetail, setDetail]);
   React.useEffect(() => {
     setDetail(null);
     if (!jumpId || !records.identity) return;
     let active = true;
     const ownIntent = ++detailIntent.current;
-    supabaseBrowser().from('anomalies')
+    const ownScope = currentDetailScope.current;
+    let query = supabaseBrowser().from('anomalies')
       .select('id, detected_at, detection_date, module, severity, anomaly_type, entity_type, entity_id, entity_name, description, meta')
-      .eq('id', jumpId).single().then(({ data }) => {
-        if (active && ownIntent === detailIntent.current && data) {
+      .eq('id', jumpId);
+    if (urlDate) query = query.eq('detection_date', urlDate);
+    query.single().then(({ data }) => {
+        if (active && ownIntent === detailIntent.current && currentDetailScope.current === ownScope && data
+            && (!urlDate || data.detection_date === urlDate)) {
           setDetail({ ...data, sev: prioritySeverity(data), area: areaKey(data.anomaly_type) });
           if (isDailyRankObservation(data)) setObservationsOpen(true);
         }
       }, () => {});
     return () => { active = false; };
-  }, [jumpId, records.identity, records.identityKey]);
+  }, [jumpId, records.identity, records.identityKey, urlDate, setDetail]);
 
   const toggleSev = (k: string) => { invalidatePendingDetail(); setSev(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; }); };
   const toggleArea = (k: string) => { invalidatePendingDetail(); setArea(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; }); };

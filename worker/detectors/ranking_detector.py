@@ -26,6 +26,7 @@ from loguru import logger
 
 from supabase import Client
 from worker.detectors.base import Anomaly
+from worker.detectors.rank_observation import LEGACY_RANK_RULES, valid_rank
 
 MODULE = "product_planning"
 
@@ -56,6 +57,7 @@ def _load_ranking(client: Client, target_date: date) -> dict[str, dict]:
             client.table("ranking_snapshots")
             .select("product_id, rank_position, is_sold_out, final_price, product_name, brand_name")
             .eq("snapshot_date", target_date.isoformat())
+            .eq("store_code", "musinsa")
             .eq("category_code", "000")
             .eq("gender_filter", "A")
             .eq("age_filter", "AGE_BAND_ALL")
@@ -120,13 +122,14 @@ def detect_ranking(client: Client, target_date: date) -> list[Anomaly]:
         # rank_spike — 경쟁 상품 순위 급등 (자사 제외)
         if (
             not today["is_own"]
-            and rank_prev is not None
+            and valid_rank(rank_today)
+            and valid_rank(rank_prev)
             and rank_today <= 50
             and (rank_prev - rank_today) >= RANK_SPIKE_DELTA
         ):
             delta = rank_prev - rank_today
             anomalies.append(Anomaly(
-                module=MODULE, severity="medium", anomaly_type="rank_spike",
+                module=MODULE, severity="low", anomaly_type="rank_spike",
                 entity_type="product", entity_id=pid, entity_name=name,
                 description=f"[{brand}] {name} — 순위 {rank_prev}위 → {rank_today}위 ({delta}계단 급등)",
                 meta={"rank_today": rank_today, "rank_prev": rank_prev, "delta": delta, "brand": brand},
@@ -135,12 +138,13 @@ def detect_ranking(client: Client, target_date: date) -> list[Anomaly]:
         # rank_drop_own — 자사 상품 순위 하락
         if (
             today["is_own"]
-            and rank_prev is not None
+            and valid_rank(rank_today)
+            and valid_rank(rank_prev)
             and (rank_today - rank_prev) >= RANK_DROP_OWN_DELTA
         ):
             delta = rank_today - rank_prev
             anomalies.append(Anomaly(
-                module=MODULE, severity="high", anomaly_type="rank_drop_own",
+                module=MODULE, severity="low", anomaly_type="rank_drop_own",
                 entity_type="product", entity_id=pid, entity_name=name,
                 description=f"[자사] {name} — 순위 {rank_prev}위 → {rank_today}위 ({delta}계단 하락)",
                 meta={"rank_today": rank_today, "rank_prev": rank_prev, "delta": delta},
@@ -149,12 +153,14 @@ def detect_ranking(client: Client, target_date: date) -> list[Anomaly]:
         # new_entrant_top10 — 오늘 TOP10, 어제 TOP20 밖
         if (
             not today["is_own"]
+            and valid_rank(rank_today)
             and rank_today <= NEW_ENTRANT_TOP
-            and (rank_prev is None or rank_prev > NEW_ENTRANT_PREV_OUT)
+            and valid_rank(rank_prev)
+            and rank_prev > NEW_ENTRANT_PREV_OUT
         ):
             prev_str = f"{rank_prev}위" if rank_prev else "미진입"
             anomalies.append(Anomaly(
-                module=MODULE, severity="medium", anomaly_type="new_entrant_top10",
+                module=MODULE, severity="low", anomaly_type="new_entrant_top10",
                 entity_type="product", entity_id=pid, entity_name=name,
                 description=f"[{brand}] {name} — TOP10 신규 진입 (어제: {prev_str} → 오늘: {rank_today}위)",
                 meta={"rank_today": rank_today, "rank_prev": rank_prev, "brand": brand},
@@ -162,10 +168,11 @@ def detect_ranking(client: Client, target_date: date) -> list[Anomaly]:
 
         # sold_out — TOP50 내 품절 전환
         if (
-            rank_today <= SOLD_OUT_MIN_RANK
-            and today["is_sold_out"]
+            valid_rank(rank_today)
+            and rank_today <= SOLD_OUT_MIN_RANK
+            and today["is_sold_out"] is True
             and prev is not None
-            and not prev["is_sold_out"]
+            and prev["is_sold_out"] is False
         ):
             severity = "high" if today["is_own"] else "low"
             label = "[자사] " if today["is_own"] else f"[{brand}] "
@@ -215,27 +222,20 @@ def detect_ranking(client: Client, target_date: date) -> list[Anomaly]:
         # rank_return_own — 자사 상품 TOP50 재진입
         if (
             today["is_own"]
+            and valid_rank(rank_today)
             and rank_today <= RANK_RETURN_TOP
-            and (rank_prev is None or rank_prev > RANK_RETURN_TOP)
+            and valid_rank(rank_prev)
+            and rank_prev > RANK_RETURN_TOP
         ):
             prev_str = f"{rank_prev}위" if rank_prev else "미진입"
             anomalies.append(Anomaly(
-                module=MODULE, severity="high", anomaly_type="rank_return_own",
+                module=MODULE, severity="low", anomaly_type="rank_return_own",
                 entity_type="product", entity_id=pid, entity_name=name,
                 description=f"[자사] {name} — TOP50 재진입 ({prev_str} → {rank_today}위)",
                 meta={"rank_today": rank_today, "rank_prev": rank_prev},
             ))
 
-    # rank_exit_own — 어제 TOP100 이내였지만 오늘 랭킹에 없는 자사 상품
-    for pid, prev in prev_map.items():
-        if pid not in today_map and prev["is_own"] and prev["rank"] <= RANK_EXIT_TOP:
-            name = prev["product_name"] or "—"
-            anomalies.append(Anomaly(
-                module=MODULE, severity="high", anomaly_type="rank_exit_own",
-                entity_type="product", entity_id=pid, entity_name=name,
-                description=f"[자사] {name} — 전체 랭킹 TOP{RANK_EXIT_TOP} 이탈 (어제 {prev['rank']}위)",
-                meta={"rank_prev": prev["rank"]},
-            ))
+    # Missing rows are unknown; collection completeness is not established.
 
     # rank_multi_drop_own — 자사 상품 N개 이상 동시 하락 (rank_drop_own 해당 항목 집계)
     drop_own_items = [a for a in anomalies if a.anomaly_type == "rank_drop_own"]
@@ -243,11 +243,22 @@ def detect_ranking(client: Client, target_date: date) -> list[Anomaly]:
         names = ", ".join(a.entity_name or "—" for a in drop_own_items[:5])
         suffix = f" 외 {len(drop_own_items) - 5}개" if len(drop_own_items) > 5 else ""
         anomalies.append(Anomaly(
-            module=MODULE, severity="high", anomaly_type="rank_multi_drop_own",
+            module=MODULE, severity="low", anomaly_type="rank_multi_drop_own",
             entity_type=None, entity_id=None, entity_name=None,
             description=f"[자사] 자사 상품 {len(drop_own_items)}개 동시 순위 하락: {names}{suffix}",
             meta={"count": len(drop_own_items), "products": [a.entity_id for a in drop_own_items]},
         ))
+
+    for anomaly in anomalies:
+        if anomaly.anomaly_type in LEGACY_RANK_RULES:
+            anomaly.meta.update({
+                "assessment": "one_day_observation",
+                "policy_version": "legacy-rank-noise-v1",
+                "cohort": {"store": "musinsa", "category": "000",
+                           "gender": "M/F" if anomaly.anomaly_type == "brand_rank_gender_diverge" else "A",
+                           "age": "AGE_BAND_ALL"},
+            })
+            anomaly.description = "일일 순위 변동 관측 — " + (anomaly.description or "")
 
     logger.info(f"ranking_detector_done date={target_date} anomalies={len(anomalies)}")
     return anomalies

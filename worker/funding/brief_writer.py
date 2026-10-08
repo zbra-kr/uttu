@@ -98,6 +98,12 @@ def _round_to_text(r: dict, idx: int) -> str:
     source_url = r.get("source_url") or r.get("source_ref")
     if source_url:
         lines.append(f"- **원문**: {source_url}")
+    for evidence in r.get("supporting_evidence", []):
+        source = evidence.get("source_url") or evidence.get("source_ref") or "출처 불명"
+        lines.append(f"- **보조 근거 (별도 라운드 아님)**: {source}")
+        for field in ("note", "notes"):
+            if evidence.get(field):
+                lines.append(f"  - {field}: {evidence[field]}")
     return "\n".join(lines)
 
 
@@ -116,7 +122,7 @@ def _build_prompt(corp_name: str, rounds: list[dict]) -> str:
         r.get("amount_krw") or 0
         for r in rounds
         if r.get("amount_krw") and (
-            r.get("confidence", 0) >= 1.0
+            (r.get("confidence") or 0) >= 1.0
             or r.get("source_type") in ("dart_estkrs", "dart_piic")
         )
     )
