@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { fetchProductBrief, fetchReviews, type CsAnomaly, type ReviewRow } from '@/lib/queries';
 
+type AuthState = 'checking' | 'authenticated' | 'signedout' | 'unavailable';
 type State = 'idle' | 'loading' | 'ready' | 'error';
 type Product = NonNullable<Awaited<ReturnType<typeof fetchProductBrief>>>;
 type Receipt<T> = { scope: string; state: 'ready' | 'error'; data: T | null };
@@ -10,14 +11,16 @@ type Receipt<T> = { scope: string; state: 'ready' | 'error'; data: T | null };
 /** Current saved product reviews, not a snapshot of the detector's evidence. */
 export function useCsAnomalyReviews(selected: Pick<CsAnomaly, 'id' | 'entity_id'> | null,
   rating: 'all' | 'low' | 'mid' | 'hi', page: number, limit: number) {
-  const [auth, setAuth] = useState({ ready: false, userId: null as string | null, epoch: 0 });
+  const [auth, setAuth] = useState({ ready: false, userId: null as string | null, epoch: 0, state: 'checking' as AuthState });
+  const [authAttempt, setAuthAttempt] = useState(0);
   const identity = useRef(auth);
   const currentRead = useRef<AbortController | null>(null);
   useEffect(() => {
     let cancelled = false, eventSeen = false;
-    const acceptIdentity = (userId: string | null) => {
-      if (cancelled || (identity.current.ready && identity.current.userId === userId)) return;
-      const next = { ready: true, userId, epoch: identity.current.epoch + 1 };
+    const acceptIdentity = (userId: string | null, unavailable = false) => {
+      const state: AuthState = unavailable ? 'unavailable' : userId ? 'authenticated' : 'signedout';
+      if (cancelled || (identity.current.ready && identity.current.userId === userId && identity.current.state === state)) return;
+      const next = { ready: true, userId, epoch: identity.current.epoch + 1, state };
       identity.current = next;
       currentRead.current?.abort();
       setProductReceipt(null); setReviewReceipt(null); setAuth(next);
@@ -27,10 +30,10 @@ export function useCsAnomalyReviews(selected: Pick<CsAnomaly, 'id' | 'entity_id'
       eventSeen = true; acceptIdentity(session?.user?.id ?? null);
     });
     void client.auth.getUser().then(({ data, error }) => {
-      if (!eventSeen) acceptIdentity(error ? null : data.user?.id ?? null);
-    }).catch(() => { if (!eventSeen) acceptIdentity(null); });
+      if (!eventSeen) acceptIdentity(error ? null : data.user?.id ?? null, Boolean(error));
+    }).catch(() => { if (!eventSeen) acceptIdentity(null, true); });
     return () => { cancelled = true; currentRead.current?.abort(); subscription.unsubscribe(); };
-  }, []);
+  }, [authAttempt]);
   const alertKey = selected ? JSON.stringify([selected.id, selected.entity_id]) : '';
   const [selection, setSelection] = useState({ key: alertKey, epoch: 0 });
   const epoch = selection.key === alertKey ? selection.epoch : selection.epoch + 1;
@@ -83,7 +86,13 @@ export function useCsAnomalyReviews(selected: Pick<CsAnomaly, 'id' | 'entity_id'
   const reviewState: State = !selected || (auth.ready && !auth.userId) ? 'idle' : reviews?.state ?? 'loading';
   const retryProduct = useCallback(() => setProductAttempt(value => value + 1), []);
   const retryReviews = useCallback(() => setReviewAttempt(value => value + 1), []);
-  return { product: productState === 'ready' ? product?.data ?? null : null,
+  const retryAuth = useCallback(() => {
+    const next = { ready: false, userId: null, epoch: identity.current.epoch + 1, state: 'checking' as AuthState };
+    identity.current = next; currentRead.current?.abort();
+    setProductReceipt(null); setReviewReceipt(null); setAuth(next);
+    setAuthAttempt(value => value + 1);
+  }, []);
+  return { authState: auth.state, retryAuth, product: productState === 'ready' ? product?.data ?? null : null,
     reviews: reviewState === 'ready' ? reviews?.data?.rows ?? [] : [],
     total: reviewState === 'ready' ? reviews?.data?.total ?? null : null,
     productState, reviewState, retryProduct, retryReviews };

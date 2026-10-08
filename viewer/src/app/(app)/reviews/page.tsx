@@ -979,7 +979,7 @@ function RvAnomalyReviews() {
   const [noteReviewId, setNoteReviewId] = React.useState<string | null>(null);
 
   const RV_PAGE = 20;
-  const { product, reviews, total: rvTotal, productState, reviewState, retryProduct, retryReviews } =
+  const { product, reviews, total: rvTotal, productState, reviewState, retryProduct, retryReviews, authState, retryAuth } =
     useCsAnomalyReviews(selectedAnomaly, ratingTab, rvPage, RV_PAGE);
   const rvLoading = reviewState === 'loading';
 
@@ -1152,7 +1152,18 @@ function RvAnomalyReviews() {
 
               {/* 리뷰 목록 */}
               <section className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-                {rvLoading ? (
+                {authState === 'checking' ? (
+                  <div role="status" style={{ padding: '32px 0', textAlign: 'center', fontSize: 12 }}>로그인 상태 확인 중…</div>
+                ) : authState === 'signedout' ? (
+                  <div role="status" style={{ padding: '32px 0', textAlign: 'center', fontSize: 12 }}>
+                    리뷰를 확인하려면 로그인하세요. <a className="btn sm" href="/login">로그인</a>
+                  </div>
+                ) : authState === 'unavailable' ? (
+                  <div role="alert" style={{ padding: '32px 0', textAlign: 'center', fontSize: 12 }}>
+                    로그인 상태를 확인하지 못했습니다.{' '}
+                    <button className="btn sm" onClick={retryAuth}>로그인 상태 다시 확인</button>
+                  </div>
+                ) : rvLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} style={{ padding: '10px 14px', borderBottom: '0.5px solid var(--bs)' }}>
                       <div style={{ height: 12, background: 'var(--rai)', borderRadius: 3, width: '50%', marginBottom: 6 }} />
@@ -1164,13 +1175,13 @@ function RvAnomalyReviews() {
                     리뷰를 불러오지 못했습니다.{' '}
                     <button className="btn sm" onClick={retryReviews}>리뷰 다시 조회</button>
                   </div>
-                ) : reviews.length === 0 ? (
+                ) : reviewState === 'ready' && reviews.length === 0 ? (
                   <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
                     현재 조건에 일치하는 저장 리뷰가 없습니다.
                   </div>
-                ) : reviews.map(r => (
+                ) : reviewState === 'ready' ? reviews.map(r => (
                   <ReviewCard key={r.id} r={r} onNote={id => setNoteReviewId(id)} />
-                ))}
+                )) : null}
 
                 {reviews.length > 0 && rvTotal !== null && (
                   <div className="row-flex between center" style={{ padding: '10px 14px', borderTop: '0.5px solid var(--bs)' }}>

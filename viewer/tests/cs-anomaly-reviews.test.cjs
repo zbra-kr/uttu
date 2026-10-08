@@ -7,14 +7,14 @@ const alert = (id, product = id) => ({ id, entity_id: product });
 const product = id => ({ name: `product-${id}`, musinsa_no: id, brand_name: 'brand' });
 const reviews = (id, total = 41) => ({ rows: [{ id, product_name: `product-${id}` }], total });
 function deferred() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
-function fixture() {
-  const productReads = [], reviewReads = [], renders = [];
+function fixture({ initialEvent = true, deferredAuth = false } = {}) {
+  const productReads = [], reviewReads = [], authReads = [], renders = [];
   const queries = { fetchProductBrief(id) { const d = deferred(); productReads.push({ id, ...d }); return d.promise; },
     fetchReviews(options) { const d = deferred(); reviewReads.push({ options, ...d }); return d.promise; } };
   let authListener;
   const authClient = { auth: {
-    onAuthStateChange(listener) { authListener = listener; listener('INITIAL_SESSION', { user: { id: 'user-A' } }); return { data: { subscription: { unsubscribe() { authListener = null; } } } }; },
-    getUser: async () => ({ data: { user: { id: 'user-A' } }, error: null }),
+    onAuthStateChange(listener) { authListener = listener; if (initialEvent) listener('INITIAL_SESSION', { user: { id: 'user-A' } }); return { data: { subscription: { unsubscribe() { authListener = null; } } } }; },
+    getUser() { if (deferredAuth) { const d = deferred(); authReads.push(d); return d.promise; } return Promise.resolve({ data: { user: { id: 'user-A' } }, error: null }); },
   } };
   const { useCsAnomalyReviews } = load('src/hooks/useCsAnomalyReviews.ts', { '@/lib/queries': queries, '@/lib/supabase/client': { supabaseBrowser: () => authClient } });
   let current;
@@ -24,7 +24,7 @@ function fixture() {
     return React.createElement('div', null, JSON.stringify({ product: current.product, reviews: current.reviews, total: current.total,
       productState: current.productState, reviewState: current.reviewState }));
   }
-  return { productReads, reviewReads, renders, Probe, authChange(id) { authListener('SIGNED_IN', id ? { user: { id } } : null); }, get current() { return current; } };
+  return { productReads, reviewReads, authReads, renders, Probe, useCsAnomalyReviews, authChange(id) { authListener('SIGNED_IN', id ? { user: { id } } : null); }, get current() { return current; } };
 }
 async function mount(f, props) { let root; await React.act(async () => { root = Renderer.create(React.createElement(f.Probe, props)); }); return root; }
 async function update(root, f, props) { await React.act(async () => root.update(React.createElement(f.Probe, props))); }
@@ -179,15 +179,15 @@ test('abandoned suspended selection cannot poison the committed request', async 
 });
 
 // Expose only this internal component in a transient test module; production route exports stay unchanged.
-function loadView(hook) {
+function loadView(hook, anomalies = []) {
   const filename = path.resolve(__dirname, '../src/app/(app)/reviews/page.tsx');
   const source = fs.readFileSync(filename, 'utf8') + '\nexport { RvAnomalyReviews };';
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS,
     target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true }, fileName: filename });
   const mod = new Module(filename, module); mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename));
   const original = mod.require.bind(mod);
-  const mocks = { '@/components/ui/icons': { IcArrowUR: () => React.createElement('svg') }, react: React, '@/hooks/useCsAnomalyReviews': { useCsAnomalyReviews: () => hook },
-    '@/lib/queries': { CATEGORY_MAP: {}, fetchCsAnomalies: async () => [] } };
+  const mocks = { '@/components/ui/icons': { IcArrowUR: () => React.createElement('svg') }, react: React, '@/hooks/useCsAnomalyReviews': { useCsAnomalyReviews: typeof hook === 'function' ? hook : () => hook },
+    '@/lib/queries': { CATEGORY_MAP: {}, fetchCsAnomalies: async () => anomalies } };
   mod.require = id => Object.hasOwn(mocks, id) ? mocks[id] :
     id.startsWith('@/') || id.startsWith('./') || id.startsWith('next/') ? {} : original(id);
   mod._compile(outputText, filename); return mod.exports.RvAnomalyReviews;
@@ -219,4 +219,42 @@ test('real header links only the current ready product', () => {
     const html = require('react-dom/server').renderToStaticMarkup(React.createElement(View));
     assert.match(html, /href="\/product\?no=B"/); assert.doesNotMatch(html, /href="\/product\?no=A"/); assert.equal(states.length, 0);
   } finally { React.useState = original; }
+});
+
+const selectedPanelAlert = { ...alert('A'), entity_name: 'A', severity: 'high', anomaly_type: 'review_negative_surge', detection_date: '2026-10-07', description: 'alert A' };
+async function mountRealPanel(f) {
+  const View = loadView(f.useCsAnomalyReviews, [selectedPanelAlert]);
+  let root;
+  await React.act(async () => { root = Renderer.create(React.createElement(View)); });
+  await React.act(async () => root.root.findAll(node => node.type === 'div' && node.props.style?.cursor === 'pointer')[0].props.onClick());
+  return root;
+}
+const panelText = root => JSON.stringify(root.toJSON());
+test('real panel distinguishes initial auth rejection, pending retry and successful empty recovery', async () => {
+  const f = fixture({ initialEvent: false, deferredAuth: true });
+  const root = await mountRealPanel(f);
+  try {
+    assert.match(panelText(root), /로그인 상태 확인 중/); assert.doesNotMatch(panelText(root), /현재 조건에 일치하는 저장 리뷰가 없습니다/);
+    await React.act(async () => f.authReads[0].reject(Error('auth offline')));
+    assert.match(panelText(root), /로그인 상태를 확인하지 못했습니다/); assert.doesNotMatch(panelText(root), /리뷰를 확인하려면 로그인하세요|현재 조건에 일치하는 저장 리뷰가 없습니다/);
+    assert.equal(f.reviewReads.length, 0);
+    await React.act(async () => root.root.findAllByType('button').find(node => node.children.includes('로그인 상태 다시 확인')).props.onClick());
+    assert.match(panelText(root), /로그인 상태 확인 중/); assert.doesNotMatch(panelText(root), /현재 조건에 일치하는 저장 리뷰가 없습니다/);
+    await React.act(async () => f.authReads[1].resolve({ data: { user: { id: 'recovered' } }, error: null }));
+    assert.equal(f.reviewReads.length, 1); assert.doesNotMatch(panelText(root), /현재 조건에 일치하는 저장 리뷰가 없습니다/);
+    await React.act(async () => { f.productReads[0].resolve(product('A')); f.reviewReads[0].resolve({ rows: [], total: 0 }); });
+    assert.match(panelText(root), /현재 조건에 일치하는 저장 리뷰가 없습니다/);
+    assert.doesNotMatch(panelText(root), /로그인 상태를 확인하지 못했습니다|리뷰를 확인하려면 로그인하세요/);
+  } finally { await unmount(root); }
+});
+test('real panel signout shows sign-in instead of empty reviews', async () => {
+  const f = fixture(), root = await mountRealPanel(f);
+  try {
+    await React.act(async () => f.reviewReads[0].resolve({ rows: [], total: 0 }));
+    assert.match(panelText(root), /현재 조건에 일치하는 저장 리뷰가 없습니다/);
+    await React.act(async () => f.authChange(null));
+    assert.match(panelText(root), /리뷰를 확인하려면 로그인하세요/); assert.doesNotMatch(panelText(root), /현재 조건에 일치하는 저장 리뷰가 없습니다/);
+    assert.equal(root.root.findByProps({ href: '/login' }).children.join(''), '로그인');
+    assert.equal(f.reviewReads[0].options.signal.aborted, true);
+  } finally { await unmount(root); }
 });
