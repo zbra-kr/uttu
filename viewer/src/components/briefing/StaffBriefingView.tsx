@@ -1,4 +1,5 @@
 'use client';
+import { briefingAnomalyHref, realCalendarDate } from '@/lib/briefing-anomaly-date';
 import { Briefing } from '@/lib/queries-briefing';
 import { BriefingKpiData } from '@/lib/queries-kpi';
 import BriefingHeadline from './BriefingHeadline';
@@ -41,7 +42,8 @@ export default function StaffBriefingView({ briefing, kpiData }: Props) {
               icon={icon}
               title={title}
               comment={comments[key]}
-              href={href}
+              href={key === 'anomaly' ? briefingAnomalyHref(href, briefing.briefing_date) : href}
+              evidenceDate={key === 'anomaly' ? realCalendarDate(briefing.briefing_date) ?? undefined : undefined}
             />
           ) : null
         ))}

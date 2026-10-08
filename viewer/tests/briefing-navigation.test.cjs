@@ -201,7 +201,7 @@ test('detail adds safe-area-aware mobile clearance without changing tablet/deskt
   assert.ok(88 >= 56 + 20 + 12);
 });
 test('navigation regressions are wired into CI alongside evidence coverage', () => {
-  assert.equal(JSON.parse(read('package.json')).scripts['test:briefing-navigation'], 'node --test tests/briefing-navigation.test.cjs');
+  assert.equal(JSON.parse(read('package.json')).scripts['test:briefing-navigation'], 'node --test tests/briefing-navigation.test.cjs tests/briefing-anomaly-date.test.cjs');
   const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/ci.yml'), 'utf8');
   assert.ok(workflow.includes('npm run test:briefing-navigation'));
   assert.ok(workflow.includes('npm run test:briefing-evidence'));

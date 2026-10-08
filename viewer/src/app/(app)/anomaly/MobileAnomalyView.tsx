@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useAnomalyDateScope } from '@/hooks/useAnomalyDateScope';
 import { useAnomalyRecords } from '@/hooks/useAnomalyRecords';
 import { isDailyRankObservation, prioritySeverity, observationExplanation } from '@/lib/anomaly-priority';
 import { supabaseBrowser } from '@/lib/supabase/client';
@@ -54,12 +55,6 @@ function formatTs(ts: string): string {
   return kst.toISOString().slice(0, 16).replace('T', ' ').replace(/-/g, '.');
 }
 
-function kstDaysAgo(n: number): string {
-  const d = new Date(Date.now() + 9 * 3_600_000);
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
 const PERIOD_CHIPS = [
   { value: 'today', label: '오늘' },
   { value: '7d',    label: '7일' },
@@ -69,21 +64,23 @@ const PERIOD_CHIPS = [
 export default function MobileAnomalyView() {
   const router = useRouter();
   const params = useSearchParams();
-  const [period, setPeriod] = useState('7d');
+  const { period, setPeriod, from, to } = useAnomalyDateScope(params.get('date'), '7d');
   const [sevFilter, setSevFilter] = useState('all');
   const [observationsOpen, setObservationsOpen] = useState(false);
-  const [navigationError, setNavigationError] = useState<string | null>(null);
-  const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
-  const from = period === 'today' ? today : kstDaysAgo(period === '7d' ? 6 : 29);
-  const records = useAnomalyRecords(from, today);
+  const [navigationFailure, setNavigationFailure] = useState<{ scope: string; message: string } | null>(null);
+  const records = useAnomalyRecords(from, to);
   const rows: ARow[] = records.rows.map(r => ({ ...r, sev: prioritySeverity(r) }));
   const { loading } = records;
   const navigation = useRef(0);
+  const navigationScope = JSON.stringify([from, to, records.identityKey]);
+  const currentNavigationScope = useRef(navigationScope);
+  currentNavigationScope.current = navigationScope;
+  const navigationError = navigationFailure?.scope === navigationScope ? navigationFailure.message : null;
   useEffect(() => {
     const value = params.get('sev');
     setSevFilter(value && ['hi', 'md', 'lo'].includes(value) ? value : 'all');
   }, [params]);
-  useEffect(() => { navigation.current++; setObservationsOpen(false); setNavigationError(null); return () => { navigation.current++; }; }, [from, records.identityKey]);
+  useEffect(() => { navigation.current++; setObservationsOpen(false); setNavigationFailure(null); return () => { navigation.current++; }; }, [from, to, records.identityKey]);
 
   const filtered = rows.filter(r => sevFilter === 'all' || r.sev === sevFilter);
 
@@ -101,8 +98,10 @@ export default function MobileAnomalyView() {
   ];
 
   async function handleRowClick(r: ARow) {
+    if (currentNavigationScope.current !== navigationScope) return;
     const ownNavigation = ++navigation.current;
-    setNavigationError(null);
+    const ownScope = navigationScope;
+    setNavigationFailure(null);
     if (!r.entity_id || !r.entity_type) return;
     if (r.entity_type === 'brand') {
       router.push(`/brand?id=${r.entity_id}`);
@@ -116,15 +115,17 @@ export default function MobileAnomalyView() {
       .eq('id', r.entity_id)
       .single();
     if (error) throw error;
-    if (ownNavigation === navigation.current && data?.musinsa_no) router.push(`/product?no=${data.musinsa_no}`);
+    if (ownNavigation === navigation.current && currentNavigationScope.current === ownScope && data?.musinsa_no) router.push(`/product?no=${data.musinsa_no}`);
     } catch {
-      if (ownNavigation === navigation.current) setNavigationError('대상 정보를 조회할 수 없습니다.');
+      if (ownNavigation === navigation.current && currentNavigationScope.current === ownScope)
+        setNavigationFailure({ scope: ownScope, message: '대상 정보를 조회할 수 없습니다.' });
     }
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 20px' , width: '100%', minWidth: 0 }}>
       {/* 기간 선택 */}
+      {period === 'custom' && <p style={{ fontSize: 11, color: 'var(--f3)', margin: 0 }}>{from} 감지 기록</p>}
       <MobileFilterChips items={PERIOD_CHIPS} activeValue={period} onChange={setPeriod} />
 
       {/* 심각도 필터 */}

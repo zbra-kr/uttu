@@ -23,7 +23,7 @@
     "test:funding-viewer": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/funding-viewer.test.cjs tests/funding-read-deadline.test.cjs",
     "test:magazine-viewer": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/magazine-read-state.test.cjs",
     "test:briefing-evidence": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/briefing-evidence.test.cjs tests/briefing-read-state.test.cjs tests/cs-daily-review-*.test.cjs",
-    "test:briefing-navigation": "node --test tests/briefing-navigation.test.cjs",
+    "test:briefing-navigation": "node --test tests/briefing-navigation.test.cjs tests/briefing-anomaly-date.test.cjs",
     "test:weekly-reviews": "node --test tests/weekly-review*.test.cjs",
     "test:framework": "node --test tests/framework-migration.test.cjs tests/help-route.test.cjs",
     "test:ranking-daily": "node --test tests/ranking-daily-insights*.test.cjs",
