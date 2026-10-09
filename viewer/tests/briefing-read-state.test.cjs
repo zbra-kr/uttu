@@ -9,7 +9,7 @@ function fixture(mobile=false,insight=false){
   const calls=[],plans=[],listeners=new Set(),timers=new Map(),saved={setTimeout:global.setTimeout,clearTimeout:global.clearTimeout};
   global.setTimeout=(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId;};global.clearTimeout=id=>timers.delete(id);
   const sdk={auth:{getUser:()=>authPlan??Promise.resolve({data:{user:owner?{id:owner}:null},error:null}),onAuthStateChange(fn){listeners.add(fn);return {data:{subscription:{unsubscribe(){listeners.delete(fn);}}}};}},from(table){
-    const call={kind:table,date:null,signal:null};const q={select(cols){if(table==='daily_briefings')call.kind=cols==='briefing_date'?'dates':'briefing';return q;},eq(k,v){if(k==='briefing_date')call.date=v;return q;},gte(){return q;},lte(){return q;},in(){return q;},order(){return q;},limit(){return q;},abortSignal(signal){call.signal=signal;return q;},insert(){assert.fail('No fixture writes');},upsert(){assert.fail('No fixture writes');},then(a,b){calls.push(call);const i=plans.findIndex(p=>p.kind===call.kind);const p=i<0?null:plans.splice(i,1)[0];const result=p?p.value:{data:call.kind==='briefing'?[briefing(call.date)]:call.kind==='dates'?[{briefing_date:today}]:[],error:null};return Promise.resolve(result).then(a,b);}};return q;
+    const call={kind:table,date:null,signal:null};const q={select(cols){if(table==='daily_briefings')call.kind=cols==='briefing_date'?'dates':'briefing';return q;},eq(k,v){if(k==='briefing_date')call.date=v;return q;},gte(){return q;},lte(){return q;},in(){return q;},order(){return q;},limit(){return q;},abortSignal(signal){call.signal=signal;return q;},insert(){assert.fail('No fixture writes');},upsert(){assert.fail('No fixture writes');},then(a,b){calls.push(call);const i=plans.findIndex(p=>p.kind===call.kind);const p=i<0?null:plans.splice(i,1)[0];const result=p?p.value:{data:call.kind==='briefing'?[briefing(call.date)]:call.kind==='dates'?[{briefing_date:today}]:[],error:null,count:0};return Promise.resolve(result).then(a,b);}};return q;
   }};
   const format={...load('src/lib/format.ts'),kstToday:()=>today},client={supabaseBrowser:()=>sdk};
   const mocks={'@/lib/supabase/client':client,'./supabase/client':client,'@/lib/format':format,'./format':format,'next/navigation':{useSearchParams:()=>new URLSearchParams(params),useRouter:()=>({push(){assert.fail('No fixture route writes');},back(){}})},'next/link':({children,...props})=>React.createElement('a',props,children),'@/hooks/useViewport':{useIsMobile:()=>mobile},'./page.module.css':{},'@/lib/cs-daily-review-context':{useCSDailyReviewState:()=>{const date=new URLSearchParams(params).get('date')??today;return {status:'ready',briefingDate:date,reviewDate:load('src/lib/cs-daily-review-check.ts').csReviewDate(date,today),result:{total:0,rows:[],excluded:0},retry(){}};}}};
@@ -30,7 +30,7 @@ for(const mobile of [false,true]){
   test(`${mobile?'mobile':'desktop'} optional dates/KPI errors do not remove briefing, each retry is independent`,async()=>{
     const f=fixture(mobile);let root;
     try{
-      f.plan('dates',{data:null,error:{code:'403'}});f.plan('anomalies',{data:null,error:{code:'503'}});await act(async()=>{root=Renderer.create(React.createElement(f.Page));});assert.match(text(root),/stored news/);assert.match(text(root),/参考|참고 지표.*조회에 실패/);assert.match(text(root),/날짜 목록.*조회에 실패/);
+      f.plan('dates',{data:null,error:{code:'403'}});f.plan('anomalies',{data:null,error:{code:'503'}});await act(async()=>{root=Renderer.create(React.createElement(f.Page));});assert.match(text(root),/stored news/);assert.doesNotMatch(text(root),/참고 지표 조회에 실패/);if(!mobile)assert.match(text(root),/읽기 실패/);assert.match(text(root),/날짜 목록.*조회에 실패/);
       const count=f.calls.filter(c=>c.kind==='briefing').length;await act(async()=>button(root,'참고 지표 다시 조회').props.onClick());assert.doesNotMatch(text(root),/참고 지표 조회에 실패/);assert.equal(f.calls.filter(c=>c.kind==='briefing').length,count);
       await act(async()=>button(root,'날짜 목록 다시 조회').props.onClick());assert.doesNotMatch(text(root),/날짜 목록.*조회에 실패/);assert.match(text(root),/stored news/);
     }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);f.restore();}
@@ -72,8 +72,8 @@ test('insight error, absence, timeout, route/owner cancellation and manual retry
     f.plan('briefing',{data:[],error:null});await act(async()=>f.auth('replacement'));assert.match(text(root),/아직 생성된 상세/);
   }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);f.restore();}
 });
-test('every KPI source error is unavailable rather than zero statistics',async()=>{
-  for(const table of ['ranking_snapshots','brands','anomalies','brand_ranking_snapshots']){const f=fixture();try{f.plan(table,{data:null,error:{code:'500'}});await assert.rejects(load('src/lib/queries-kpi.ts',f.mocks).fetchBriefingKpiData('2026-10-05'),/unavailable/);}finally{f.restore();}}
+test('KPI failures preserve healthy sections and brand name fallback',async()=>{
+  for(const table of ['ranking_snapshots','brands','anomalies','brand_ranking_snapshots']){const f=fixture();try{f.plan(table,{data:null,error:{code:'500'}});const value=await load('src/lib/queries-kpi.ts',f.mocks).fetchBriefingKpiData('2026-10-05'); const key={ranking_snapshots:'rank_status',anomalies:'anomaly_status',brand_ranking_snapshots:'competitor_status'}[table];if(key)assert.equal(value[key],'unavailable');for(const other of ['rank_status','anomaly_status','competitor_status'])if(other!==key)assert.equal(value[other],'complete');}finally{f.restore();}}
 });
 test('shared readers reject error, invalid/wrong-date/duplicate audience payloads; valid absence stays empty',async()=>{
   const f=fixture(),q=load('src/lib/queries-briefing.ts',f.mocks);
@@ -95,7 +95,7 @@ test('optional read rejection and deadlines preserve required content; obsolete 
     try{
       f.plan(kind,old.promise);await act(async()=>{root=Renderer.create(React.createElement(f.Page));});assert.match(text(root),/stored news/);await f.fire(15000);assert.match(text(root),new RegExp(label+' 조회 시간이 초과'));assert.match(text(root),/stored news/);
       await act(async()=>button(root,label+' 다시 조회').props.onClick());assert.doesNotMatch(text(root),new RegExp(label+' 조회 시간이 초과'));await act(async()=>old.reject(Error('late optional')));assert.match(text(root),/stored news/);
-      f.plan(kind,Promise.reject(Error('optional offline')));await act(async()=>button(root,label+' 다시 조회').props.onClick());assert.match(text(root),new RegExp(label+' 조회에 실패'));assert.match(text(root),/stored news/);
+      f.plan(kind,Promise.reject(Error('optional offline')));await act(async()=>button(root,label+' 다시 조회').props.onClick());if(kind==='dates')assert.match(text(root),new RegExp(label+' 조회에 실패'));else {assert.doesNotMatch(text(root),/참고 지표 조회에 실패/);assert.match(text(root),/읽기 실패/);}assert.match(text(root),/stored news/);
     }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);f.restore();}
   }
 });
@@ -119,5 +119,25 @@ for(const mobile of [false,true])test(`${mobile?'mobile':'desktop'} date options
     f.plan('dates',{data:history,error:null});await act(async()=>retry.props.onClick());assert.doesNotMatch(text(root),/날짜 목록 조회에 실패/);
     const oldOwner=deferred(),newOwner=deferred();f.plan('dates',oldOwner.promise);await act(async()=>retry.props.onClick());f.plan('dates',newOwner.promise);await act(async()=>f.auth('replacement'));if(mobile)assert.equal(button(root,'▶').props.onClick,undefined);await act(async()=>oldOwner.resolve({data:history,error:null}));if(mobile)assert.equal(button(root,'▶').props.onClick,undefined);await act(async()=>newOwner.resolve({data:[{briefing_date:'2026-10-04'}],error:null}));if(mobile)assert.equal(button(root,'▶').props.onClick,undefined);
     const beforeMidnight=f.calls.filter(c=>c.kind==='dates').length;f.plan('dates',{data:null,error:{code:'500'}});f.today('2026-10-06');await f.fire('midnight');assert.equal(f.calls.filter(c=>c.kind==='dates').length,beforeMidnight+1);assert.match(text(root),/같은 로그인 상태에서 이전에 조회한 날짜 목록/);await act(async()=>f.auth(null));assert.match(text(root),/로그인 후 날짜 목록/);if(mobile)assert.equal(button(root,'▶').props.onClick,undefined);
+  }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);assert.equal(f.listeners.size,0);f.restore();}
+});
+
+
+test('actual KPI values isolate dates and owners; repeated retry performs one bounded read set',async()=>{
+  const f=fixture(),old=deferred();let root;
+  const ranks=(date,rank)=>({data:[{brand_slug:'covernat',snapshot_date:date,rank_position:rank}],count:1,error:null});
+  try{
+    f.plan('ranking_snapshots',old.promise);await act(async()=>{root=Renderer.create(React.createElement(f.Page));});
+    const oldCall=f.calls.find(c=>c.kind==='ranking_snapshots');
+    f.route('date=2026-10-04');f.plan('ranking_snapshots',ranks('2026-10-03',3));await act(async()=>root.update(React.createElement(f.Page)));
+    assert.equal(oldCall.signal.aborted,true);assert.match(text(root),/#3/);assert.match(text(root),/기준 2026-10-03/);
+    await act(async()=>old.resolve(ranks('2026-10-04',7)));assert.doesNotMatch(text(root),/#7/);
+    const fresh=deferred();f.plan('ranking_snapshots',fresh.promise);const before=f.calls.length;
+    await act(async()=>{const retry=button(root,'참고 지표 다시 조회');retry.props.onClick();retry.props.onClick();});
+    assert.equal(f.calls.length,before+4);assert.equal(button(root,'참고 지표 다시 조회').props['aria-disabled'],true);
+    const newOwner=deferred();f.plan('ranking_snapshots',newOwner.promise);await act(async()=>f.auth('replacement'));
+    assert.doesNotMatch(text(root),/#3/);await act(async()=>fresh.resolve(ranks('2026-10-03',9)));assert.doesNotMatch(text(root),/#9/);
+    await act(async()=>newOwner.resolve(ranks('2026-10-03',4)));assert.match(text(root),/#4/);
+    await act(async()=>f.auth(null));assert.doesNotMatch(text(root),/#4/);assert.match(text(root),/로그인 후 참고 지표/);
   }finally{await act(async()=>root?.unmount());assert.equal(f.timers.size,0);assert.equal(f.listeners.size,0);f.restore();}
 });

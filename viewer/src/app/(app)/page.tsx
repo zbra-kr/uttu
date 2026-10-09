@@ -118,18 +118,51 @@ export default function HomePage() {
   return <HomeDesktopView />;
 }
 
+// Each panel owns its request identity; scope also includes auth and explicit retries.
+function useHomeRanking<T>(gender: string, fetchRows: (opts: { genderFilter: string; limit: number; signal: AbortSignal }) => Promise<T[]>) {
+  const authVersion = React.useRef(0);
+  const [auth, setAuth] = React.useState(0);
+  const [attempt, setAttempt] = React.useState(0);
+  const sequence = React.useRef(0);
+  const key = `${auth}:${gender}:${attempt}`;
+  const [result, setResult] = React.useState<{ key: string; rows: T[]; status: 'loading' | 'ready' | 'error' }>({ key: '', rows: [], status: 'loading' });
+  React.useEffect(() => {
+    const { data: { subscription } } = supabaseBrowser().auth.onAuthStateChange(() => {
+      // Invalidate immediately, before React commits the new auth scope.
+      sequence.current++;
+      setAuth(++authVersion.current);
+    });
+    return () => { subscription.unsubscribe(); };
+  }, []);
+  React.useEffect(() => {
+    const requestSequence = sequence;
+    const request = ++requestSequence.current;
+    const controller = new AbortController();
+    const current = () => request === requestSequence.current && auth === authVersion.current && !controller.signal.aborted;
+    setResult({ key, rows: [], status: 'loading' });
+    fetchRows({ genderFilter: gender, limit: 10, signal: controller.signal }).then(rows => {
+      if (current()) setResult({ key, rows, status: 'ready' });
+    }).catch(() => {
+      if (current()) setResult({ key, rows: [], status: 'error' });
+    });
+    return () => { requestSequence.current++; controller.abort(); };
+  }, [key, gender, auth, fetchRows]);
+  const visible = result.key === key ? result : { rows: [] as T[], status: 'loading' as const };
+  return { ...visible, retry: () => setAttempt(value => value + 1) };
+}
+
 function HomeDesktopView() {
   const router = useRouter();
 
   const [collStats,   setCollStats]   = React.useState<CollectionStat[]>([]);
   const [jobResult, setJobResult] = React.useState<RunningRecords<CollectionJob> | null>(null);
   const activeJobs = jobResult?.jobs ?? [];
-  const [ranking,          setRanking]          = React.useState<RankingRow[]>([]);
   const [rankGender,       setRankGender]       = React.useState<string>('A');
-  const [rankLoading,      setRankLoading]      = React.useState(true);
-  const [brandRanking,     setBrandRanking]     = React.useState<BrandRankRow[]>([]);
   const [brandRankGender,  setBrandRankGender]  = React.useState<string>('A');
-  const [brandRankLoading, setBrandRankLoading] = React.useState(true);
+  const productLoad = useHomeRanking<RankingRow>(rankGender, fetchLatestRanking);
+  const brandLoad = useHomeRanking<BrandRankRow>(brandRankGender, fetchTopBrandRanking);
+  const ranking = productLoad.rows;
+  const brandRanking = brandLoad.rows;
   const [ownBrands,   setOwnBrands]   = React.useState<OwnBrandStat[]>([]);
   const [anomalies,   setAnomalies]   = React.useState<AnomalyRow[]>([]);
   const [reviewStats, setReviewStats] = React.useState<{ total: number; avgRating: number; lowCount: number; ratingDist: number[] } | null>(null);
@@ -155,22 +188,6 @@ function HomeDesktopView() {
     ]).finally(() => setLoading(false));
     return () => { requestSequence.current++; };
   }, [refreshStats]);
-
-  React.useEffect(() => {
-    setRankLoading(true);
-    fetchLatestRanking({ genderFilter: rankGender, limit: 10 })
-      .then(setRanking)
-      .catch(() => setRanking([]))
-      .finally(() => setRankLoading(false));
-  }, [rankGender]);
-
-  React.useEffect(() => {
-    setBrandRankLoading(true);
-    fetchTopBrandRanking({ genderFilter: brandRankGender, limit: 10 })
-      .then(setBrandRanking)
-      .catch(() => setBrandRanking([]))
-      .finally(() => setBrandRankLoading(false));
-  }, [brandRankGender]);
 
   // 수집 작업 실시간 상태 구독 + 폴링 백업
   React.useEffect(() => {
@@ -318,7 +335,8 @@ function HomeDesktopView() {
             {ranking.length === 0 && (
               <div className="row" style={{ gridTemplateColumns: '1fr' }}>
                 <span className="dim" style={{ fontSize: 12, textAlign: 'center', padding: '24px 0' }}>
-                  {rankLoading ? '로딩 중…' : '랭킹 데이터 없음'}
+                  {productLoad.status === 'loading' ? '로딩 중…' : productLoad.status === 'error' ? '랭킹 조회 실패' : '랭킹 데이터 없음'}
+                  {productLoad.status === 'error' && <button className="btn sm" onClick={productLoad.retry}>다시 시도</button>}
                 </span>
               </div>
             )}
@@ -388,7 +406,8 @@ function HomeDesktopView() {
             {brandRanking.length === 0 && (
               <div className="row" style={{ gridTemplateColumns: '1fr' }}>
                 <span className="dim" style={{ fontSize: 12, textAlign: 'center', padding: '24px 0' }}>
-                  {brandRankLoading ? '로딩 중…' : '랭킹 데이터 없음'}
+                  {brandLoad.status === 'loading' ? '로딩 중…' : brandLoad.status === 'error' ? '브랜드 랭킹 조회 실패' : '랭킹 데이터 없음'}
+                  {brandLoad.status === 'error' && <button className="btn sm" onClick={brandLoad.retry}>다시 시도</button>}
                 </span>
               </div>
             )}

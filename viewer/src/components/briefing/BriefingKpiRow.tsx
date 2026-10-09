@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { OwnBrandKpi, AnomalyKpi, CompetitorRankKpi } from '@/lib/queries-kpi';
+import { OwnBrandKpi, AnomalyKpi, CompetitorRankKpi, BriefingKpiData, KpiStatus } from '@/lib/queries-kpi';
 
 // ── Sparkline ──────────────────────────────────────────────────────────────────
 
@@ -32,10 +32,9 @@ function Sparkline({ points }: { points: number[] }) {
 
 // ── 자사 브랜드 카드 ────────────────────────────────────────────────────────────
 
-function BrandCard({ brand }: { brand: OwnBrandKpi }) {
+function BrandCard({ brand, sourceDate }: { brand: OwnBrandKpi; sourceDate: string }) {
   if (brand.best_rank_yesterday === null) return null;
   const improved = brand.rank_delta !== null && brand.rank_delta > 0;
-  const worsened = brand.rank_delta !== null && brand.rank_delta < 0;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--f4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -55,14 +54,14 @@ function BrandCard({ brand }: { brand: OwnBrandKpi }) {
         )}
       </div>
       <Sparkline points={brand.weekly_trend.map(t => t.best_rank)} />
-      <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>어제 최고순위</span>
+      <span style={{ fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>{sourceDate} 최고순위</span>
     </div>
   );
 }
 
 // ── 이상탐지 위젯 ───────────────────────────────────────────────────────────────
 
-function AnomalyWidget({ data }: { data: AnomalyKpi }) {
+function AnomalyWidget({ data, sourceDate, status }: { data: AnomalyKpi; sourceDate: string; status: KpiStatus }) {
   const rows = [
     { label: 'HIGH',  count: data.high,   bg: 'var(--shb)', fg: 'var(--shf)' },
     { label: 'MED',   count: data.medium, bg: 'var(--smb)', fg: 'var(--smf)' },
@@ -71,7 +70,7 @@ function AnomalyWidget({ data }: { data: AnomalyKpi }) {
   const max = Math.max(data.high, data.medium, data.low, 1);
 
   return (
-    <Link href="/anomaly" style={{ textDecoration: 'none', color: 'inherit' }}>
+    <Link href={`/anomaly?date=${sourceDate}`} style={{ textDecoration: 'none', color: 'inherit' }}>
       <div style={{
         height: '100%', display: 'flex', flexDirection: 'column', gap: 10,
         padding: '12px 14px',
@@ -83,11 +82,11 @@ function AnomalyWidget({ data }: { data: AnomalyKpi }) {
         onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--bg)'; }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--f1)' }}>이상탐지</span>
-          <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--f3)' }}>어제</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--f1)' }}>이상탐지{status === 'truncated' ? ' · 표본' : ''}</span>
+          <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--f3)' }}>{sourceDate}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {rows.map(({ label, count, bg, fg }) => (
+          {(status === 'complete' || status === 'truncated') && rows.map(({ label, count, fg }) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{
                 fontSize: 10, fontFamily: 'var(--mono)', fontWeight: 600,
@@ -110,7 +109,9 @@ function AnomalyWidget({ data }: { data: AnomalyKpi }) {
         </div>
         <div style={{ borderTop: '0.5px solid var(--bs)', paddingTop: 6 }}>
           <span style={{ fontSize: 11, color: 'var(--f3)', fontFamily: 'var(--mono)' }}>
-            총 {data.total}건
+            {status === 'unavailable' ? '읽기 실패' : status === 'invalid' ? '유효하지 않은 자료 · 집계 보류' : `${status === 'complete' ? '조회 총' : '제한 표본'} ${data.total}건`}
+            {status !== 'complete' && status !== 'unavailable' ? ' · 전체 분포 미확인' : ''}
+            {data.unknown > 0 ? ` · 자료 미확인 ${data.unknown}건` : ''}
           </span>
         </div>
       </div>
@@ -120,7 +121,7 @@ function AnomalyWidget({ data }: { data: AnomalyKpi }) {
 
 // ── 경쟁사 TOP5 위젯 ────────────────────────────────────────────────────────────
 
-function CompetitorWidget({ brands }: { brands: CompetitorRankKpi[] }) {
+function CompetitorWidget({ brands, sourceDate, status }: { brands: CompetitorRankKpi[]; sourceDate: string; status: KpiStatus }) {
   return (
     <Link href="/brand-ranking" style={{ textDecoration: 'none', color: 'inherit' }}>
       <div style={{
@@ -135,10 +136,10 @@ function CompetitorWidget({ brands }: { brands: CompetitorRankKpi[] }) {
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--f1)' }}>경쟁사 TOP5</span>
-          <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--f3)' }}>전체카테고리</span>
+          <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--f3)' }}>전체카테고리 · {sourceDate}</span>
         </div>
         {brands.length === 0 ? (
-          <p style={{ margin: 0, fontSize: 12, color: 'var(--f4)' }}>집계 중...</p>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--f4)' }}>{statusMessage(status, '조회 결과 0건')}</p>
         ) : null}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {brands.map(b => (
@@ -165,23 +166,29 @@ function CompetitorWidget({ brands }: { brands: CompetitorRankKpi[] }) {
 
 // ── 메인 컴포넌트 ──────────────────────────────────────────────────────────────
 
+function statusMessage(status: KpiStatus, empty: string): string {
+  return status === 'unavailable' ? '읽기 실패' : status === 'truncated' ? '조회 상한/완전성 미확인 · 집계 보류' : status === 'invalid' ? '유효하지 않은 자료 · 집계 보류' : empty;
+}
+
 interface Props {
+  metadata: Pick<BriefingKpiData, 'source_date' | 'since' | 'rank_status' | 'anomaly_status' | 'competitor_status'>;
   ownBrands: OwnBrandKpi[];
   anomalies: AnomalyKpi;
   competitor_top5: CompetitorRankKpi[];
 }
 
-export default function BriefingKpiRow({ ownBrands, anomalies, competitor_top5 }: Props) {
+export default function BriefingKpiRow({ ownBrands, anomalies, competitor_top5, metadata }: Props) {
   const visibleBrands = ownBrands.filter(b => b.best_rank_yesterday !== null);
 
   return (
     <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <span className="sec-tag">KPI 대시보드</span>
+      <span className="sec-tag">KPI 대시보드 · 기준 {metadata.source_date} (KST)</span>
+      <span style={{ fontSize: 10, color: 'var(--f4)' }}>조회 가능한 저장 자료 기준 · 수집 완료 여부 미확인 · 순위 변화는 전일 대비</span>
 
       {/* 자사 브랜드 순위 스파크라인 */}
       <div>
         <span style={{ fontSize: 10, color: 'var(--f4)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-          자사 브랜드 · 7일 순위 추이
+          자사 브랜드 · {metadata.since}–{metadata.source_date} · 모든 카테고리/스토어 혼합 최고순위 · 전체 성별/연령
         </span>
         {visibleBrands.length > 0 ? (
           <div style={{
@@ -190,17 +197,17 @@ export default function BriefingKpiRow({ ownBrands, anomalies, competitor_top5 }
             gap: 20,
             marginTop: 10,
           }}>
-            {visibleBrands.map(brand => <BrandCard key={brand.slug} brand={brand} />)}
+            {visibleBrands.map(brand => <BrandCard key={brand.slug} brand={brand} sourceDate={metadata.source_date} />)}
           </div>
         ) : (
-          <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--f4)' }}>순위 데이터 집계 중...</p>
+          <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--f4)' }}>{statusMessage(metadata.rank_status, '기준일 순위 관측 0건')}</p>
         )}
       </div>
 
       {/* 이상탐지 + 경쟁사 — 항상 표시 */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <AnomalyWidget data={anomalies} />
-        <CompetitorWidget brands={competitor_top5} />
+        <AnomalyWidget data={anomalies} sourceDate={metadata.source_date} status={metadata.anomaly_status} />
+        <CompetitorWidget brands={competitor_top5} sourceDate={metadata.source_date} status={metadata.competitor_status} />
       </div>
     </div>
   );

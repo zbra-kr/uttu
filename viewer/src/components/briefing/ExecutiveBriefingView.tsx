@@ -46,6 +46,7 @@ export default function ExecutiveBriefingView({ briefing, kpiData }: Props) {
 
       {kpiData && (
         <BriefingKpiRow
+          metadata={kpiData}
           ownBrands={kpiData.own_brands}
           anomalies={kpiData.anomalies}
           competitor_top5={kpiData.competitor_top5}

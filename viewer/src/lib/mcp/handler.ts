@@ -2,6 +2,7 @@ import { createMcpHandler } from 'mcp-handler';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { runInferenceLoop, execQueryDb } from '@/lib/ai/pipeline';
+import { accumulateMcpDailyUsage, type UsageSettlementOptions } from '@/lib/ai/usage-accounting';
 
 // ─── Supabase 클라이언트 팩토리 ────────────────────────────────────────────
 let _sb: ReturnType<typeof createClient> | null = null;
@@ -47,25 +48,13 @@ async function checkMcpQuota(): Promise<{ allowed: boolean; limit: number }> {
   }
 }
 
-// MCP 일일 사용량 누적 (fire-and-forget)
-async function accumulateMcpUsage(inputTokens: number, outputTokens: number): Promise<void> {
+// Await known completed usage settlement before returning from the tool.
+async function accumulateMcpUsage(inputTokens: number, outputTokens: number, options: UsageSettlementOptions): Promise<void> {
   if (!inputTokens && !outputTokens) return;
-  try {
-    const dateStr = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
-    const { data: existing } = await (sbSvc() as any)
-      .from('mcp_usage_daily')
-      .select('input_tokens, output_tokens, call_count')
-      .eq('usage_date', dateStr)
-      .maybeSingle();
-    const ex = existing as { input_tokens: number; output_tokens: number; call_count: number } | null;
-    await (sbSvc() as any).from('mcp_usage_daily').upsert({
-      usage_date:    dateStr,
-      input_tokens:  (ex?.input_tokens  ?? 0) + inputTokens,
-      output_tokens: (ex?.output_tokens ?? 0) + outputTokens,
-      call_count:    (ex?.call_count    ?? 0) + 1,
-    }, { onConflict: 'usage_date' });
-  } catch {
-    // 사용량 저장 실패는 무시
+  const dateStr = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+  const settlement = await accumulateMcpDailyUsage(sbSvc(), dateStr, inputTokens, outputTokens, options);
+  if (settlement.status !== 'recorded') {
+    console.warn(`mcp_usage_settlement status=${settlement.status} reason=${settlement.reason}`);
   }
 }
 
@@ -508,6 +497,7 @@ export function createUttuMcpHandler(endpoint: string) {
           }
 
           const controller = new AbortController();
+          const deadlineAt = Date.now() + 25_000;
           const timer = setTimeout(() => controller.abort(), 25_000);
 
           let inferenceResult: Awaited<ReturnType<typeof runInferenceLoop>>;
@@ -546,9 +536,12 @@ export function createUttuMcpHandler(endpoint: string) {
               }],
             };
           }
-          clearTimeout(timer);
-
-          accumulateMcpUsage(inferenceResult.inputTokens, inferenceResult.outputTokens).catch(() => {});
+          try {
+            await accumulateMcpUsage(inferenceResult.inputTokens, inferenceResult.outputTokens,
+                                     { signal: controller.signal, deadlineAt });
+          } finally {
+            clearTimeout(timer);
+          }
 
           return {
             content: [{

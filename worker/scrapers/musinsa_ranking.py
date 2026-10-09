@@ -5,6 +5,7 @@ API: client.musinsa.com/api/home/web/v5/pans/ranking/sections/199
 수집 주기: 매일 01:00 (period=DAILY → 최근 1일 기준)
 """
 
+import asyncio
 import os
 from datetime import datetime
 from typing import Any
@@ -40,6 +41,38 @@ def _kst_today() -> str:
 class RankingScraper(BaseScraper):
     def __init__(self, client: Client) -> None:
         self.client = client
+        self._reset_accounting()
+
+    def _reset_accounting(self) -> None:
+        # Counts acknowledged submissions, not distinct persisted rows. An execute
+        # exception may occur after a server commit, so its batch remains unknown.
+        self.rows_acknowledged = 0
+        self.rows_outcome_unknown = 0
+        self.cohorts_attempted = 0
+        self.cohorts_completed = 0
+        self.source_empty_cohorts = 0
+        self.ranked_empty_cohorts = 0
+        self.unresolved_mapping_rows = 0
+        self.unresolved_mapping_cohorts = 0
+
+    def _accounting_summary(self) -> dict[str, Any]:
+        return {
+            "rows_acknowledged": self.rows_acknowledged,
+            "rows_outcome_unknown": self.rows_outcome_unknown,
+            "count_basis": "successful_upsert_submission_acknowledgements_not_unique_rows",
+            "cohorts_attempted": self.cohorts_attempted,
+            "cohorts_completed": self.cohorts_completed,
+            "source_empty_cohorts": self.source_empty_cohorts,
+            "ranked_empty_cohorts": self.ranked_empty_cohorts,
+            "unresolved_mapping_rows": self.unresolved_mapping_rows,
+            "unresolved_mapping_cohorts": self.unresolved_mapping_cohorts,
+        }
+
+    def _accounting_text(self, outcome: str, cohort_target: int) -> str:
+        # Default Loguru/launcher sinks render {message}, not keyword extras.
+        fields = {"outcome": outcome, "cohort_target": cohort_target,
+                  **self._accounting_summary()}
+        return " ".join(f"{key}={value}" for key, value in fields.items())
 
     # ── API 호출 ──────────────────────────────────────────────────────────────
 
@@ -169,14 +202,18 @@ class RankingScraper(BaseScraper):
     # ── 수집 루프 ────────────────────────────────────────────────────────────
 
     async def run_combo(self, category: str, gf: str, age_band: str) -> int:
-        """단일 조합 수집. upsert된 행 수 반환."""
+        """단일 조합: 성공 응답을 받은 제출 행 수 (고유 저장 행 수 아님)."""
         snapshot_date = _kst_today()
         items = await self._fetch_ranking(category, gf, age_band)
         if not items:
+            self.source_empty_cohorts += 1
             return 0
 
         # rank 없는 아이템(광고/추천 상품) 제외
         items = [item for item in items if item.get("image", {}).get("rank") is not None]
+        if not items:
+            self.ranked_empty_cohorts += 1
+            return 0
         musinsa_nos = [str(item["id"]) for item in items]
         thumb_map = {
             str(item["id"]): item["image"]["url"]
@@ -188,6 +225,10 @@ class RankingScraper(BaseScraper):
         if missing:
             self._insert_stub_products(missing, thumb_map=thumb_map)
             id_map = self._product_id_map(musinsa_nos)
+        unresolved = sum(str(item["id"]) not in id_map for item in items)
+        if unresolved:
+            self.unresolved_mapping_rows += unresolved
+            self.unresolved_mapping_cohorts += 1
         self._patch_missing_thumbnails(thumb_map)
 
         rows = [
@@ -198,10 +239,16 @@ class RankingScraper(BaseScraper):
 
         if rows:
             for i in range(0, len(rows), 500):
-                self.client.table("ranking_snapshots").upsert(
-                    rows[i : i + 500],
-                    on_conflict="product_id,snapshot_date,store_code,category_code,gender_filter,age_filter",
-                ).execute()
+                chunk = rows[i : i + 500]
+                try:
+                    self.client.table("ranking_snapshots").upsert(
+                        chunk,
+                        on_conflict="product_id,snapshot_date,store_code,category_code,gender_filter,age_filter",
+                    ).execute()
+                except (Exception, asyncio.CancelledError):
+                    self.rows_outcome_unknown += len(chunk)
+                    raise
+                self.rows_acknowledged += len(chunk)
 
             # ── 브랜드 upsert + brand_id 백필 ───────────────────────────────
             # 1단계: rows에서 slug → name 맵 빌드
@@ -213,6 +260,7 @@ class RankingScraper(BaseScraper):
 
             # 2단계: brands upsert → brand_id_map 획득
             brand_id_map: dict[str, str] = {}
+            own_brand_ids: set[str] = set()
             if brand_slugs:
                 payloads = [{"slug": s, "name": n} for s, n in brand_slugs.items()]
                 for i in range(0, len(payloads), 500):
@@ -221,8 +269,9 @@ class RankingScraper(BaseScraper):
                         on_conflict="slug",
                         ignore_duplicates=True,
                     ).execute()
-                res = self.client.table("brands").select("id, slug").in_("slug", list(brand_slugs)).execute()
+                res = self.client.table("brands").select("id, slug, is_own").in_("slug", list(brand_slugs)).execute()
                 brand_id_map = {r["slug"]: r["id"] for r in res.data or []}
+                own_brand_ids = {r["id"] for r in res.data or [] if r.get("is_own")}
 
             # 3단계: brand_id NULL인 상품만 업데이트
             if brand_id_map:
@@ -238,7 +287,10 @@ class RankingScraper(BaseScraper):
                     pid = mno_to_id.get(row["musinsa_no"])
                     bid = brand_id_map.get(row.get("brand_slug") or "")
                     if pid and bid:
-                        self.client.table("products").update({"brand_id": bid}).eq("id", pid).execute()
+                        patch = {"brand_id": bid}
+                        if bid in own_brand_ids:
+                            patch["is_own"] = True
+                        self.client.table("products").update(patch).eq("id", pid).execute()
 
         logger.info(
             "ranking_combo_done",
@@ -246,30 +298,65 @@ class RankingScraper(BaseScraper):
             gf=gf,
             age_band=age_band,
             rows=len(rows),
+            rows_acknowledged=len(rows),
+            count_basis="successful_upsert_submission_acknowledgements_not_unique_rows",
         )
         return len(rows)
 
-    async def run(self, category_codes: list[str] | None = None) -> None:
-        """전체 조합 수집. category_codes 지정 시 해당 카테고리만."""
+    async def run(self, category_codes: list[str] | None = None) -> int:
+        """전체 조합; 성공 응답 제출 행 수 반환. 부분 실패는 재raise."""
         cats = category_codes or CATEGORY_CODES
-        total = 0
-        for cat in cats:
-            for gf in GENDER_FILTERS:
-                for age in AGE_BANDS:
-                    total += await self.run_combo(cat, gf, age)
-        logger.info("ranking_run_done", total_rows=total)
+        self._reset_accounting()
+        cohort_target = len(cats) * len(GENDER_FILTERS) * len(AGE_BANDS)
+        outcome = "error"
+        try:
+            for cat in cats:
+                for gf in GENDER_FILTERS:
+                    for age in AGE_BANDS:
+                        self.cohorts_attempted += 1
+                        await self.run_combo(cat, gf, age)
+                        self.cohorts_completed += 1
+            outcome = "done"
+            logger.info(f"ranking_run_done {self._accounting_text(outcome, cohort_target)}",
+                        total_rows=self.rows_acknowledged,
+                        cohort_target=cohort_target,
+                        **self._accounting_summary())
+            return self.rows_acknowledged
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        finally:
+            # One warning per run, including interrupted runs; no cohort alert spam.
+            if (self.source_empty_cohorts or self.ranked_empty_cohorts
+                    or self.unresolved_mapping_rows or self.rows_outcome_unknown
+                    or outcome != "done"):
+                logger.warning(
+                    f"ranking_run_incomplete_observations {self._accounting_text(outcome, cohort_target)}",
+                    outcome=outcome, cohort_target=cohort_target,
+                    **self._accounting_summary())
 
 
 async def main() -> None:
     from worker.utils.job_tracker import JobTracker
     client = _supabase_client()
     scraper = RankingScraper(client)
-    tracker = JobTracker(client, script="musinsa_ranking", label="상품 랭킹", target=273)
+    # rows_done uses row submissions; 273 is a cohort count, not a row target.
+    tracker = JobTracker(client, script="musinsa_ranking", label="상품 랭킹")
     await tracker.start()
     try:
-        await scraper.run()
-        await tracker.finish(rows_done=0)
+        total = await scraper.run()
+        await tracker.finish(rows_done=total)
+    except asyncio.CancelledError as cancellation:
+        # Existing tracker methods perform synchronous best-effort writes. Never
+        # claim finalization succeeded or replace the original cancellation.
+        try:
+            await tracker.progress(rows_done=scraper.rows_acknowledged)
+            await tracker.error("ranking collection cancelled; rows_done is acknowledged submissions")
+        finally:
+            raise cancellation
     except Exception as e:
+        # Preserve acknowledged batches even if a later batch or enrichment fails.
+        await tracker.progress(rows_done=scraper.rows_acknowledged)
         await tracker.error(str(e))
         raise
 

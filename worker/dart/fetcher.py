@@ -9,13 +9,68 @@ Rate limit: 1,000 req/min → 실제로는 1초 간격 유지
 """
 
 import asyncio
+import io
+import json
+import zipfile
 from typing import Any
+from xml.etree import ElementTree
 
 import httpx
 from loguru import logger
 
 BASE = "https://opendart.fss.or.kr/api"
 RATE_LIMIT_SEC = 0.1  # DART 한도 1,000건/분 = 16.7건/초 → 0.1초 = 600건/분으로 안전
+
+
+class DartResponseError(RuntimeError):
+    """Fixed error text without request, response, or credential content."""
+
+    def __init__(self, classification: str):
+        allowed = {"empty_response", "json_error_envelope", "xml_error_envelope",
+                   "unexpected_json", "unexpected_xml", "invalid_zip",
+                   "unexpected_format", "http_status", "transport_error"}
+        self.classification = classification if classification in allowed else "unexpected_format"
+        super().__init__(f"dart_binary_failed stage=fetch_binary classification={self.classification}")
+
+
+def _validate_zip_response(payload: bytes) -> bytes:
+    if not payload:
+        raise DartResponseError("empty_response")
+    invalid_zip = False
+    try:
+        # Opening parses the directory too; is_zipfile alone accepts forged EOCDs.
+        # This does not read members or prove CRC/content completeness.
+        with zipfile.ZipFile(io.BytesIO(payload)):
+            pass
+    except (zipfile.BadZipFile, LookupError, ValueError, OverflowError, NotImplementedError):
+        if payload.startswith(b"PK"):
+            invalid_zip = True
+    else:
+        return payload
+    if invalid_zip:
+        raise DartResponseError("invalid_zip") from None
+    stripped = payload.lstrip()
+    # Only small error envelopes are parsed; their contents never enter diagnostics.
+    if len(payload) <= 65536 and stripped[:1] in (b"{", b"["):
+        try:
+            data = json.loads(payload)
+        except (ValueError, UnicodeError, RecursionError):
+            pass
+        else:
+            error = isinstance(data, dict) and data.get("status") not in (None, "", "000")
+            raise DartResponseError("json_error_envelope" if error else "unexpected_json")
+    if len(payload) <= 65536 and stripped.startswith(b"<"):
+        invalid_xml = False
+        try:
+            root = ElementTree.fromstring(payload)
+        except (ElementTree.ParseError, LookupError, ValueError, OverflowError, RecursionError):
+            invalid_xml = True
+        else:
+            status = root.findtext("status") if root.tag == "result" else None
+            raise DartResponseError("xml_error_envelope" if status not in (None, "", "000") else "unexpected_xml")
+        if invalid_xml:
+            raise DartResponseError("unexpected_xml") from None
+    raise DartResponseError("invalid_zip" if payload.startswith(b"PK") else "unexpected_format")
 
 
 async def _get_json(client: httpx.AsyncClient, url: str, params: dict[str, Any]) -> dict:
@@ -35,9 +90,17 @@ async def _get_json(client: httpx.AsyncClient, url: str, params: dict[str, Any])
 
 async def _get_bytes(client: httpx.AsyncClient, url: str, params: dict[str, Any]) -> bytes:
     await asyncio.sleep(RATE_LIMIT_SEC)
-    resp = await client.get(url, params=params, timeout=60)
-    resp.raise_for_status()
-    return resp.content
+    failure = None
+    try:
+        resp = await client.get(url, params=params, timeout=60)
+        resp.raise_for_status()
+    except httpx.HTTPStatusError:
+        failure = "http_status"
+    except httpx.HTTPError:
+        failure = "transport_error"
+    if failure is not None:
+        raise DartResponseError(failure) from None
+    return _validate_zip_response(resp.content)
 
 
 async def fetch_corp_code_zip(api_key: str) -> bytes:

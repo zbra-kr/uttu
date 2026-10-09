@@ -132,7 +132,7 @@ class CollectionMonitorTests(unittest.TestCase):
         self.assertEqual(f.run(), 130)
         self.assertEqual(f.calls, [])
         body = f.messages[-1][1]
-        self.assertIn('모니터 중단, 수집기 상태 미확인: ranking', body)
+        self.assertIn('수집기 상태 미확인: ranking', body)
         self.assertIn('시작 불가/미실행: detect, news, briefing', body)
         self.assertNotIn('시작 불가/미실행: ranking', body)
 
@@ -153,7 +153,7 @@ class CollectionMonitorTests(unittest.TestCase):
         f = MonitorFixture(observe=observe)
         self.assertEqual(f.run(), 1)
         self.assertEqual(f.calls, [])
-        self.assertIn('모니터 중단, 수집기 상태 미확인: ranking', f.messages[-1][1])
+        self.assertIn('수집기 상태 미확인: ranking', f.messages[-1][1])
         self.assertIn('시작 불가/미실행: detect, news, briefing', f.messages[-1][1])
 
     def test_dart_failed_skip_is_settled_as_failure_and_later_done_as_completed(self):

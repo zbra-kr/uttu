@@ -111,7 +111,8 @@ jobs:
         run: npm run test:weekly-reviews
         working-directory: viewer
 
-      - name: Briefing evidence regression tests
+      - name: Briefing evidence and KPI regression tests
+        # Includes bounded KPI coverage and date/owner isolation regressions.
         run: npm run test:briefing-evidence
         working-directory: viewer
 
@@ -129,6 +130,10 @@ jobs:
 
       - name: Daily ranking insights regression tests
         run: npm run test:ranking-daily
+        working-directory: viewer
+
+      - name: Home ranking race regression tests
+        run: npm run test:home-ranking
         working-directory: viewer
 
       - name: Build

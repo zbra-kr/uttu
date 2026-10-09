@@ -284,7 +284,7 @@ class BriefingPublicationTests(unittest.IsolatedAsyncioTestCase):
         generate = AsyncMock(side_effect=RuntimeError('summary failed'))
         detail = AsyncMock(side_effect=AssertionError('No details for failed summaries'))
         env, tracker = runtime(db, detail, generate=generate)
-        env['asyncio'] = SimpleNamespace(gather=asyncio.gather, sleep=AsyncMock())
+        env['asyncio'] = SimpleNamespace(gather=asyncio.gather, sleep=AsyncMock(), CancelledError=asyncio.CancelledError)
         self.assertEqual(await env['run'](DAY), 0)
         self.assertEqual(generate.await_count, 6)  # three audiences, one summary retry
         self.assertEqual(db.rows, previous)

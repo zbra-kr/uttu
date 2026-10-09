@@ -18,7 +18,7 @@ def cli_runtime(db, detail=None, generate=None):
     tree = ast.parse(SOURCE.read_text(encoding='utf8'))
     main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
     env.update({'argparse': argparse, 'sys': sys, '_today_kst': lambda: DAY,
-                'asyncio': SimpleNamespace(run=asyncio.run, gather=asyncio.gather,
+                'asyncio': SimpleNamespace(run=asyncio.run, gather=asyncio.gather, CancelledError=asyncio.CancelledError,
                                            sleep=AsyncMock())})
     exec(compile(ast.fix_missing_locations(ast.Module(body=[main], type_ignores=[])),
                  str(SOURCE), 'exec'), env)

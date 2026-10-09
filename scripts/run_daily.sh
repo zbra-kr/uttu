@@ -11,6 +11,8 @@ DATE="$(date +%Y%m%d)"
 
 cd "$ROOT"
 source .env 2>/dev/null || true
+UTTU_DAILY_RUN_ID="$("$PYTHON" -c 'from uuid import uuid4; print(uuid4().hex)')"
+export UTTU_DAILY_RUN_ID
 
 # ── DNS 준비 대기 (Mac 슬립 해제 직후 DNS가 늦게 뜨는 경우 대비) ──────────
 # 최대 5분(30회 × 10초) 대기, 해소되면 즉시 진행

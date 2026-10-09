@@ -21,4 +21,4 @@
 #   ./scripts/run_reviews.sh --backfill --limit 5
 cd "$(dirname "$0")/.."
 source worker/.venv/bin/activate
-python -m worker.scrapers.musinsa_review "$@"
+exec caffeinate -i python scripts/with_collection_lock.py python -m worker.scrapers.musinsa_review "$@"

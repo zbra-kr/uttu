@@ -8,6 +8,7 @@ import { DB_SCHEMA } from '@/lib/ai-schema';
 import { NextRequest } from 'next/server';
 import { AI_QUERY_BLOCKED_TABLES, execQueryDb } from '@/lib/ai/pipeline';
 import { isUuid, ensureOwnedAiSession } from '@/lib/ai/session-access';
+import { accumulateAiUsage } from '@/lib/ai/usage-accounting';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -529,25 +530,12 @@ export async function POST(req: NextRequest) {
 
         // 일별 사용량 누적 (userId 있을 때만)
         if (userId && (totalInputTokens > 0 || totalOutputTokens > 0)) {
-          try {
-            const dateStr = todayKST();
-            const { data: existing } = await supabase
-              .from('ai_usage_daily')
-              .select('input_tokens, output_tokens, session_count, message_count')
-              .eq('user_id', userId)
-              .eq('usage_date', dateStr)
-              .maybeSingle();
-
-            await supabase.from('ai_usage_daily').upsert({
-              user_id:       userId,
-              usage_date:    dateStr,
-              input_tokens:  (existing?.input_tokens  ?? 0) + totalInputTokens,
-              output_tokens: (existing?.output_tokens ?? 0) + totalOutputTokens,
-              session_count: (existing?.session_count ?? 0) + 1,
-              message_count: (existing?.message_count ?? 0) + 2,
-            }, { onConflict: 'user_id,usage_date' });
-          } catch {
-            // 사용량 저장 실패는 무시
+          const settlement = await accumulateAiUsage(
+            supabase, userId, todayKST(), totalInputTokens, totalOutputTokens, { signal: req.signal },
+          );
+          if (settlement.status !== 'recorded') {
+            // No user IDs, provider content or database error payloads in logs.
+            console.warn(`ai_usage_settlement status=${settlement.status} reason=${settlement.reason}`);
           }
         }
 
