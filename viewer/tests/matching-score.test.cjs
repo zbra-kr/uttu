@@ -35,7 +35,8 @@ function queryHarness(responses) {
     const query = new Proxy({}, { get(_, method) {
       if (method === 'then') return (resolve, reject) => {
         assert.ok(responses.length, `Unexpected query ${table}: ${JSON.stringify(ops)}`);
-        return Promise.resolve(responses.shift()).then(resolve, reject);
+        const response = responses.shift();
+        return Promise.resolve({data:null,error:null,status:200,count:Array.isArray(response?.data)?response.data.length:null,...response}).then(resolve, reject);
       };
       return (...args) => { ops.push([method, ...args]); return query; };
     }});
@@ -50,7 +51,7 @@ for (const [level, expectedA, expectedB] of [[0,100,65],[1,90,60],[2,85,50],[3,7
       {data:[{brand_id:'pool-brand'}]},
       ...Array.from({length:level * 2}, () => ({data:[]})),
       {data:[{id:'a-product'}]}, {data:[{id:'b-product'}]},
-      {data:null}, {data:[]}, {error:null},
+      {data:[],error:null}, {error:null}, {error:null},
     ];
     const {calls, queries} = queryHarness(responses);
     assert.equal(await queries.runAutoMatch('own-product'), 2);
@@ -73,7 +74,7 @@ test('manual matches retain null and confirmation retains score', async () => {
   assert.ok(!Object.hasOwn(ops.find(o => o[0] === 'update')[1], 'score'));
 });
 test('read adapter keeps scores unchanged, sorted descending and excludes excluded matches', async () => {
-  const {calls,queries} = queryHarness([{data:[{id:'m',status:'auto',score:100,products:{}}]}]);
+  const {calls,queries} = queryHarness([{data:[{id:'m',competitor_product_id:'c',status:'auto',score:100,products:{}}]}]);
   const rows = await queries.fetchProductMatches('own');
   assert.equal(rows[0].score, 100);
   assert.ok(calls[0].ops.some(o => o[0] === 'order' && o[1] === 'score' && o[2].ascending === false));
@@ -125,6 +126,7 @@ for (const filter of ['all','a','b','confirmed']) {
       {id:'own',name:'선택 상품'}, rows, false,
       false, null, filter,
       '', [], false, null,
+      {ready:true,userId:'account-1',epoch:0}, {brands:null,products:null},
     ];
     const {default: Desktop} = load('src/app/(app)/matching/page.tsx', {
       react:{...React,useState:()=>[states.shift(),()=>{}],useEffect:()=>{},

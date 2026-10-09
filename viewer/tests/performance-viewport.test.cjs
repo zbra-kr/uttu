@@ -33,6 +33,7 @@ function createFixture(variant, mobile, route='ranking', search='', tab='dash'){
   'next/navigation':{useRouter:()=>({push(){},replace(){}}),useSearchParams:()=>new URLSearchParams(search)},
   'next/link':{__esModule:true,default:({children,...props})=>React.createElement('a',props,children)},
   './supabase/client':{supabaseBrowser:()=>sb},'./collection-status':{},
+  './supabase/matching-transport':require('./helpers/load-source.cjs')('src/lib/supabase/matching-transport.ts'),
   '@/lib/supabase/client':{supabaseBrowser:()=>sb},
   '@/lib/rating-format':{formatFiveStarRating:()=>'',isLowFiveStarRating:()=>false},
   '@/lib/queries-me':{fetchNoteCountForEntity:async()=>0,logView:()=>{}},

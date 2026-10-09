@@ -82,7 +82,9 @@ class BriefingStatusTests(unittest.TestCase):
                 self.assertTrue(db.job['finished_at'])
                 self.assertEqual(len(db.publications), count)
                 if failed:
-                    self.assertIn('offline detail failure', db.job['error_msg'])
+                    self.assertIn('stage=details', db.job['error_msg'])
+                    self.assertIn('kind=RuntimeError', db.job['error_msg'])
+                    self.assertNotIn('offline detail failure', db.job['error_msg'])
                 for audience in failed:
                     self.assertEqual(db.rows[audience], previous[audience])
 

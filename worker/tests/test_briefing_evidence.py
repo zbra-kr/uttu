@@ -64,7 +64,8 @@ def offline_runtime():
     """Execute the real pure/async function bodies with explicit offline dependencies."""
     tree = ast.parse(SOURCE.read_text())
     names = {'_extract_json_dict', 'generate_briefing', 'generate_insight_pages',
-             'generate_insight_page', '_validate_insight_detail', '_upsert_briefing'}
+             'generate_insight_page', '_validate_insight_detail', '_upsert_briefing',
+             '_failure_diagnostic', '_failure_kind'}
     nodes = [ast.ImportFrom(module='__future__', names=[ast.alias(name='annotations')], level=0)]
     nodes += [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names]
     env = {**prompt_constants(), 'json': json, 'math': math, 're': re, 'time': time, 'asyncio': asyncio,

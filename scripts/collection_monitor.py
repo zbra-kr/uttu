@@ -81,7 +81,7 @@ def emit_monitor_event(record):
 def outcome_summary(outcomes):
     groups = [("completed", "완료 기록"), ("failed", "실패"),
               ("timed_out", "시간 초과"), ("blocked", "시작 불가/미실행"),
-              ("unknown", "모니터 중단, 수집기 상태 미확인"),
+              ("unknown", "수집기 상태 미확인"),
               ("skipped", "별도 수집/복구 작업으로 생략")]
     lines = [f"{label}: {', '.join(name for name in ALL_STEPS if outcomes.get(name) == state) or '없음'}"
              for state, label in groups]
@@ -129,7 +129,8 @@ def run_step(name, root, notify, runner, event=lambda *args, **kwargs: None):
 
 def run_monitor(root, date_token, notify, clock=time.time, sleeper=time.sleep,
                 runner=subprocess.run, observe=log_outcome,
-                event_sink=emit_monitor_event, utcnow=lambda: datetime.now(timezone.utc)):
+                event_sink=emit_monitor_event, utcnow=lambda: datetime.now(timezone.utc),
+                review_observer=None):
     """Outcomes affect reporting/exit; settled membership still controls scheduling."""
     root = Path(root)
     settled, attempted, outcomes = set(), set(), {}
@@ -188,13 +189,19 @@ def run_monitor(root, date_token, notify, clock=time.time, sleeper=time.sleep,
             for name in SCRAPERS:
                 if name in settled:
                     continue
-                state = observe(name, root, date_token)
+                if name == 'reviews' and review_observer is not None:
+                    state, review_evidence = review_observer.observe(root / 'logs' / f'reviews_{date_token}.log')
+                else:
+                    state = observe(name, root, date_token)
+                    review_evidence = None
                 if state is not None:
-                    settle(name, state)
+                    settle(name, state, evidence=review_evidence)
                     if state == "skipped":
                         notify("⏭️ 정기 리뷰 수집 생략", "다른 리뷰 수집/복구 작업 실행 중. 완료 여부는 해당 작업에서 확인합니다.")
                     else:
-                        notify(f"{name} 완료 기록" if state == "completed" else f"{name} 실패 기록")
+                        label = {"completed": "완료 기록", "unknown": "상태 미확인",
+                                 "blocked": "시작 불가 기록"}.get(state, "실패 기록")
+                        notify(f"{name} {label}")
 
                 # Preserve the ranking/brand settled gate and single detection attempt.
                 if {"ranking", "brand_ranking"} <= settled and "detect" not in settled:
@@ -231,6 +238,7 @@ def main():
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root))
     from dotenv import load_dotenv
+    from review_lifecycle import ReviewObservation, valid_id
 
     from worker.notifications.channels.telegram import send_telegram
 
@@ -243,7 +251,9 @@ def main():
         if body:
             print(body)
 
-    return run_monitor(root, datetime.now().strftime("%Y%m%d"), notify)
+    daily_id = os.environ.get('UTTU_DAILY_RUN_ID')
+    review_observer = ReviewObservation(daily_id) if valid_id(daily_id) else None
+    return run_monitor(root, datetime.now().strftime("%Y%m%d"), notify, review_observer=review_observer)
 
 
 if __name__ == "__main__":

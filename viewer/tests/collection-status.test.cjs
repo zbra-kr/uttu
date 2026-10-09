@@ -88,7 +88,7 @@ test('admin today client distinguishes HTTP error, null, rejected, empty and row
 });
 
 function renderHome(stats,result){
- const states=[true,stats,result,[],'A',false,[],'A',false,[],[],null,[],false];
+ const states=[true,stats,result,'A','A',0,0,{key:'0:A:0',rows:[],status:'ready'},0,0,{key:'0:A:0',rows:[],status:'ready'},[],[],null,[],false];
  const {default:Home}=load('src/app/(app)/page.tsx',{
   react:{...React,useState:()=>[states.shift(),()=>{}],useEffect:()=>{},useRef:v=>({current:v}),useCallback:f=>f},
   '@/hooks/useViewport':{useIsMobile:()=>false},
@@ -202,7 +202,11 @@ test('home overlapping refreshes keep newest failure and ignore old success and 
    fetchOwnBrandBreakdown:async()=>[],fetchAnomalySignals:async()=>[],fetchReviewStats:async()=>null,fetchActivePromotions:async()=>[]},
  });
  try {
-  renderToStaticMarkup(React.createElement(Home));const cleanupStats=effects[0]();const cleanupJobs=effects[3]();
+  renderToStaticMarkup(React.createElement(Home));
+  const statsEffect=effects.find(fn=>String(fn).includes('fetchOwnBrandBreakdown'));
+  const jobsEffect=effects.find(fn=>String(fn).includes('collection_jobs'));
+  assert.equal(typeof statsEffect,'function');assert.equal(typeof jobsEffect,'function');
+  const cleanupStats=statsEffect();const cleanupJobs=jobsEffect();
   onChange({new:{status:'done'}});
   const unknown={state:'unavailable',jobs:[],limit:20};const unknownStats=[{id:'ranking',count:null}];
   jobs[1].resolve(unknown);stats[1].resolve(unknownStats);await flush();

@@ -44,6 +44,25 @@ MODEL     = "claude-sonnet-4-6"
 AUDIENCES = ["executive", "staff", "cs"]
 
 
+def _failure_kind(exc: BaseException) -> str:
+    kinds = {"ValueError", "TypeError", "KeyError", "JSONDecodeError", "RuntimeError", "CancelledError",
+             "TimeoutError", "ConnectionError", "OSError", "APIConnectionError",
+             "APITimeoutError", "RateLimitError", "AuthenticationError",
+             "PermissionDeniedError", "BadRequestError", "NotFoundError",
+             "UnprocessableEntityError", "InternalServerError", "APIStatusError"}
+    kind = type(exc).__name__
+    return kind if kind in kinds else "OtherError"
+
+
+def _failure_diagnostic(stage: str, audience: str, exc: BaseException) -> str:
+    """Allowlisted metadata in message text, visible with the default Loguru sink."""
+    stages = {"summary", "detail_page", "details", "publication", "notification"}
+    stage = stage if stage in stages else "worker"
+    audience = audience if audience in {"executive", "staff", "cs"} else "unknown"
+    kind = _failure_kind(exc)
+    return f"briefing_failure stage={stage} audience={audience} kind={kind}"
+
+
 # ── 클라이언트 ─────────────────────────────────────────────────────────────────
 
 def _supabase():
@@ -581,7 +600,7 @@ async def generate_insight_page(
             "chart":       parsed["chart"],
         }
     except Exception as e:
-        logger.warning("insight_page_failed", idx=idx, audience=audience, error=str(e))
+        logger.warning(_failure_diagnostic("detail_page", audience, e))
         raise
 
 
@@ -716,7 +735,7 @@ async def run(
     # 4. Prepare all details before any complete-revision publication.
     success_count = 0
     error_msgs: list[str] = []
-    prepared_results = [r for r in results if not isinstance(r, Exception)]
+    prepared_results = [r for r in results if not isinstance(r, (Exception, asyncio.CancelledError))]
     all_pages = await asyncio.gather(
         *[generate_insight_pages(r, inputs_map[r["audience"]], anth)
           for r in prepared_results],
@@ -725,15 +744,17 @@ async def run(
     # Gather preserves order; audience names need not be unique for direct callers.
     page_results = iter(all_pages)
 
-    for r in results:
-        if isinstance(r, Exception):
-            error_msgs.append(str(r))
-            logger.error("briefing_generation_failed", error=str(r))
+    for audience, r in zip(target_audiences, results):
+        if isinstance(r, (Exception, asyncio.CancelledError)):
+            diagnostic = _failure_diagnostic("summary", audience, r)
+            error_msgs.append(diagnostic)
+            logger.error(diagnostic)
             continue
         pages = next(page_results)
-        if isinstance(pages, Exception):
-            error_msgs.append(f"details/{r['audience']}: {pages}")
-            logger.error("insight_pages_failed", audience=r["audience"], error=str(pages))
+        if isinstance(pages, (Exception, asyncio.CancelledError)):
+            diagnostic = _failure_diagnostic("details", audience, pages)
+            error_msgs.append(diagnostic)
+            logger.error(diagnostic)
             continue
         try:
             _upsert_briefing(db, r, target_date, pages)
@@ -741,14 +762,14 @@ async def run(
             logger.info(
                 "briefing_upserted",
                 audience=r["audience"],
-                headline=r["headline"][:50],
                 in_tok=r["input_tokens"],
                 out_tok=r["output_tokens"],
                 ms=r["generation_ms"],
             )
         except Exception as e:
-            error_msgs.append(f"upsert/{r['audience']}: {e}")
-            logger.error("briefing_upsert_failed", audience=r["audience"], error=str(e))
+            diagnostic = _failure_diagnostic("publication", audience, e)
+            error_msgs.append(diagnostic)
+            logger.error(diagnostic)
 
     # 5. collection_jobs 상태 업데이트
     if tracker.job_id is not None:
@@ -783,7 +804,7 @@ async def run(
             )
             logger.info("briefing_notification_sent", count=n_notified)
         except Exception as e:
-            logger.warning("briefing_notification_failed", error=str(e))
+            logger.warning(_failure_diagnostic("notification", "unknown", e))
 
     complete = success_count == len(target_audiences)
     log_outcome = logger.info if complete else logger.warning
@@ -835,7 +856,7 @@ def main() -> None:
         else:
             reason = "worker execution or publication tracking failed"
         logger.error("briefing_cli_failed: {kind}; {reason}",
-                     kind=type(exc).__name__, reason=reason)
+                     kind=_failure_kind(exc), reason=reason)
         sys.exit(1)
     complete = args.dry_run or n == len(target_audiences)
     log_outcome = logger.info if complete else logger.error

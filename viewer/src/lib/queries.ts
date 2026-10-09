@@ -1,6 +1,7 @@
 import { parseProductHistoryReceipt } from './product-history-window';
 import { readCount, kstInsertDate, RUNNING_RECORD_LIMIT, type RunningRecords } from './collection-status';
 import { supabaseBrowser } from './supabase/client';
+import { MATCHING_GUARD_HEADER } from './supabase/matching-transport';
 import { kstDaysAgo } from './format';
 const supabase = supabaseBrowser();
 
@@ -92,8 +93,9 @@ export async function fetchLatestRanking(opts: {
       .order('snapshot_date', { ascending: false })
       .limit(1);
     if (opts.signal) latestQuery = latestQuery.abortSignal(opts.signal);
-    const { data: latest } = await latestQuery;
+    const { data: latest, error: latestError } = await latestQuery;
     if (opts.signal?.aborted) return [];
+    if (latestError) throw latestError;
     const latestDate = (latest as any[])?.[0]?.snapshot_date;
     if (!latestDate) return [];
     // 전일 비교용으로 하루 더 포함
@@ -2037,25 +2039,28 @@ export interface BrandRankRow {
 }
 
 export async function fetchTopBrandRanking(opts: {
+  signal?: AbortSignal;
   genderFilter?: string;
   limit?: number;
 }): Promise<BrandRankRow[]> {
   const { genderFilter = 'A', limit = 10 } = opts;
+  const withSignal = <T extends { abortSignal(signal: AbortSignal): T }>(query: T): T => opts.signal ? query.abortSignal(opts.signal) : query;
 
-  const { data: dateRow } = await supabase
+  const { data: dateRow, error: dateError } = await withSignal(supabase
     .from('brand_ranking_snapshots')
     .select('snapshot_date')
     .eq('category_code', '000')
     .eq('gender_filter', genderFilter)
     .eq('age_filter', 'AGE_BAND_ALL')
     .order('snapshot_date', { ascending: false })
-    .limit(1);
+    .limit(1));
 
+  if (dateError) throw dateError;
   const latestDate = (dateRow as any[])?.[0]?.snapshot_date;
   if (!latestDate) return [];
 
   const [latestRes, prevDateRes] = await Promise.all([
-    supabase
+    withSignal(supabase
       .from('brand_ranking_snapshots')
       .select('rank_position, brand_name, brand_image_url, musinsa_brand_slug, brands(is_own, companies(corp_name))')
       .eq('category_code', '000')
@@ -2063,8 +2068,8 @@ export async function fetchTopBrandRanking(opts: {
       .eq('age_filter', 'AGE_BAND_ALL')
       .eq('snapshot_date', latestDate)
       .order('rank_position', { ascending: true })
-      .limit(limit),
-    supabase
+      .limit(limit)),
+    withSignal(supabase
       .from('brand_ranking_snapshots')
       .select('snapshot_date')
       .eq('category_code', '000')
@@ -2072,12 +2077,11 @@ export async function fetchTopBrandRanking(opts: {
       .eq('age_filter', 'AGE_BAND_ALL')
       .lt('snapshot_date', latestDate)
       .order('snapshot_date', { ascending: false })
-      .limit(1),
+      .limit(1)),
   ]);
 
   if (latestRes.error) {
-    console.error('[fetchTopBrandRanking] failed', latestRes.error);
-    return [];
+    throw latestRes.error;
   }
 
   const prevDate = (prevDateRes.data as any[])?.[0]?.snapshot_date ?? null;
@@ -2087,23 +2091,23 @@ export async function fetchTopBrandRanking(opts: {
   // ranking_snapshots 최신 날짜 조회 (brand_ranking_snapshots와 날짜 다를 수 있음)
   const [prevData, rsDateRow] = await Promise.all([
     prevDate && slugs.length > 0
-      ? supabase
+      ? withSignal(supabase
           .from('brand_ranking_snapshots')
           .select('musinsa_brand_slug, rank_position')
           .eq('category_code', '000')
           .eq('gender_filter', genderFilter)
           .eq('age_filter', 'AGE_BAND_ALL')
           .eq('snapshot_date', prevDate)
-          .in('musinsa_brand_slug', slugs)
+          .in('musinsa_brand_slug', slugs))
       : Promise.resolve({ data: [] }),
-    supabase
+    withSignal(supabase
       .from('ranking_snapshots')
       .select('snapshot_date')
       .eq('category_code', '000')
       .eq('gender_filter', genderFilter)
       .eq('age_filter', 'AGE_BAND_ALL')
       .order('snapshot_date', { ascending: false })
-      .limit(1),
+      .limit(1)),
   ]);
 
   const prevMap = new Map<string, number>();
@@ -2118,7 +2122,7 @@ export async function fetchTopBrandRanking(opts: {
 
   const rsDate = (rsDateRow.data as any[])?.[0]?.snapshot_date ?? null;
   if (rsDate && brandNames.length > 0) {
-    const { data: metricsData } = await supabase
+    const { data: metricsData } = await withSignal(supabase
       .from('ranking_snapshots')
       .select('brand_name, discount_rate, final_price, review_score, review_count')
       .eq('category_code', '000')
@@ -2126,7 +2130,7 @@ export async function fetchTopBrandRanking(opts: {
       .eq('age_filter', 'AGE_BAND_ALL')
       .eq('snapshot_date', rsDate)
       .in('brand_name', brandNames)
-      .limit(5000);
+      .limit(5000));
 
     for (const r of (metricsData ?? []) as any[]) {
       if (!metricsMap.has(r.brand_name)) {
@@ -2511,9 +2515,9 @@ export async function fetchProductMatches(ownProductId: string, includeExcluded 
     .eq('own_product_id', ownProductId)
     .order('score', { ascending: false });
   if (!includeExcluded) q = q.neq('status', 'excluded');
-  const { data, error } = await q;
-  if (error) throw error;
-  return (data ?? []).map((r: any) => {
+  const rows = matchRows(await q.retry(false).setHeader(MATCHING_GUARD_HEADER, 'read'), '매칭 목록 읽기', row =>
+    matchString(row.id) && matchString(row.competitor_product_id) && matchString(row.status));
+  return rows.map((r: any) => {
     const p = r.products ?? {};
     return {
       id: r.id,
@@ -2536,27 +2540,85 @@ export async function fetchProductMatches(ownProductId: string, includeExcluded 
 export async function setMatchStatus(matchId: string, status: 'confirmed' | 'excluded'): Promise<void> {
   const updates: Record<string, unknown> = { status };
   if (status === 'confirmed') updates.confirmed_at = new Date().toISOString();
-  const { error } = await supabase
+  const response = await supabase
     .from('product_matches')
     .update(updates)
-    .eq('id', matchId);
-  if (error) throw error;
+    .eq('id', matchId).retry(false).setHeader(MATCHING_GUARD_HEADER, 'mutation');
+  checkMatchMutation(response, '매칭 상태 변경');
 }
 
-export async function runAutoMatch(ownProductId: string): Promise<number> {
-  const { data: own } = await supabase
+function matchString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function checkMatchResponse(response: any, stage: string): void {
+  if (!response || typeof response !== 'object' || Array.isArray(response)
+    || response.error !== null || !Object.prototype.hasOwnProperty.call(response, 'data')
+    || !Number.isInteger(response.status) || response.status < 200 || response.status >= 300) {
+    // Do not expose SDK error payloads; a mutation may already have reached the DB.
+    throw new Error(`${stage} 실패: 결과를 확인한 후 다시 실행하세요.`);
+  }
+}
+
+function checkMatchMutation(response: any, stage: string): void {
+  checkMatchResponse(response, stage);
+  if (response.data !== null) throw new Error(`${stage} 응답 확인 실패: 결과를 확인한 후 다시 실행하세요.`);
+}
+
+function matchRows(response: any, stage: string, valid: (row: any) => boolean): any[] {
+  checkMatchResponse(response, stage);
+  if (!Array.isArray(response.data) || !response.data.every((row: any) =>
+    row && typeof row === 'object' && !Array.isArray(row) && valid(row))) {
+    throw new Error(`${stage} 응답 확인 실패`);
+  }
+  return response.data;
+}
+
+function boundedMatchRows(response: any, stage: string, valid: (row: any) => boolean, limit: number, offset = 0): any[] {
+  const rows = matchRows(response, stage, valid);
+  if (!Number.isSafeInteger(response.count) || response.count < 0 || offset > response.count
+    || rows.length !== Math.min(limit, response.count - offset)) {
+    throw new Error(`${stage} 전체 결과 확인 실패`);
+  }
+  return rows;
+}
+
+async function readMatchPages(query: () => any, stage: string, valid: (row: any) => boolean): Promise<any[]> {
+  const rows: any[] = [];
+  const pageSize = 500;
+  let total: number | null = null;
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await query().range(offset, offset + pageSize - 1).retry(false).setHeader(MATCHING_GUARD_HEADER, 'complete-read');
+    const page = boundedMatchRows(response, stage, valid, pageSize, offset);
+    if (response.count > 10000 || (offset > 0 && response.count !== total)) {
+      throw new Error(`${stage} 전체 결과 확인 실패`);
+    }
+    total = response.count;
+    rows.push(...page);
+    if (rows.length === total) return rows;
+  }
+}
+
+async function autoMatch(ownProductId: string, resetExcluded: boolean): Promise<number> {
+  if (!matchString(ownProductId)) throw new Error('자사 상품 ID 확인 실패');
+  const ownResponse = await supabase
     .from('products')
     .select('category_code, category_d2_code, category_path, brand_id')
     .eq('id', ownProductId)
-    .single();
-  if (!own?.brand_id) return 0;
+    .single().retry(false).setHeader(MATCHING_GUARD_HEADER, 'read');
+  checkMatchResponse(ownResponse, '자사 상품 읽기');
+  const own = ownResponse.data;
+  if (!own || Array.isArray(own) || !matchString(own.brand_id)
+    || !(['category_code', 'category_d2_code', 'category_path'] as const).every(key =>
+      own[key] === null || typeof own[key] === 'string')) {
+    throw new Error('자사 상품 응답 확인 실패');
+  }
 
   // 해당 자사 브랜드에 등록된 경쟁 브랜드 풀만 사용
-  const { data: pool } = await supabase
-    .from('competitor_brands')
-    .select('brand_id')
-    .eq('own_brand_id', own.brand_id);
-  if (!pool?.length) return 0;
+  const pool = await readMatchPages(() => supabase.from('competitor_brands')
+    .select('brand_id', { count: 'exact' }).eq('own_brand_id', own.brand_id).order('id'),
+    '경쟁 브랜드 풀 읽기', row => matchString(row.brand_id));
+  if (!pool.length) return 0;
 
   const poolBrandIds = new Set((pool as any[]).map((r: any) => r.brand_id as string));
   const poolIds = [...poolBrandIds];
@@ -2592,17 +2654,18 @@ export async function runAutoMatch(ownProductId: string): Promise<number> {
 
   for (const { apply, scoreA, scoreB } of levels) {
     const [aRes, bRes] = await Promise.all([
-      apply(supabase.from('products').select('id').in('brand_id', poolIds).neq('is_own', true).limit(500)),
+      apply(supabase.from('products').select('id', { count: 'exact' }).in('brand_id', poolIds).neq('is_own', true).limit(500).retry(false).setHeader(MATCHING_GUARD_HEADER, 'complete-read')),
       apply(
-        supabase.from('products').select('id')
+        supabase.from('products').select('id', { count: 'exact' })
           .neq('is_own', true)
           .not('brand_id', 'in', `(${excludeFromB.join(',')})`)
           .order('review_count', { ascending: false })
-          .limit(30)
+          .limit(30).retry(false).setHeader(MATCHING_GUARD_HEADER, 'complete-read')
       ),
     ]);
-    const aRows = (aRes.data ?? []) as { id: string }[];
-    const bRows = (bRes.data ?? []) as { id: string }[];
+    const aRows = boundedMatchRows(aRes, 'A 후보 읽기', row => matchString(row.id), 500);
+    const bRows = boundedMatchRows(bRes, 'B 후보 읽기', row => matchString(row.id), 30);
+    if (aRows.length > 500 || bRows.length > 30) throw new Error('매칭 후보 응답 확인 실패');
     if (aRows.length > 0 || bRows.length > 0) {
       aCandidates = aRows.map(r => ({ id: r.id, score: scoreA }));
       bCandidates = bRows.map(r => ({ id: r.id, score: scoreB }));
@@ -2610,37 +2673,42 @@ export async function runAutoMatch(ownProductId: string): Promise<number> {
     }
   }
 
-  // 기존 auto 매칭 전부 삭제
-  await supabase.from('product_matches').delete()
-    .eq('own_product_id', ownProductId).eq('status', 'auto');
-
+  // All reads and the replacement plan must succeed before any mutation.
+  const existing = await readMatchPages(() => supabase.from('product_matches')
+    .select('competitor_product_id, status', { count: 'exact' }).eq('own_product_id', ownProductId).order('id'),
+    '기존 매칭 읽기', row => matchString(row.competitor_product_id) && matchString(row.status));
+  const existingSet = new Set(existing
+    .filter(row => row.status !== 'auto' && !(resetExcluded && row.status === 'excluded'))
+    .map(row => row.competitor_product_id));
   const allCandidates = [...aCandidates, ...bCandidates];
-  if (!allCandidates.length) return 0;
-
-  const { data: existing } = await supabase
-    .from('product_matches').select('competitor_product_id').eq('own_product_id', ownProductId);
-  const existingSet = new Set((existing ?? []).map((m: any) => m.competitor_product_id));
+  const candidateIds = new Set(allCandidates.map(row => row.id));
+  if (candidateIds.size !== allCandidates.length || candidateIds.has(ownProductId)) {
+    throw new Error('매칭 후보 계획 확인 실패');
+  }
 
   const newRows = allCandidates
     .filter(c => !existingSet.has(c.id))
     .map(c => ({ own_product_id: ownProductId, competitor_product_id: c.id, status: 'auto', score: c.score }));
 
-  if (!newRows.length) return -allCandidates.length;
-
-  const { error } = await supabase.from('product_matches').insert(newRows);
-  if (error) throw error;
-
+  // These separate requests are not atomic. Never retry an ambiguous mutation.
+  if (resetExcluded) {
+    checkMatchMutation(await supabase.from('product_matches').delete()
+      .eq('own_product_id', ownProductId).eq('status', 'excluded').retry(false).setHeader(MATCHING_GUARD_HEADER, 'mutation'), '제외 초기화');
+  }
+  checkMatchMutation(await supabase.from('product_matches').delete()
+    .eq('own_product_id', ownProductId).eq('status', 'auto').retry(false).setHeader(MATCHING_GUARD_HEADER, 'mutation'), '자동 매칭 삭제');
+  if (!newRows.length) return allCandidates.length ? -allCandidates.length : 0;
+  checkMatchMutation(await supabase.from('product_matches').insert(newRows).retry(false).setHeader(MATCHING_GUARD_HEADER, 'mutation'), '자동 매칭 저장');
   return newRows.length;
 }
 
-/** 특정 자사 상품의 excluded 매칭을 전부 삭제하고 auto-match를 재실행 */
+export async function runAutoMatch(ownProductId: string): Promise<number> {
+  return autoMatch(ownProductId, false);
+}
+
+/** Validate the full plan before clearing exclusions or replacing auto matches. */
 export async function resetAndAutoMatch(ownProductId: string): Promise<number> {
-  await supabase
-    .from('product_matches')
-    .delete()
-    .eq('own_product_id', ownProductId)
-    .eq('status', 'excluded');
-  return runAutoMatch(ownProductId);
+  return autoMatch(ownProductId, true);
 }
 
 export async function searchCompetitorProducts(keyword: string, limit = 20): Promise<CompetitorProductSearchResult[]> {
@@ -2667,11 +2735,11 @@ export async function searchCompetitorProducts(keyword: string, limit = 20): Pro
 }
 
 export async function addManualMatch(ownProductId: string, competitorProductId: string): Promise<void> {
-  const { error } = await supabase
+  const response = await supabase
     .from('product_matches')
     .upsert(
       { own_product_id: ownProductId, competitor_product_id: competitorProductId, status: 'confirmed', score: null },
       { onConflict: 'own_product_id,competitor_product_id' },
-    );
-  if (error) throw error;
+    ).retry(false).setHeader(MATCHING_GUARD_HEADER, 'mutation');
+  checkMatchMutation(response, '수동 매칭 저장');
 }

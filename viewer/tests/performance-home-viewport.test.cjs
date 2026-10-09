@@ -24,7 +24,7 @@ function fixture(mobile) {
   const Home = loadSource('src/app/(app)/page.tsx', {
     './MobileHomeView': { __esModule: true, default: MobileHome },
     '@/lib/queries': queries,
-    '@/lib/supabase/client': { supabaseBrowser: () => ({ channel: () => channel, removeChannel() {} }) },
+    '@/lib/supabase/client': { supabaseBrowser: () => ({ auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) }, channel: () => channel, removeChannel() {} }) },
     'next/link': { __esModule: true, default: ({ children, ...props }) => React.createElement('a', props, children) },
     'next/navigation': { useRouter: () => ({ push() {} }) },
   }).default;

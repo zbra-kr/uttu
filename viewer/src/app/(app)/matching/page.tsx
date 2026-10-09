@@ -3,6 +3,7 @@ import { formatFiveStarRating } from '@/lib/rating-format';
 import { formatMatchingScore, getMatchingGrade, MATCHING_SCORE_HELP } from '@/lib/matching-score';
 import React from 'react';
 import { useIsMobile } from '@/hooks/useViewport';
+import { supabaseBrowser } from '@/lib/supabase/client';
 import MobileMatchingView from './MobileMatchingView';
 import Link from 'next/link';
 import { IcArrowUR, IcCheck, IcX, IcPlus } from '@/components/ui/icons';
@@ -374,10 +375,11 @@ function BrandPool() {
 
 type MatchFilter = 'all' | 'confirmed' | 'a' | 'b';
 
-function MatchCard({ m, onConfirm, onExclude }: {
+function MatchCard({ m, onConfirm, onExclude, disabled }: {
   m: ProductMatchRow;
   onConfirm: () => void;
   onExclude: () => void;
+  disabled?: boolean;
 }) {
   const confirmed = m.status === 'confirmed';
   const isAuto = m.status === 'auto';
@@ -454,9 +456,9 @@ function MatchCard({ m, onConfirm, onExclude }: {
       </div>
       <div className="col-flex gap-4" style={{ flexShrink: 0 }}>
         {!confirmed && (
-          <button onClick={onConfirm} className="btn sm icon" title="경쟁 상품으로 확정"><IcCheck /></button>
+          <button onClick={onConfirm} disabled={disabled} className="btn sm icon" title="경쟁 상품으로 확정"><IcCheck /></button>
         )}
-        <button onClick={onExclude} className="btn sm icon" title="제외"><IcX /></button>
+        <button onClick={onExclude} disabled={disabled} className="btn sm icon" title="제외"><IcX /></button>
       </div>
     </div>
   );
@@ -504,16 +506,57 @@ function ProductMatching() {
   const [compSearching, setCompSearching] = React.useState(false);
   const [addingComp, setAddingComp] = React.useState<string | null>(null);
   const compSearchRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mutationBusy = React.useRef(false);
+  const selectionVersion = React.useRef(0);
+  const matchReadVersion = React.useRef(0);
+  const mounted = React.useRef(true);
+  const selectedId = React.useRef<string | null>(null);
+  const [auth, setAuth] = React.useState({ ready: false, userId: null as string | null, epoch: 0 });
+  const identity = React.useRef(auth);
+  const [listErrors, setListErrors] = React.useState<{ brands: string | null; products: string | null }>({ brands: null, products: null });
+  React.useEffect(() => {
+    mounted.current = true;
+    const { data: { subscription } } = supabaseBrowser().auth.onAuthStateChange((_event, session) => {
+      if (!mounted.current) return;
+      const userId = session?.user.id ?? null;
+      if (identity.current.ready && identity.current.userId === userId) return;
+      const changed = identity.current.ready;
+      identity.current = { ready: true, userId, epoch: identity.current.epoch + (changed ? 1 : 0) };
+      if (changed) {
+        selectionVersion.current += 1;
+        selectedId.current = null;
+        setSelectedProduct(null); setMatches([]); setRunMsg(null);
+        setCompKw(''); setCompResults([]); setProducts([]); setProductTotal(0); setOwnBrands([]);
+        setFilterBrandIds(new Set()); setProductPage(0);
+        setListErrors({ brands: null, products: null });
+      }
+      setAuth(identity.current);
+    });
+    return () => { mounted.current = false; subscription.unsubscribe(); };
+  }, []);
 
   const PROD_SIZE = 50;
 
   React.useEffect(() => {
-    fetchOwnBrands().then(setOwnBrands).catch(console.error);
-  }, []);
+    if (!auth.ready || !auth.userId) return;
+    let cancelled = false;
+    const epoch = auth.epoch;
+    const current = () => !cancelled && mounted.current && epoch === identity.current.epoch;
+    setListErrors(prev => ({ ...prev, brands: null }));
+    fetchOwnBrands()
+      .then(rows => { if (current()) setOwnBrands(rows); })
+      .catch(() => { if (current()) setListErrors(prev => ({ ...prev, brands: '오류: 자사 브랜드 목록을 불러오지 못했습니다.' })); });
+    return () => { cancelled = true; };
+  }, [auth.ready, auth.userId, auth.epoch]);
 
   React.useEffect(() => {
+    if (!auth.ready) { setLoadingProds(true); return; }
+    if (!auth.userId) { setProducts([]); setProductTotal(0); setLoadingProds(false); return; }
     let cancelled = false;
+    const epoch = auth.epoch;
+    const current = () => !cancelled && mounted.current && epoch === identity.current.epoch;
     setLoadingProds(true);
+    setListErrors(prev => ({ ...prev, products: null }));
     fetchOwnProductsWithPrices({
       brandIds: filterBrandIds.size > 0 ? [...filterBrandIds] : undefined,
       categoryCodes: filterCategory ? [filterCategory] : undefined,
@@ -522,14 +565,16 @@ function ProductMatching() {
       limit: PROD_SIZE,
       offset: productPage * PROD_SIZE,
     }).then(({ rows, total }) => {
-      if (cancelled) return;
-      setProducts(rows);
-      setProductTotal(total);
-    }).catch(console.error)
-      .finally(() => { if (!cancelled) setLoadingProds(false); });
+      if (!current()) return;
+      setProducts(rows); setProductTotal(total);
+    }).catch(() => {
+      if (current()) {
+        setProducts([]); setProductTotal(0);
+        setListErrors(prev => ({ ...prev, products: '오류: 자사 상품 목록을 불러오지 못했습니다.' }));
+      }
+    }).finally(() => { if (current()) setLoadingProds(false); });
     return () => { cancelled = true; };
-  // 필터 변경 시에만 재요청. sb·setters는 안정 참조라 deps에서 의도적으로 제외
-  }, [filterBrandIds, filterGender, filterCategory, filterKeyword, productPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.ready, auth.userId, auth.epoch, filterBrandIds, filterGender, filterCategory, filterKeyword, productPage]);
 
   // 가격 클라이언트 필터
   const displayedProducts = React.useMemo(() => {
@@ -548,24 +593,38 @@ function ProductMatching() {
     return rows;
   }, [products, minPrice, maxPrice]);
 
-  // 매칭 로드
+  // Ignore responses for a previous selection (including A → B → A).
   React.useEffect(() => {
-    if (!selectedProduct) { setMatches([]); return; }
+    if (!selectedProduct) { setMatches([]); setLoadingMatches(false); return; }
+    let cancelled = false;
+    const version = selectionVersion.current;
+    const readVersion = ++matchReadVersion.current;
+    const epoch = identity.current.epoch;
+    const current = () => !cancelled && mounted.current && epoch === identity.current.epoch && version === selectionVersion.current && readVersion === matchReadVersion.current;
     setLoadingMatches(true);
     fetchProductMatches(selectedProduct.id)
-      .then(setMatches)
-      .catch(console.error)
-      .finally(() => setLoadingMatches(false));
+      .then(rows => { if (current()) setMatches(rows); })
+      .catch(() => { if (current()) setRunMsg('오류: 매칭 목록을 불러오지 못했습니다.'); })
+      .finally(() => { if (current()) setLoadingMatches(false); });
+    return () => { cancelled = true; };
   }, [selectedProduct]);
 
-  // 경쟁 상품 검색 디바운스
+  // Cancel selection/account-scoped search responses as well.
   React.useEffect(() => {
     if (compSearchRef.current) clearTimeout(compSearchRef.current);
-    if (!compKw.trim()) { setCompResults([]); return; }
+    if (!compKw.trim()) { setCompResults([]); setCompSearching(false); return; }
+    let cancelled = false;
+    const version = selectionVersion.current;
+    const epoch = identity.current.epoch;
+    const current = () => !cancelled && mounted.current && epoch === identity.current.epoch && version === selectionVersion.current;
     setCompSearching(true);
     compSearchRef.current = setTimeout(() => {
-      searchCompetitorProducts(compKw).then(setCompResults).catch(console.error).finally(() => setCompSearching(false));
+      searchCompetitorProducts(compKw)
+        .then(rows => { if (current()) setCompResults(rows); })
+        .catch(() => { if (current()) setRunMsg('오류: 경쟁 상품 검색을 완료하지 못했습니다.'); })
+        .finally(() => { if (current()) setCompSearching(false); });
     }, 300);
+    return () => { cancelled = true; if (compSearchRef.current) clearTimeout(compSearchRef.current); };
   }, [compKw]);
 
   // ── derived ──
@@ -581,43 +640,82 @@ function ProductMatching() {
   const alreadyMatchedIds = new Set(matches.map(m => m.competitor_product_id));
 
   // ── handlers ──
-  const handleAutoMatch = async (resetExcluded = false) => {
-    if (!selectedProduct) return;
+  const beginMutation = () => {
+    if (!selectedProduct || mutationBusy.current || loadingMatches
+      || !identity.current.ready || !identity.current.userId) return null;
+    mutationBusy.current = true;
     setRunning(true); setRunMsg(null);
+    const productId = selectedProduct.id;
+    const epoch = identity.current.epoch;
+    return {
+      productId,
+      // Returning to A still requires reconciliation of A's outstanding mutation.
+      current: () => mounted.current && epoch === identity.current.epoch && selectedId.current === productId,
+    };
+  };
+  const finishMutation = () => {
+    mutationBusy.current = false;
+    if (mounted.current) { setRunning(false); setAddingComp(null); }
+  };
+  const failureMessage = '오류: 매칭 작업을 완료하지 못했습니다. 결과를 확인한 후 다시 실행하세요.';
+  const reconcileMutation = async (action: { productId: string; current: () => boolean }, message: string | null, filter?: MatchFilter) => {
+    if (!action.current()) return;
+    // Invalidate a selection read started before this mutation settled.
+    const version = selectionVersion.current;
+    const readVersion = ++matchReadVersion.current;
+    const current = () => action.current() && version === selectionVersion.current && readVersion === matchReadVersion.current;
+    setLoadingMatches(true);
+    if (message === failureMessage) setRunMsg(message);
+    try {
+      const updated = await fetchProductMatches(action.productId);
+      if (!current()) {
+        if (action.current() && message === failureMessage) setRunMsg(message);
+        return;
+      }
+      setMatches(updated); setRunMsg(message);
+      if (filter) setMatchFilter(filter);
+    } catch { if (action.current()) setRunMsg(failureMessage); }
+    finally { if (current()) setLoadingMatches(false); }
+  };
+
+  const handleAutoMatch = async (resetExcluded = false) => {
+    const action = beginMutation();
+    if (!action) return;
     try {
       const n = resetExcluded
-        ? await resetAndAutoMatch(selectedProduct.id)
-        : await runAutoMatch(selectedProduct.id);
-      const updated = await fetchProductMatches(selectedProduct.id);
-      setMatches(updated);
-      if (n > 0)       { setRunMsg(`${n}건 후보 생성 완료`); setMatchFilter('a'); }
-      else if (n < 0)  { setRunMsg(`allExcluded:${-n}`); }
-      else             { setRunMsg('none'); }
-    } catch (e: any)   { setRunMsg(`오류: ${e.message}`); }
-    finally            { setRunning(false); }
+        ? await resetAndAutoMatch(action.productId)
+        : await runAutoMatch(action.productId);
+      await reconcileMutation(action, n > 0 ? `${n}건 후보 생성 완료` : n < 0 ? `allExcluded:${-n}` : 'none', n > 0 ? 'a' : undefined);
+    } catch { await reconcileMutation(action, failureMessage); }
+    finally { finishMutation(); }
   };
 
   const handleStatus = async (matchId: string, status: 'confirmed' | 'excluded') => {
-    await setMatchStatus(matchId, status);
-    setMatches(prev => status === 'excluded'
-      ? prev.filter(m => m.id !== matchId)
-      : prev.map(m => m.id === matchId ? { ...m, status } : m));
+    const action = beginMutation();
+    if (!action) return;
+    try {
+      await setMatchStatus(matchId, status);
+      await reconcileMutation(action, null);
+    } catch { await reconcileMutation(action, failureMessage); }
+    finally { finishMutation(); }
   };
 
   const handleAddCompetitor = async (compProductId: string) => {
-    if (!selectedProduct) return;
+    const action = beginMutation();
+    if (!action) return;
     setAddingComp(compProductId);
     try {
-      await addManualMatch(selectedProduct.id, compProductId);
-      const updated = await fetchProductMatches(selectedProduct.id);
-      setMatches(updated);
-      setMatchFilter('confirmed');
-    } catch (e) { console.error(e); }
-    finally { setAddingComp(null); }
+      await addManualMatch(action.productId, compProductId);
+      await reconcileMutation(action, null, 'confirmed');
+    } catch { await reconcileMutation(action, failureMessage); }
+    finally { finishMutation(); }
   };
 
   const selectProduct = (p: OwnProductWithPrice) => {
-    setSelectedProduct(prev => prev?.id === p.id ? null : p);
+    selectionVersion.current += 1;
+    selectedId.current = selectedId.current === p.id ? null : p.id;
+    setSelectedProduct(selectedId.current ? p : null);
+    setMatches([]); setLoadingMatches(true);
     setMatchFilter('all');
     setCompKw('');
     setCompResults([]);
@@ -710,6 +808,12 @@ function ProductMatching() {
           {filterActive && (
             <button className="btn sm" onClick={resetFilters}>초기화</button>
           )}
+          {(listErrors.products || listErrors.brands) && (
+            <span role="alert" style={{ fontSize: 11, color: 'var(--f3)' }}>{listErrors.products ?? listErrors.brands}</span>
+          )}
+          {!selectedProduct && runMsg?.startsWith('오류:') && (
+            <span role="alert" style={{ fontSize: 11, color: 'var(--f3)' }}>{runMsg}</span>
+          )}
           <span className="mono dim" style={{ fontSize: 10, marginLeft: 'auto' }}>
             {loadingProds ? '…' : `${productTotal.toLocaleString()}개`}
           </span>
@@ -735,7 +839,7 @@ function ProductMatching() {
               ))
             ) : displayedProducts.length === 0 ? (
               <div style={{ padding: '32px 12px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
-                조건에 맞는 상품 없음
+                {auth.ready && !auth.userId ? '로그인 후 자사 상품을 조회할 수 있습니다' : '조건에 맞는 상품 없음'}
               </div>
             ) : displayedProducts.map(p => {
               const isSelected = selectedProduct?.id === p.id;
@@ -845,13 +949,13 @@ function ProductMatching() {
                         {runMsg && runMsg.startsWith('allExcluded:') && (
                           <div style={{ fontSize: 11, color: 'var(--f3)', textAlign: 'right', background: 'color-mix(in srgb, var(--chart-orange) 8%, var(--bg))', border: '0.5px solid var(--chart-orange)', borderRadius: 5, padding: '5px 10px' }}>
                             후보 {runMsg.split(':')[1]}건 모두 제외됨
-                            <button onClick={() => handleAutoMatch(true)} className="btn sm" style={{ marginLeft: 8, fontSize: 10 }}>
+                            <button onClick={() => handleAutoMatch(true)} disabled={running || loadingMatches} className="btn sm" style={{ marginLeft: 8, fontSize: 10 }}>
                               초기화 후 재실행
                             </button>
                           </div>
                         )}
                         {runMsg && !runMsg.startsWith('allExcluded:') && runMsg !== 'none' && (
-                          <span style={{ fontSize: 11, color: 'var(--f3)' }}>{runMsg}</span>
+                          <span role={runMsg.startsWith('오류:') ? 'alert' : 'status'} style={{ fontSize: 11, color: 'var(--f3)' }}>{runMsg}</span>
                         )}
                         {runMsg === 'none' && (
                           <span style={{ fontSize: 11, color: 'var(--f4)' }}>경쟁 브랜드 풀에 해당 카테고리 상품 없음</span>
@@ -862,7 +966,7 @@ function ProductMatching() {
                             className="btn sm icon" title="무신사에서 보기">
                             <IcArrowUR size={12} />
                           </a>
-                          <button onClick={() => handleAutoMatch()} disabled={running} className="btn sm"
+                          <button onClick={() => handleAutoMatch()} disabled={running || loadingMatches} className="btn sm"
                             style={{ opacity: running ? 0.6 : 1 }}>
                             {running ? '실행 중…' : '자동 매칭 실행'}
                           </button>
@@ -911,7 +1015,7 @@ function ProductMatching() {
                               {added ? (
                                 <span style={{ fontSize: 11, color: 'var(--f4)', flexShrink: 0 }}>추가됨</span>
                               ) : (
-                                <button onClick={() => handleAddCompetitor(p.id)} disabled={addingComp === p.id}
+                                <button onClick={() => handleAddCompetitor(p.id)} disabled={running || loadingMatches || addingComp === p.id}
                                   className="btn sm" style={{ opacity: addingComp === p.id ? 0.5 : 1, flexShrink: 0 }}>
                                   <IcPlus size={11} /> 추가
                                 </button>
@@ -963,7 +1067,7 @@ function ProductMatching() {
                       ) : (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
                           {visibleMatches.map(m => (
-                            <MatchCard key={m.id} m={m}
+                            <MatchCard key={m.id} m={m} disabled={running || loadingMatches}
                               onConfirm={() => handleStatus(m.id, 'confirmed')}
                               onExclude={() => handleStatus(m.id, 'excluded')} />
                           ))}
