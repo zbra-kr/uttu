@@ -3,20 +3,26 @@ import { useEffect, useMemo } from 'react';
 import RankingDailyInsights, { useRankingDailyInsights } from '@/components/ranking/RankingDailyInsights';
 import { useRankingDailySession } from '@/components/ranking/RankingDailyProvider';
 import { staffDailyPlanningScope, staffPlanningFilterFromParams, staffPlanningFilterToParams, DEFAULT_STAFF_FILTER, type StaffPlanningFilter } from '@/lib/staff-daily-planning';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { CATEGORY_MAP, AGE_MAP } from '@/lib/queries';
 import { FilterBlock, PillGroup } from '@/components/ui/filters';
 
 /** Keep the subscriber above the responsive branch; tab exit invalidates its receipt. */
 export function useStaffDailyPlanningCheck(date: string, today: string, active: boolean) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const raw = searchParams.toString();
   const filter = useMemo(() => staffPlanningFilterFromParams(new URLSearchParams(raw)), [raw]);
   const scope = useMemo(() => active && filter ? staffDailyPlanningScope(date, today, filter) : null, [date, today, active, filter]);
-  const changeFilter = (next: StaffPlanningFilter) => {
-    const params = staffPlanningFilterToParams(new URLSearchParams(raw), next);
-    router.push(`/today?${params.toString()}`, { scroll: false });
+  const changeFilter = (change: Partial<StaffPlanningFilter>) => {
+    // The browser URL changes synchronously, while useSearchParams may render later.
+    // Merge only the chosen field into that latest URL so rapid clicks and history
+    // navigation never compose from an obsolete render's full filter object.
+    const current = new URLSearchParams(window.location.search);
+    const next = { ...(staffPlanningFilterFromParams(current) ?? DEFAULT_STAFF_FILTER), ...change };
+    const params = staffPlanningFilterToParams(current, next);
+    // Next App Router integrates native history with useSearchParams, without a
+    // server navigation whose delayed commit could overwrite a later selection.
+    window.history.pushState(null, '', `/today?${params.toString()}`);
   };
   const load = useRankingDailyInsights(scope);
   const session = useRankingDailySession();
@@ -33,13 +39,13 @@ export default function StaffDailyPlanningCheck({ state, compact }: {
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
       <div><FilterBlock label="담당 카테고리">
         <select aria-label="담당 카테고리" className="input-date" style={{ height: 26, padding: '0 8px' }} value={filter.selectedCategory}
-          onChange={e => state.changeFilter({ ...filter, selectedCategory: e.target.value })}>
+          onChange={e => state.changeFilter({ selectedCategory: e.target.value })}>
           {Object.entries(CATEGORY_MAP).sort(([a], [b]) => a.localeCompare(b)).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
         </select>
       </FilterBlock></div>
-      <div><FilterBlock label="성별"><PillGroup value={filter.gender} onChange={gender => state.changeFilter({ ...filter, gender })}
+      <div><FilterBlock label="성별"><PillGroup value={filter.gender} onChange={gender => state.changeFilter({ gender })}
         options={[["A", "전체"], ["M", "남성"], ["F", "여성"]]} /></FilterBlock></div>
-      <div><FilterBlock label="연령"><PillGroup value={filter.age} onChange={age => state.changeFilter({ ...filter, age })}
+      <div><FilterBlock label="연령"><PillGroup value={filter.age} onChange={age => state.changeFilter({ age })}
         options={Object.entries(AGE_MAP)} /></FilterBlock></div>
     </div>
     {!state.filter && <p role="alert">URL의 담당 범위가 올바르지 않아 조회하지 않았습니다. 범위를 다시 선택하세요.</p>}

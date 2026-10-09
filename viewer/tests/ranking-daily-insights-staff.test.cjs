@@ -23,9 +23,13 @@ test('KST midnight changes the eligible briefing day without using host-local ti
     }
   } finally { global.Date = OriginalDate; }
 });
-function fixture() {
+function fixture({ delayedSearch = false, realReader = false } = {}) {
   let search='tab=staff&date=2026-10-08', mobile=false, path='/today', user='account-a';
-  const calls=[], listeners=new Set();
+  const calls=[], listeners=new Set(), pushes=[], reads=[];
+  let reader;
+  const from=table=>{const ops=[];reads.push({table,ops});const query={then(resolve,reject){return Promise.resolve({data:[],error:null}).then(resolve,reject)}};for(const method of ['select','eq','lte','order','limit','abortSignal'])query[method]=(...args)=>{ops.push([method,...args]);return query};return query};
+  let browserSearch=search;
+  global.window={location:{get search(){return '?'+browserSearch}},history:{pushState(_state,_unused,href){browserSearch=new URL(href,'https://fixture.test').search.slice(1);pushes.push(href);if(!delayedSearch)search=browserSearch}}};
   const empty = () => null;
   const mocks={
     'next/navigation':{usePathname:()=>path,useSearchParams:()=>new URLSearchParams(search),useRouter:()=>({push(href){search=new URL(href,'https://fixture.test').search.slice(1)}})},
@@ -33,14 +37,16 @@ function fixture() {
     '@/hooks/useViewport':{useIsMobile:()=>mobile}, '@/hooks/useKstToday':{useKstToday:()=> '2026-10-08'},
     '@/lib/format':{kstDaysAgo:()=> '2026-10-08'},
     '@/lib/queries':{CATEGORY_MAP:{'000':'전체','001':'상의','002':'아우터'},AGE_MAP:{AGE_BAND_ALL:'전체',AGE_BAND_25:'25~30세'}},
-    '@/lib/supabase/client':{supabaseBrowser:()=>({auth:{getUser:async()=>({data:{user:user?{id:user}:null}}),onAuthStateChange(fn){listeners.add(fn);return{data:{subscription:{unsubscribe(){listeners.delete(fn)}}}}}}})},
-    '@/lib/queries-ranking-daily':{fetchRankingDaily:(request,signal)=>new Promise((resolve,reject)=>calls.push({request,signal,resolve,reject}))},
+    '@/lib/supabase/client':{supabaseBrowser:()=>({from,auth:{getUser:async()=>({data:{user:user?{id:user}:null}}),onAuthStateChange(fn){listeners.add(fn);return{data:{subscription:{unsubscribe(){listeners.delete(fn)}}}}}}})},
+    '@/lib/queries-ranking-daily':{fetchRankingDaily:(request,signal)=>{if(reader){calls.push({request,signal});return reader.fetchRankingDaily(request,signal)}return new Promise((resolve,reject)=>calls.push({request,signal,resolve,reject}))}},
     '@/lib/cs-daily-review-context':{useCSDailyReviewState:()=>null},
     '@/hooks/useBriefingRead':{useBriefingScope:()=>({}),useBriefingRead:()=>({value:null,loading:false,loaded:true,retry(){}})},
     '@/components/briefing/BriefingReadStatus':{__esModule:true,default:empty},
   };
   for(const id of ['BriefingTabs','ExecutiveBriefingView','StaffBriefingView','CSBriefingView','CSDailyReviewCheck']) mocks['@/components/briefing/'+id]={__esModule:true,default:empty};
   for(const id of ['MobileBriefingTabs','MobileBriefingHeadline','MobileBriefingCard','MobileBriefingInsight','MobileNewsPickList']) mocks['./'+id]={__esModule:true,default:empty};
+  mocks['./supabase/client']=mocks['@/lib/supabase/client'];
+  if(realReader)reader=load('src/lib/queries-ranking-daily.ts',mocks);
   const provider=load('src/components/ranking/RankingDailyProvider.tsx',mocks);
   mocks['./RankingDailyProvider']=provider;mocks['@/components/ranking/RankingDailyProvider']=provider;
   const Page=load('src/app/(app)/today/page.tsx',mocks).default;
@@ -50,7 +56,7 @@ function fixture() {
     const row=(day,rank)=>({store_code:'musinsa',snapshot_date:day,category_code:req.categoryCode,gender_filter:req.genderFilter,age_filter:req.ageFilter,musinsa_no:user==='account-a'?'1':'2',rank_position:rank,product_name:'stored product',final_price:10000,discount_rate:10});
     return{request:req,date,previousDate,current:[row(date,1)],previous:[row(previousDate,10)],...patch};
   };
-  return{App,calls,response,setSearch(v){search=v},setMobile(v){mobile=v},setPath(v){path=v},auth(event,id){user=id;for(const fn of [...listeners])fn(event,id?{user:{id}}:null)}};
+  return{App,calls,response,pushes,reads,commitSearch(){search=browserSearch},getBrowserSearch(){return browserSearch},setSearch(v){search=v;browserSearch=v},setMobile(v){mobile=v},setPath(v){path=v},auth(event,id){user=id;for(const fn of [...listeners])fn(event,id?{user:{id}}:null)}};
 }
 async function update(f,root){await React.act(async()=>root.update(React.createElement(f.App)));}
 const articles=root=>root.root.findAllByType('article');
@@ -127,4 +133,39 @@ test('Staff filters switch A→B→A, ignore late receipts, restore URLs and inv
     // Shared-link re-entry / refresh creates a fresh authenticated reader for the URL.
     await React.act(async()=>{root=Renderer.create(React.createElement(f.App))});assert.equal(f.calls.at(-1).request.categoryCode,'002');assert.equal(f.calls.at(-1).request.genderFilter,'F');
   } finally {if(root)await React.act(async()=>root.unmount());}
+});
+
+test('rapid multi-filter clicks merge latest browser URL before delayed Next search params render; external/history URL wins',async()=>{
+  const f=fixture({delayedSearch:true,realReader:true});let root;
+  try {
+    await React.act(async()=>{root=Renderer.create(React.createElement(f.App))});
+    const category=root.root.findByProps({'aria-label':'담당 카테고리'});
+    const male=root.root.findAllByType('button').find(x=>x.props.children==='남성');
+    const age=root.root.findAllByType('button').find(x=>x.props.children==='25~30세');
+    // Independent P2 reproduction: no URL hook update between these controls.
+    await React.act(async()=>{category.props.onChange({target:{value:'001'}});male.props.onClick();age.props.onClick()});
+    assert.equal(f.pushes.length,3);
+    const params=new URLSearchParams(f.getBrowserSearch());
+    assert.equal(params.get('planningCategory'),'001');assert.equal(params.get('planningGender'),'M');assert.equal(params.get('planningAge'),'AGE_BAND_25');
+    assert.equal(params.get('date'),'2026-10-08');assert.equal(params.get('tab'),'staff');
+    f.commitSearch();await update(f,root);
+    assert.deepEqual(f.calls.at(-1).request,{categoryCode:'001',genderFilter:'M',ageFilter:'AGE_BAND_25',date:'2026-10-07'});
+    const actualReads=f.reads.slice(-2);assert.equal(actualReads.length,2);
+    for(const read of actualReads){for(const [key,value] of [['category_code','001'],['gender_filter','M'],['age_filter','AGE_BAND_25']])assert.ok(read.ops.some(x=>x[0]==='eq' && x[1]===key && x[2]===value));assert.ok(read.ops.some(x=>x[0]==='lte' && x[1]==='rank_position' && x[2]===300));assert.ok(read.ops.some(x=>x[0]==='limit' && x[1]===1000));}
+    assert.deepEqual(actualReads.map(x=>x.ops.find(x=>x[0]==='eq' && x[1]==='snapshot_date')[2]).sort(),['2026-10-06','2026-10-07']);
+    const chosen=f.getBrowserSearch();
+    // Back/external replacement are authoritative; subsequent clicks must not use pending intent.
+    const external='tab=staff&date=2024-03-01&planningCategory=002&planningGender=F&planningAge=AGE_BAND_ALL&keep=yes';
+    f.setSearch(external);await update(f,root);assert.equal(f.calls.at(-1).request.date,'2024-02-29');
+    await React.act(async()=>male.props.onClick());
+    const after=new URLSearchParams(f.getBrowserSearch());assert.equal(after.get('planningCategory'),'002');assert.equal(after.get('planningGender'),'M');assert.equal(after.get('planningAge'),'AGE_BAND_ALL');assert.equal(after.get('keep'),'yes');assert.equal(after.get('date'),'2024-03-01');
+    f.commitSearch();await update(f,root);assert.equal(f.calls.at(-1).request.categoryCode,'002');
+    f.setSearch(chosen);await update(f,root);assert.deepEqual(f.calls.at(-1).request,{categoryCode:'001',genderFilter:'M',ageFilter:'AGE_BAND_25',date:'2026-10-07'});
+    f.setSearch(external);await update(f,root);assert.equal(f.calls.at(-1).request.genderFilter,'F');
+    // Browser URL can change before the hook render (popstate or external native history).
+    window.history.pushState(null,'','/today?'+chosen);
+    await React.act(async()=>root.root.findAllByType('button').find(x=>x.props.children==='여성').props.onClick());
+    assert.equal(new URLSearchParams(f.getBrowserSearch()).get('planningCategory'),'001');
+    f.commitSearch();await update(f,root);assert.equal(f.calls.at(-1).request.genderFilter,'F');assert.equal(f.calls.at(-1).request.ageFilter,'AGE_BAND_25');
+  } finally {if(root)await React.act(async()=>root.unmount());delete global.window;}
 });
