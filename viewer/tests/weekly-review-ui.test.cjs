@@ -98,7 +98,7 @@ test('review loading and unavailable never become zero; same-scope retry can pro
   const h = harness(); try { await readyBrands(h); assert.match(h.html(), /aria-busy="true"/); assert.match(h.html(), /작성일이 확인된 원문을 불러오는 중/); assert.doesNotMatch(h.html(), /불러온 원문 0건|이 범위에서 저장된 원문을 찾지 못했습니다/); h.reviews[0].reject(Error('offline')); await h.flush(); assert.match(h.html(), /0건으로 판단하지 마세요/); assert.doesNotMatch(h.html(), /불러온 원문 0건|이 범위에서 저장된 원문을 찾지 못했습니다/); h.find('button', '같은 범위로 다시 시도').props.onClick(); h.tree(); assert.deepEqual(h.reviews[1].args[0], SCOPE); await readyReviews(h, []); assert.match(h.html(), /불러온 원문 0건/); assert.match(h.html(), /이 범위에서 저장된 원문을 찾지 못했습니다/); assert.match(h.html(), /문제가 없거나 수집이 완료됐다는 뜻은 아닙니다/); } finally { h.dispose(); }
 });
 test('memo loading, error, and successful empty are separate with same-brand retry', async () => {
-  const h = harness(); try { await readyBrands(h); assert.match(h.html(), /이전 검토를 불러오는 중/); assert.doesNotMatch(h.html(), /아직 이 브랜드의 상품 개선 검토 메모가 없습니다/); h.memos[0].reject(Error('offline')); await h.flush(); assert.match(h.html(), /메모가 없는 것은 아닙니다/); assert.doesNotMatch(h.html(), /아직 이 브랜드의 상품 개선 검토 메모가 없습니다/); h.find('button', '메모 다시 조회').props.onClick(); h.tree(); assert.equal(h.memos[1].args[0], A); h.memos[1].resolve([]); await h.flush(); assert.match(h.html(), /아직 이 브랜드의 상품 개선 검토 메모가 없습니다/); } finally { h.dispose(); }
+  const h = harness(); try { await readyBrands(h); assert.match(h.html(), /이전 검토를 불러오는 중/); assert.doesNotMatch(h.html(), /아직 이 브랜드의 상품 개선 검토 메모가 없습니다/); h.memos[0].reject(Error('offline')); await h.flush(); assert.match(h.html(), /메모가 없는 것은 아닙니다/); assert.doesNotMatch(h.html(), /아직 이 브랜드의 상품 개선 검토 메모가 없습니다/); h.find('button', '메모 다시 조회').props.onClick(); h.tree(); assert.equal(h.memos[1].args[0], A); h.memos[1].resolve(page([])); await h.flush(); assert.match(h.html(), /아직 이 브랜드의 상품 개선 검토 메모가 없습니다/); } finally { h.dispose(); }
 });
 test('linked missing originals are disclosed without replacement or ordinary-empty claims', async () => {
   const ids = [row().id, row(2).id], h = harness(w.weeklyHref(SCOPE, ids)); try { await readyBrands(h); assert.deepEqual(h.reviews[0].args[1].evidence, ids); assert.doesNotMatch(h.html(), /연결된 근거 2건을/); await readyReviews(h, [row()]); assert.match(h.html(), /연결된 근거 1건을 이 범위에서 확인할 수 없습니다/); assert.match(h.html(), /다른 원문으로 대체하지 않습니다/); assert.doesNotMatch(h.html(), /이 범위에서 저장된 원문을 찾지 못했습니다/); assert.equal(nextButton(h), undefined); assert.equal(h.find('a', '같은 범위의 원문 목록').props.href, w.weeklyHref(SCOPE)); } finally { h.dispose(); }
@@ -110,13 +110,13 @@ test('actual EvidenceList escapes source prose, displays missing-source fallback
   const h = harness('/reviews/weekly'); try { const rows = [row(1, { review_text: '<script>alert(1)</script>', musinsa_no: 'javascript:alert(1)' }), row(2, { review_text: '', musinsa_review_id: '', purchase_option: null })]; const tree = React.createElement(h.EvidenceList, { rows, scope: SCOPE, selectedIds: [rows[0].id], selectionBlocked: true, onToggle() {} }), html = renderToStaticMarkup(tree), nodes = walk(tree); assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/); assert.doesNotMatch(html, /<script|href="javascript:/); assert.match(html, /원문 내용이 비어 있습니다/); assert.match(html, /원천 리뷰 ID 확인 불가/); const inputs = nodes.filter(n => n.type === 'input'); assert.equal(inputs[0].props.checked, true); assert.ok(inputs.every(n => n.props.disabled)); const links = nodes.filter(n => n.type === 'a' && n.props.target === '_blank'); assert.equal(links.length, 1); assert.equal(links[0].props.rel, 'noopener noreferrer'); assert.equal(links[0].props.href, 'https://www.musinsa.com/products/1002'); assert.equal(nodes.find(n => n.type === 'a' && textOf(n) === '이 상품으로 좁혀 보기').props.href, w.weeklyHref({ ...SCOPE, product: PA })); } finally { h.dispose(); }
 });
 test('saved memo links reconstruct only valid original same-app evidence and expose full-note links separately', async () => {
-  const h = harness(); try { await readyBrands(h); h.memos[0].resolve([{ id: id(501), body: w.buildWeeklyMemo(draft()), created_at: SCOPE.at }, { id: id(502), body: `${w.WEEKLY_MEMO_HEADER}\n관찰: Legacy\n근거 보기: https://evil.example`, created_at: SCOPE.at }]); await h.flush(); const links = h.nodes().filter(n => n.type === 'a' && textOf(n) === '당시 근거 다시 보기'); assert.equal(links.length, 1); assert.equal(links[0].props.href, w.weeklyHref(SCOPE, [row().id])); assert.equal(h.nodes().filter(n => n.type === 'a' && textOf(n) === '저장한 메모').length, 2); assert.match(h.html(), /다음 확인일: 2024-03-12/); assert.doesNotMatch(h.html(), /href="https:\/\/evil.example/); } finally { h.dispose(); }
+  const h = harness(); try { await readyBrands(h); h.memos[0].resolve(page([{ id: id(501), body: w.buildWeeklyMemo(draft()), created_at: SCOPE.at }, { id: id(502), body: `${w.WEEKLY_MEMO_HEADER}\n관찰: Legacy\n근거 보기: https://evil.example`, created_at: SCOPE.at }])); await h.flush(); const links = h.nodes().filter(n => n.type === 'a' && textOf(n) === '당시 근거 다시 보기'); assert.equal(links.length, 1); assert.equal(links[0].props.href, w.weeklyHref(SCOPE, [row().id])); assert.equal(h.nodes().filter(n => n.type === 'a' && textOf(n) === '저장한 메모').length, 2); assert.match(h.html(), /다음 확인일: 2024-03-12/); assert.doesNotMatch(h.html(), /href="https:\/\/evil.example/); } finally { h.dispose(); }
 });
 test('A→B navigation cancels A requests and late A reviews or memos cannot overwrite B', async () => {
-  const h = harness(); try { await readyBrands(h); const a = h.reviews[0], ma = h.memos[0]; h.commit(w.weeklyHref(OTHER)); assert.equal(a.args[1].signal.aborted, true); assert.equal(ma.args[1].aborted, true); h.reviews[1].resolve(page([row(2, { review_text: 'New B original', brand_name: 'Brand Beta' })])); h.memos[1].resolve([{ id: id(502), body: '관찰: New B memo', created_at: SCOPE.at }]); await h.flush(); a.resolve(page([row(1, { review_text: 'Stale A original' })])); ma.resolve([{ id: id(501), body: '관찰: Stale A memo', created_at: SCOPE.at }]); await h.flush(); assert.match(h.html(), /New B original/); assert.match(h.html(), /New B memo/); assert.doesNotMatch(h.html(), /Stale A original|Stale A memo/); assert.equal(control(h, '자사 브랜드').props.value, B); } finally { h.dispose(); }
+  const h = harness(); try { await readyBrands(h); const a = h.reviews[0], ma = h.memos[0]; h.commit(w.weeklyHref(OTHER)); assert.equal(a.args[1].signal.aborted, true); assert.equal(ma.args[1].aborted, true); h.reviews[1].resolve(page([row(2, { review_text: 'New B original', brand_name: 'Brand Beta' })])); h.memos[1].resolve(page([{ id: id(502), body: '관찰: New B memo', created_at: SCOPE.at }])); await h.flush(); a.resolve(page([row(1, { review_text: 'Stale A original' })])); ma.resolve(page([{ id: id(501), body: '관찰: Stale A memo', created_at: SCOPE.at }])); await h.flush(); assert.match(h.html(), /New B original/); assert.match(h.html(), /New B memo/); assert.doesNotMatch(h.html(), /Stale A original|Stale A memo/); assert.equal(control(h, '자사 브랜드').props.value, B); } finally { h.dispose(); }
 });
 test('unmount aborts initial reviews/memos, clears timers, unsubscribes auth, and ignores late responses', async () => {
-  const h = harness(); try { await readyBrands(h); const request = h.reviews[0], memo = h.memos[0]; h.unmount(); assert.equal(request.args[1].signal.aborted, true); assert.equal(memo.args[1].aborted, true); assert.equal(h.timers.size, 0); assert.equal(h.unsubscribed(), true); request.resolve(page([row()])); memo.resolve([]); await h.flush(); assert.equal(h.lateUpdates(), 0); } finally { h.dispose(); }
+  const h = harness(); try { await readyBrands(h); const request = h.reviews[0], memo = h.memos[0]; h.unmount(); assert.equal(request.args[1].signal.aborted, true); assert.equal(memo.args[1].aborted, true); assert.equal(h.timers.size, 0); assert.equal(h.unsubscribed(), true); request.resolve(page([row()])); memo.resolve(page([])); await h.flush(); assert.equal(h.lateUpdates(), 0); } finally { h.dispose(); }
 });
 test('double next clicks issue one request; appended sources deduplicate without claiming whole-brand totals', async () => {
   const h = harness(); try { await readyBrands(h); await readyReviews(h, [row()], cursor()); const click = nextButton(h).props.onClick, first = click(), second = click(); assert.equal(h.reviews.length, 2); h.tree(); assert.equal(nextButton(h).props.disabled, true); assert.match(h.html(), /다음 원문을 불러오는 중/); assert.deepEqual(h.reviews[1].args[1].cursor, cursor()); h.reviews[1].resolve(page([row(2, { musinsa_review_id: row().musinsa_review_id }), row(3)], null, 2)); await Promise.all([first, second]); await h.flush(); assert.match(h.html(), /불러온 원문 2건 \(저장 행 3개에서 원천 ID 중복 제외\)/); assert.equal(boxes(h).length, 2); assert.match(h.html(), /원천 수집 완료를 뜻하지는 않습니다/); } finally { h.dispose(); }
@@ -159,7 +159,7 @@ for (const outcome of ['fulfill', 'reject']) test(`stale initial auth ${outcome}
   const h = harness(w.weeklyHref(SCOPE), { deferredAuth: true, storage: new Map([[draftLib.weeklyDraftKey(UB), draftLib.serializeWeeklyDraft(draft({ observation: 'New B draft' }))]]) }); try { h.auth(UB); await readyBrands(h); await readyReviews(h); assert.equal(control(h, '읽고 확인한 관찰').props.value, 'New B draft'); if (outcome === 'fulfill') h.initialAuth.resolve({ data: { user: { id: UA } }, error: null }); else h.initialAuth.reject(Error('old offline request')); await h.flush(); assert.equal(control(h, '읽고 확인한 관찰').props.value, 'New B draft'); assert.equal(boxes(h)[0].props.disabled, false); } finally { h.dispose(); }
 });
 test('same-brand account change cancels old own-memo request and refuses late private results', async () => {
-  const h = harness(); try { await readyBrands(h); const old = h.memos[0]; assert.equal(old.args[2], UA); h.auth(UB); await h.flush(); assert.equal(old.args[1].aborted, true); assert.equal(h.memos.length, 2); assert.equal(h.memos[1].args[2], UB); h.memos[1].resolve([{ id: id(502), body: '관찰: Account B own memo', created_at: SCOPE.at }]); await h.flush(); old.resolve([{ id: id(501), body: '관찰: Account A private memo', created_at: SCOPE.at }]); await h.flush(); assert.match(h.html(), /Account B own memo/); assert.doesNotMatch(h.html(), /Account A private memo/); } finally { h.dispose(); }
+  const h = harness(); try { await readyBrands(h); const old = h.memos[0]; assert.equal(old.args[2], UA); h.auth(UB); await h.flush(); assert.equal(old.args[1].aborted, true); assert.equal(h.memos.length, 2); assert.equal(h.memos[1].args[2], UB); h.memos[1].resolve(page([{ id: id(502), body: '관찰: Account B own memo', created_at: SCOPE.at }])); await h.flush(); old.resolve(page([{ id: id(501), body: '관찰: Account A private memo', created_at: SCOPE.at }])); await h.flush(); assert.match(h.html(), /Account B own memo/); assert.doesNotMatch(h.html(), /Account A private memo/); } finally { h.dispose(); }
 });
 test('unavailable storage warns and permits cancelling navigation outside this weekly workspace', async () => {
   const h = harness(w.weeklyHref(SCOPE), { storageUnavailable: true }); try { await readyBrands(h); await readyReviews(h); select(h); fill(h); assert.match(h.html(), /임시 보관을 사용할 수 없습니다/); assert.ok(h.windowEvents.has('beforeunload')); h.confirmation(false); let prevented = false, stopped = false; const click = { button: 0, defaultPrevented: false, target: { closest: () => ({ getAttribute: () => '/reviews' }) }, preventDefault: () => { prevented = true; }, stopPropagation: () => { stopped = true; } }; h.documentEvents.get('click')(click); assert.equal(prevented, true); assert.equal(stopped, true); prevented = false; stopped = false; click.target.closest = () => ({ getAttribute: () => w.weeklyHref(OTHER) }); h.documentEvents.get('click')(click); assert.equal(prevented, false); assert.equal(stopped, false); } finally { h.dispose(); }
@@ -270,4 +270,51 @@ test('high pagination cancellation, timeout, and account-private draft/save beha
     h.commit(w.weeklyHref({ ...high, product: PA })); const pending = h.reviews.at(-1); pending.args[1].signal.addEventListener('abort', () => pending.reject(pending.args[1].signal.reason), { once: true });
     assert.ok([...h.timers.values()].every(t => t.delay === 8000)); h.fireTimeouts(); await h.flush(); assert.match(h.html(), /0건으로 판단하지 마세요/); assert.doesNotMatch(h.html(), /이 범위에서 저장된 원문을 찾지 못했습니다/);
   } finally { h.dispose(); }
+});
+
+test('manual memo pages reach memo 11 and 31, retain evidence links, and serialize duplicate clicks', async () => {
+  const h = harness(), rows = Array.from({ length: 31 }, (_, i) => ({ id: id(600-i), created_at: '2024-03-06T00:00:00.123456+00:00', body: w.buildWeeklyMemo(draft({ observation: `Memo fixture ${i+1}` })) }));
+  try {
+    await readyBrands(h);
+    h.memos[0].resolve(page(rows.slice(0,10), { created_at: rows[9].created_at, id: rows[9].id })); await h.flush();
+    for (let offset=10; offset<31; offset+=10) {
+      const click = h.find('button', '이전 메모 10개 더 보기').props.onClick;
+      const loading = click(); click(); h.tree();
+      assert.equal(h.memos.length, 1+Math.ceil(offset/10));
+      assert.equal(h.find('button', '이전 메모 10개 더 보기').props.disabled, true);
+      assert.deepEqual(h.memos.at(-1).args[3], { created_at: rows[offset-1].created_at, id: rows[offset-1].id });
+      const batch = rows.slice(offset, offset+10), last=batch.at(-1);
+      h.memos.at(-1).resolve(page(batch, offset+10<31 ? {created_at:last.created_at,id:last.id}:null)); await loading; await h.flush();
+      assert.match(h.html(), /Memo fixture 11/);
+    }
+    assert.match(h.html(), /Memo fixture 31/); assert.equal(h.find('button','이전 메모 10개 더 보기'), undefined);
+    assert.equal(h.nodes().filter(n=>n.type==='a' && textOf(n)==='저장한 메모').length,31);
+    assert.equal(h.nodes().filter(n=>n.type==='a' && textOf(n)==='당시 근거 다시 보기').length,31);
+  } finally {h.dispose();}
+});
+test('memo next-page error and timeout keep prior rows and retry the same cursor', async () => {
+  const h=harness(), c={created_at:SCOPE.at,id:id(501)}, rows=[{...c,body:'관찰: Kept memo'}];
+  try {await readyBrands(h); h.memos[0].resolve(page(rows,c)); await h.flush();
+    const loading=h.find('button','이전 메모 10개 더 보기').props.onClick(); h.memos[1].reject(Error('offline')); await loading; await h.flush();
+    assert.match(h.html(),/Kept memo/); const retry=h.find('button','메모 다시 조회').props.onClick(); assert.deepEqual(h.memos[2].args[3],c);
+    h.memos[2].args[1].addEventListener('abort',()=>h.memos[2].reject(Error('timeout')),{once:true}); h.fireTimeouts(); await retry; await h.flush();
+    assert.match(h.html(),/Kept memo/); assert.match(h.html(),/메모가 없는 것은 아닙니다/);
+    const again=h.find('button','메모 다시 조회').props.onClick(); h.memos[3].resolve(page([])); await again; await h.flush(); assert.match(h.html(),/더 불러올 이전 검토 메모가 없습니다/);
+  }finally{h.dispose();}
+});
+for (const change of ['brand','account','logout','unmount']) test(`memo pagination cancels on ${change} and rejects late private rows`,async()=>{
+  const h=harness(),c={created_at:SCOPE.at,id:id(501)};
+  try{await readyBrands(h);h.memos[0].resolve(page([{...c,body:'관찰: Initial memo'}],c));await h.flush();
+    const loading=h.find('button','이전 메모 10개 더 보기').props.onClick(),old=h.memos[1];
+    if(change==='brand')h.commit(w.weeklyHref(OTHER));else if(change==='account')h.auth(UB);else if(change==='logout')h.auth(null);else h.unmount();
+    assert.equal(old.args[1].aborted,true);old.resolve(page([{id:id(500),created_at:SCOPE.at,body:'관찰: Private late page'}]));await loading;await h.flush();
+    if(change!=='unmount'){assert.doesNotMatch(h.html(),/Private late page|Initial memo/);if(change==='brand'||change==='account')assert.equal(h.memos.at(-1).args[3],null);}
+    assert.equal(h.lateUpdates(),0);
+  }finally{h.dispose();}
+});
+
+test('memo deadline settles UI even if authentication or transport ignores abort',async()=>{
+ const h=harness();try{await readyBrands(h);const old=h.memos[0];h.fireTimeouts();await h.flush();assert.match(h.html(),/메모가 없는 것은 아닙니다/);assert.doesNotMatch(h.html(),/이전 검토를 불러오는 중/);
+ h.find('button','메모 다시 조회').props.onClick();h.memos[1].resolve(page([]));await h.flush();old.resolve(page([{id:id(999),created_at:SCOPE.at,body:'관찰: Late timeout data'}]));await h.flush();assert.doesNotMatch(h.html(),/Late timeout data/);assert.match(h.html(),/아직 이 브랜드의 상품 개선 검토 메모가 없습니다/);
+ }finally{h.dispose();}
 });

@@ -6,7 +6,7 @@ import { fetchOwnBrands } from '@/lib/queries';
 import { createNote } from '@/lib/queries-me';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { restoreWeeklyDraft, serializeWeeklyDraft, weeklyDraftKey, weeklySubmissionId, type WeeklyDraft } from '@/lib/weekly-review-draft';
-import { fetchWeeklyReviews, fetchWeeklyMemos, type WeeklySavedMemo } from '@/lib/queries-weekly-review';
+import { fetchWeeklyReviews, fetchWeeklyMemos, type WeeklySavedMemo, type WeeklyMemoCursor } from '@/lib/queries-weekly-review';
 import { WEEKLY_EVIDENCE_LIMIT, WEEKLY_MEMO_TAG, buildWeeklyMemo, formatWeeklyTime, kstClosedWeek,
   parseWeeklyLocation, uniqueWeeklyEvidence, weeklyHref, weeklyMemoHref, weeklyPeriodError,
   type WeeklyEvidence, type WeeklyCursor, type WeeklyScope } from '@/lib/weekly-review';
@@ -41,7 +41,9 @@ export default function WeeklyReviewWorkspace() {
   const version = React.useRef(0);
   const listCache = React.useRef(new Map<string, ReviewState>());
   const [retry, setRetry] = React.useState(0);
-  const [memos, setMemos] = React.useState<{ owner: string; brand: string; rows: WeeklySavedMemo[]; loading: boolean; error: string | null }>({ owner: '', brand: '', rows: [], loading: false, error: null });
+  const [memos, setMemos] = React.useState<{ owner: string; brand: string; rows: WeeklySavedMemo[]; next: WeeklyMemoCursor | null; loading: boolean; error: string | null }>({ owner: '', brand: '', rows: [], next: null, loading: false, error: null });
+  const memoRequest = React.useRef<AbortController | null>(null);
+  const memoVersion = React.useRef(0);
   const [memoRetry, setMemoRetry] = React.useState(0);
   const [draftValue, setDraft] = React.useState<WeeklyDraft | null>(null);
   const [draftUser, setDraftUser] = React.useState<string | null>(null);
@@ -160,17 +162,48 @@ export default function WeeklyReviewWorkspace() {
     if (listCache.current.size > 5) listCache.current.delete(listCache.current.keys().next().value!);
   }, [reviewState]);
 
-  React.useEffect(() => {
-    if (!selectedBrandId || !draftUser) { setMemos({ owner: '', brand: '', rows: [], loading: false, error: null }); return; }
-    const brand = selectedBrandId;
-    const controller = new AbortController(); let active = true;
+  const readMemos = async (brand: string, owner: string, cursor: WeeklyMemoCursor | null = null) => {
+    if (memoRequest.current) return;
+    const current = ++memoVersion.current;
+    const controller = new AbortController();
+    memoRequest.current = controller;
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    setMemos({ owner: draftUser, brand, rows: [], loading: true, error: null });
-    fetchWeeklyMemos(brand, controller.signal, draftUser).then(rows => { if (active) setMemos({ owner: draftUser, brand, rows, loading: false, error: null }); })
-      .catch(() => { if (active) setMemos({ owner: draftUser, brand, rows: [], loading: false, error: '이전 메모를 불러오지 못했습니다. 메모가 없는 것은 아닙니다.' }); })
-      .finally(() => clearTimeout(timeout));
-    return () => { active = false; controller.abort(); clearTimeout(timeout); };
+    let rejectAborted: (reason: unknown) => void = () => {};
+    const aborted = new Promise<never>((_resolve, reject) => { rejectAborted = reject; });
+    const onAbort = () => { clearTimeout(timeout); rejectAborted(controller.signal.reason); };
+    controller.signal.addEventListener('abort', onAbort, { once: true });
+    setMemos(previous => cursor ? { ...previous, loading: true, error: null }
+      : { owner, brand, rows: [], next: null, loading: true, error: null });
+    try {
+      const page = await Promise.race([fetchWeeklyMemos(brand, controller.signal, owner, cursor), aborted]);
+      if (controller.signal.aborted) throw controller.signal.reason;
+      if (mounted.current && memoVersion.current === current) {
+        setMemos(previous => ({ owner, brand, rows: cursor
+          ? [...previous.rows, ...page.rows.filter(row => !previous.rows.some(existing => existing.id === row.id))] : page.rows,
+          next: page.next, loading: false, error: null }));
+      }
+    } catch {
+      if (mounted.current && memoVersion.current === current) setMemos(previous => ({ ...previous, loading: false,
+        error: '이전 메모를 불러오지 못했습니다. 메모가 없는 것은 아닙니다.' }));
+    } finally {
+      clearTimeout(timeout);
+      controller.signal.removeEventListener('abort', onAbort);
+      if (memoRequest.current === controller) memoRequest.current = null;
+    }
+  };
+  React.useEffect(() => {
+    if (!selectedBrandId || !draftUser) { setMemos({ owner: '', brand: '', rows: [], next: null, loading: false, error: null }); return; }
+    void readMemos(selectedBrandId, draftUser);
+    return () => {
+      ++memoVersion.current; memoRequest.current?.abort(); memoRequest.current = null; // eslint-disable-line react-hooks/exhaustive-deps -- invalidate active request generation
+    };
+    // Owner/brand change and explicit refresh after save invalidate the private list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBrandId, draftUser, memoRetry]);
+  const loadMoreMemos = () => {
+    if (!selectedBrandId || !draftUser || memos.owner !== draftUser || memos.brand !== selectedBrandId || memos.loading) return;
+    return readMemos(selectedBrandId, draftUser, memos.next);
+  };
 
   React.useEffect(() => {
     if (!draft || draftStorage !== 'unavailable') return;
@@ -310,9 +343,9 @@ export default function WeeklyReviewWorkspace() {
       </section>
       <aside className={styles.stack} aria-label="검토 기록">
         <section className={styles.panel}>
-          <h2>지난 검토에서 이어가기</h2><p className={styles.muted}>이 브랜드에서 내가 저장한 최근 검토 메모 최대 10개입니다. 다음 확인일은 메모이며 자동 알림은 아닙니다.</p>
+          <h2>지난 검토에서 이어가기</h2><p className={styles.muted}>이 브랜드에서 내가 저장한 검토 메모를 최신순으로 10개씩 불러옵니다. 다음 확인일은 메모이며 자동 알림은 아닙니다.</p>
           {memos.owner === draftUser && memos.brand === scope.brand && memos.loading && <p role="status">이전 검토를 불러오는 중…</p>}
-          {memos.owner === draftUser && memos.brand === scope.brand && memos.error && <p role="alert">{memos.error} <button className={styles.secondary} onClick={() => setMemoRetry(value => value + 1)}>메모 다시 조회</button></p>}
+          {memos.owner === draftUser && memos.brand === scope.brand && memos.error && <p role="alert">{memos.error} <button className={styles.secondary} onClick={loadMoreMemos}>메모 다시 조회</button></p>}
           {memos.owner === draftUser && memos.brand === scope.brand && !memos.loading && !memos.error && memos.rows.length === 0 && <p className={styles.muted}>아직 이 브랜드의 상품 개선 검토 메모가 없습니다.</p>}
           <ul className={styles.memoList}>{memos.owner === draftUser && memos.brand === scope.brand && memos.rows.map(memo => <li key={memo.id}>
             <time className={styles.muted}>{formatWeeklyTime(memo.created_at)}</time>
@@ -320,6 +353,8 @@ export default function WeeklyReviewWorkspace() {
             <div className={styles.actions}><Link href={`/me/notes/${memo.id}?view=memo`}>저장한 메모</Link>
               {weeklyMemoHref(memo.body) && <Link href={weeklyMemoHref(memo.body)!} scroll={false}>당시 근거 다시 보기</Link>}</div>
           </li>)}</ul>
+          {memos.owner === draftUser && memos.brand === scope.brand && memos.next && <button className={styles.secondary} disabled={memos.loading} onClick={loadMoreMemos}>이전 메모 10개 더 보기</button>}
+          {memos.owner === draftUser && memos.brand === scope.brand && !memos.next && !memos.loading && !memos.error && memos.rows.length > 0 && <p className={styles.muted}>더 불러올 이전 검토 메모가 없습니다.</p>}
         </section>
       </aside>
     </div>}
