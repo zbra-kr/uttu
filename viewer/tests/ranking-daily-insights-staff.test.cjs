@@ -32,7 +32,7 @@ function fixture() {
     'next/link':{__esModule:true,default:p=>React.createElement('a',p)},
     '@/hooks/useViewport':{useIsMobile:()=>mobile}, '@/hooks/useKstToday':{useKstToday:()=> '2026-10-08'},
     '@/lib/format':{kstDaysAgo:()=> '2026-10-08'},
-    '@/lib/queries':{CATEGORY_MAP:{'000':'전체'},AGE_MAP:{AGE_BAND_ALL:'전체'}},
+    '@/lib/queries':{CATEGORY_MAP:{'000':'전체','001':'상의','002':'아우터'},AGE_MAP:{AGE_BAND_ALL:'전체',AGE_BAND_25:'25~30세'}},
     '@/lib/supabase/client':{supabaseBrowser:()=>({auth:{getUser:async()=>({data:{user:user?{id:user}:null}}),onAuthStateChange(fn){listeners.add(fn);return{data:{subscription:{unsubscribe(){listeners.delete(fn)}}}}}}})},
     '@/lib/queries-ranking-daily':{fetchRankingDaily:(request,signal)=>new Promise((resolve,reject)=>calls.push({request,signal,resolve,reject}))},
     '@/lib/cs-daily-review-context':{useCSDailyReviewState:()=>null},
@@ -47,7 +47,7 @@ function fixture() {
   function App(){return React.createElement(provider.default,null,path==='/today'?React.createElement(Page):null);}
   const response=(call,patch={})=>{
     const req=call.request,date=req.date, previousDate=load('src/lib/ranking-daily-insights.ts').previousCalendarDate(date);
-    const row=(day,rank)=>({store_code:'musinsa',snapshot_date:day,category_code:'000',gender_filter:'A',age_filter:'AGE_BAND_ALL',musinsa_no:user==='account-a'?'1':'2',rank_position:rank,product_name:'stored product',final_price:10000,discount_rate:10});
+    const row=(day,rank)=>({store_code:'musinsa',snapshot_date:day,category_code:req.categoryCode,gender_filter:req.genderFilter,age_filter:req.ageFilter,musinsa_no:user==='account-a'?'1':'2',rank_position:rank,product_name:'stored product',final_price:10000,discount_rate:10});
     return{request:req,date,previousDate,current:[row(date,1)],previous:[row(previousDate,10)],...patch};
   };
   return{App,calls,response,setSearch(v){search=v},setMobile(v){mobile=v},setPath(v){path=v},auth(event,id){user=id;for(const fn of [...listeners])fn(event,id?{user:{id}}:null)}};
@@ -87,5 +87,44 @@ test('actual Today desktop/mobile show independent Staff stored cards, pin dates
     f.setSearch('tab=cs&date=2026-01-01');await update(f,root);assert.ok(pending.signal.aborted);const count=f.calls.length;
     for(const search of ['tab=executive','tab=staff&date=2026-10-09','tab=staff&date=2026-02-30','tab=staff&date=bad']){f.setSearch(search);await update(f,root);assert.equal(f.calls.length,count);assert.equal(articles(root).length,0);}
     f.setSearch('tab=staff&date=2026-10-08');await update(f,root);const exit=f.calls.at(-1);f.setPath('/me');await update(f,root);assert.ok(exit.signal.aborted);
+  } finally {if(root)await React.act(async()=>root.unmount());}
+});
+
+test('Staff scope URL validates allowed values and preserves date/tab/unrelated params', () => {
+  const { staffPlanningFilterFromParams: parse, staffPlanningFilterToParams: encode } = load('src/lib/staff-daily-planning.ts');
+  const filter={selectedCategory:'002',gender:'F',age:'AGE_BAND_25'};
+  const params=encode(new URLSearchParams('tab=staff&date=2024-03-01&keep=yes'),filter);
+  assert.deepEqual(parse(new URLSearchParams(params.toString())),filter);
+  assert.equal(params.get('date'),'2024-03-01');assert.equal(params.get('keep'),'yes');
+  assert.deepEqual(dailyRequest(staffDailyPlanningScope('2024-03-01','2026-10-08',filter)),{categoryCode:'002',genderFilter:'F',ageFilter:'AGE_BAND_25',date:'2024-02-29'});
+  for(const raw of ['planningCategory=999','planningGender=X','planningAge=bad','planningCategory=001&planningCategory=002','planningGender=','planningAge=AGE_BAND_ALL&planningAge=AGE_BAND_ALL']) assert.equal(parse(new URLSearchParams(raw)),null);
+});
+test('Staff filters switch A→B→A, ignore late receipts, restore URLs and invalidate auth', async()=>{
+  const f=fixture();let root;
+  const A='tab=staff&date=2026-10-08&planningCategory=001&planningGender=M&planningAge=AGE_BAND_25';
+  const B='tab=staff&date=2026-10-08&planningCategory=002&planningGender=F&planningAge=AGE_BAND_ALL';
+  try {
+    f.setSearch(A);await React.act(async()=>{root=Renderer.create(React.createElement(f.App))});
+    const a1=f.calls.at(-1);assert.equal(a1.request.categoryCode,'001');
+    f.setSearch(B);await update(f,root);const b=f.calls.at(-1);assert.ok(a1.signal.aborted);assert.equal(b.request.genderFilter,'F');
+    f.setSearch(A);await update(f,root);const a2=f.calls.at(-1);assert.notEqual(a1,a2);assert.ok(b.signal.aborted);
+    await React.act(async()=>{b.resolve(f.response(b));a1.resolve(f.response(a1))});assert.equal(articles(root).length,0);
+    await React.act(async()=>a2.resolve(f.response(a2)));assert.equal(articles(root).length,1);
+    const context=new URL(memo(root).props.href,'https://fixture.test').searchParams;
+    assert.equal(context.get('category'),'001');assert.equal(context.get('gender'),'M');assert.equal(context.get('age'),'AGE_BAND_25');assert.equal(context.get('resolvedToDate'),'2026-10-07');
+    // Actual category control updates URL; then route reconciliation renders the new scope.
+    await React.act(async()=>root.root.findByProps({'aria-label':'담당 카테고리'}).props.onChange({target:{value:'002'}}));await update(f,root);
+    assert.equal(f.calls.at(-1).request.categoryCode,'002');assert.equal(f.calls.at(-1).request.genderFilter,'M');
+    await React.act(async()=>root.root.findAllByType('button').find(x=>x.props.children==='여성').props.onClick());await update(f,root);assert.equal(f.calls.at(-1).request.genderFilter,'F');
+    await React.act(async()=>root.root.findAllByProps({className:'pill-group'})[1].findAllByType('button').find(x=>x.props.children==='전체').props.onClick());await update(f,root);assert.equal(f.calls.at(-1).request.ageFilter,'AGE_BAND_ALL');assert.equal(f.calls.at(-1).request.genderFilter,'F');
+    for(const url of [A,B,A]){f.setSearch(url);await update(f,root);assert.equal(f.calls.at(-1).request.categoryCode,new URLSearchParams(url).get('planningCategory'));}
+    const pending=f.calls.at(-1);await React.act(async()=>f.auth('SIGNED_IN','account-b'));assert.ok(pending.signal.aborted);assert.equal(articles(root).length,0);
+    await React.act(async()=>pending.resolve(f.response(pending)));assert.equal(articles(root).length,0);
+    const current=f.calls.at(-1);await React.act(async()=>current.resolve(f.response(current,{previous:[]})));assert.match(JSON.stringify(root.toJSON()),/더 오래된 날짜로 대체하지 않습니다/);
+    const count=f.calls.length;f.setSearch(A+'&planningGender=F');await update(f,root);assert.equal(f.calls.length,count);assert.equal(articles(root).length,0);assert.match(JSON.stringify(root.toJSON()),/URL의 담당 범위/);
+    f.setSearch(B);await update(f,root);await React.act(async()=>f.calls.at(-1).reject(Error('unavailable')));assert.equal(root.root.findAllByProps({role:'alert'}).length,1);
+    await React.act(async()=>root.unmount());root=null;
+    // Shared-link re-entry / refresh creates a fresh authenticated reader for the URL.
+    await React.act(async()=>{root=Renderer.create(React.createElement(f.App))});assert.equal(f.calls.at(-1).request.categoryCode,'002');assert.equal(f.calls.at(-1).request.genderFilter,'F');
   } finally {if(root)await React.act(async()=>root.unmount());}
 });
