@@ -107,10 +107,10 @@ for (const [name, response] of [['error with empty', { data: [], error: {} }], [
 test('review cancellation forwards the original AbortSignal and never returns empty success', async () => {
   const controller = new AbortController(), h = harness(); await h.q.fetchWeeklyReviews(scope, { signal: controller.signal }); assert.deepEqual(ops(h.calls[0]), [...BASE, ['abortSignal', controller.signal]]); controller.abort(); await assert.rejects(harness().q.fetchWeeklyReviews(scope, { signal: controller.signal }), e => e.name === 'AbortError');
 });
-test('saved memo reads are exactly own user + brand + tag, latest ten, no author or Teams fanout', async () => {
-  const rows = [{ id: id(900), body: 'Saved memo', created_at: scope.at }], h = harness([ok(rows)]); assert.deepEqual(await h.q.fetchWeeklyMemos(BRAND), rows); assert.deepEqual(h.authCalls, ['getUser']); assert.equal(h.calls.length, 1); assert.equal(h.calls[0].table, 'user_notes');
-  assert.deepEqual(h.calls[0].ops, [['select', 'id,body,created_at'], ['eq', 'user_id', USER], ['eq', 'entity_type', 'brand'], ['eq', 'entity_id', BRAND], ['contains', 'tags', [w.WEEKLY_MEMO_TAG]], ['order', 'created_at', { ascending: false }], ['limit', 10]]);
-  assert.deepEqual(await harness().q.fetchWeeklyMemos(BRAND), []);
+test('saved memo reads are exactly own user + brand + tag, stable ten-row page, no author or Teams fanout', async () => {
+  const rows = [{ id: id(900), body: 'Saved memo', created_at: scope.at }], h = harness([ok(rows)]); assert.deepEqual(await h.q.fetchWeeklyMemos(BRAND), { rows, next: null }); assert.deepEqual(h.authCalls, ['getUser']); assert.equal(h.calls.length, 1); assert.equal(h.calls[0].table, 'user_notes');
+  assert.deepEqual(h.calls[0].ops, [['select', 'id,body,created_at'], ['eq', 'user_id', USER], ['eq', 'entity_type', 'brand'], ['eq', 'entity_id', BRAND], ['contains', 'tags', [w.WEEKLY_MEMO_TAG]], ['order', 'created_at', { ascending: false }], ['order', 'id', { ascending: false }], ['limit', 11]]);
+  assert.deepEqual(await harness().q.fetchWeeklyMemos(BRAND), { rows: [], next: null });
 });
 test('memo invalid brand and auth failures prevent table access; account mismatch never reads other-user notes', async () => {
   const invalid = harness(); await assert.rejects(invalid.q.fetchWeeklyMemos('bad')); assert.deepEqual(invalid.authCalls, []); assert.equal(invalid.calls.length, 0);
@@ -165,4 +165,44 @@ test('high queries keep exact own brand/product/date/cutoff/order, sentinel/keys
 test('high memo cannot hide below-four evidence behind source deduplication', () => {
   const original = input({ scope: { ...scope, rating: 'high' }, evidence: [row(1, { rating: 4 }), row(2, { rating: 3, musinsa_review_id: row().musinsa_review_id })] });
   assert.throws(() => w.buildWeeklyMemo(original)); assert.equal(drafts.restoreWeeklyDraft(drafts.serializeWeeklyDraft(original)), null);
+});
+
+test('memo cursor preserves microseconds, stable tie-break, lookahead and bounded rows', async () => {
+  const rows=Array.from({length:11},(_,i)=>({id:id(900-i),body:`Memo ${i}`,created_at:'2024-03-06T00:00:00.123456+00:00'})),h=harness([ok(rows)]);
+  const first=await h.q.fetchWeeklyMemos(BRAND);
+  assert.deepEqual(first.rows,rows.slice(0,10));assert.deepEqual(first.next,{created_at:rows[9].created_at,id:rows[9].id});
+  const next=harness([ok([rows[10]])]);assert.deepEqual(await next.q.fetchWeeklyMemos(BRAND,undefined,USER,first.next),{rows:[rows[10]],next:null});
+  assert.ok(next.calls[0].ops.some(op=>op[0]==='or' && op[1]===`created_at.lt.${first.next.created_at},and(created_at.eq.${first.next.created_at},id.lt.${first.next.id})`));
+});
+test('unsafe memo cursors are refused before auth or table reads',async()=>{
+  for(const cursor of [{id:'bad',created_at:scope.at},{id:id(900),created_at:'2024-03-06T00:00:00Z),id.gt.any'},{id:id(900),created_at:'bad'}]){
+    const h=harness();await assert.rejects(h.q.fetchWeeklyMemos(BRAND,undefined,USER,cursor));assert.equal(h.calls.length,0);assert.equal(h.authCalls.length,0);
+  }
+});
+
+test('real read adapter traverses a 31-memo fixture with timestamp ties and a newly inserted head without gaps', async () => {
+  const fixture=Array.from({length:31},(_,i)=>({id:id(950-i),body:`Fixture ${i+1}`,created_at:i<21?'2024-03-06T00:00:00.123456+00:00':'2024-03-05T00:00:00.123456+00:00'}));
+  let cursor=null, queries=0;
+  const client={auth:{getUser:async()=>({data:{user:{id:USER}},error:null})},from(table){
+    assert.equal(table,'user_notes');queries++;let boundary=null,limit,order=[],filters=[];
+    const query=new Proxy({}, {get(_target,method){if(method==='then')return(resolve,reject)=>Promise.resolve().then(()=>{
+      assert.equal(limit,11);assert.deepEqual(order,['created_at','id']);
+      assert.ok(filters.some(f=>f[0]==='user_id'&&f[1]===USER));assert.ok(filters.some(f=>f[0]==='entity_id'&&f[1]===BRAND));
+      const rows=fixture.filter(r=>!boundary||r.created_at<boundary.created_at||(r.created_at===boundary.created_at&&r.id<boundary.id));
+      return ok(rows.slice(0,limit));
+    }).then(resolve,reject);
+    return(...args)=>{if(method==='or'){const match=/^created_at.lt.(.*),and\(created_at.eq.(.*),id.lt.(.*)\)$/.exec(args[0]);assert.ok(match);assert.equal(match[1],match[2]);boundary={created_at:match[1],id:match[3]};}
+      if(method==='limit')limit=args[0];if(method==='order')order.push(args[0]);if(method==='eq')filters.push(args);return query;};}});return query;
+  }};
+  const q=load('src/lib/queries-weekly-review.ts',{'./supabase/client':{supabaseBrowser:()=>client}}),seen=[];
+  do {const result=await q.fetchWeeklyMemos(BRAND,undefined,USER,cursor);seen.push(...result.rows.map(r=>r.body));cursor=result.next;
+    if(queries===1)fixture.unshift({id:id(999),body:'New head',created_at:'2024-03-07T00:00:00.000000+00:00'});
+  }while(cursor);
+  assert.equal(queries,4);assert.deepEqual(seen,Array.from({length:31},(_,i)=>`Fixture ${i+1}`));assert.equal(new Set(seen).size,31);
+});
+
+test('abort during auth prevents constructing a memo table read',async()=>{
+ const controller=new AbortController();let tables=0;
+ const q=load('src/lib/queries-weekly-review.ts',{'./supabase/client':{supabaseBrowser:()=>({auth:{getUser:async()=>{controller.abort();return{data:{user:{id:USER}},error:null};}},from(){tables++;throw Error('Must not read after abort');}})}});
+ await assert.rejects(q.fetchWeeklyMemos(BRAND,controller.signal,USER),e=>e.name==='AbortError');assert.equal(tables,0);
 });

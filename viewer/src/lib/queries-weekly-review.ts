@@ -5,6 +5,8 @@ import { WEEKLY_PAGE_SIZE, WEEKLY_EVIDENCE_LIMIT, WEEKLY_MEMO_TAG, isWeeklyId, i
   type WeeklyScope, type WeeklyCursor, type WeeklyEvidence } from './weekly-review';
 
 export interface WeeklyPage { rows: WeeklyEvidence[]; next: WeeklyCursor | null; fetchedRows: number }
+export interface WeeklyMemoCursor { created_at: string; id: string }
+export interface WeeklyMemoPage { rows: WeeklySavedMemo[]; next: WeeklyMemoCursor | null }
 export interface WeeklySavedMemo { id: string; body: string; created_at: string }
 
 /**
@@ -50,18 +52,27 @@ export async function fetchWeeklyReviews(scope: WeeklyScope, options: {
     next: !evidence.length && data.length > WEEKLY_PAGE_SIZE && last ? { date: last.review_date, id: last.id } : null };
 }
 
-/** Only current user's brand-tagged memos, no author/mention/Teams lookups or writes. */
-export async function fetchWeeklyMemos(brand: string, signal?: AbortSignal, expectedUserId?: string): Promise<WeeklySavedMemo[]> {
+/** Bounded own-user/brand/tag keyset read. Preserve raw timestamp precision for tied rows. */
+export async function fetchWeeklyMemos(brand: string, signal?: AbortSignal, expectedUserId?: string, cursor?: WeeklyMemoCursor | null): Promise<WeeklyMemoPage> {
   if (!isWeeklyId(brand)) throw new Error('브랜드를 확인해 주세요.');
+  if (cursor && (!isWeeklyId(cursor.id) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(cursor.created_at)
+    || !Number.isFinite(Date.parse(cursor.created_at)))) throw new Error('메모 페이지 조건을 확인해 주세요.');
+  if (signal?.aborted) throw signal.reason;
   const sb = supabaseBrowser();
   const { data: auth, error: authError } = await sb.auth.getUser();
   if (authError || !auth.user) throw new Error('내 검토 메모를 보려면 로그인이 필요합니다.');
   if (expectedUserId && auth.user.id !== expectedUserId) throw new Error('로그인 계정이 변경되었습니다. 다시 조회해 주세요.');
+  if (signal?.aborted) throw signal.reason;
   let query = sb.from('user_notes').select('id,body,created_at')
     .eq('user_id', auth.user.id).eq('entity_type', 'brand').eq('entity_id', brand)
-    .contains('tags', [WEEKLY_MEMO_TAG]).order('created_at', { ascending: false }).limit(10);
+    .contains('tags', [WEEKLY_MEMO_TAG]).order('created_at', { ascending: false })
+    .order('id', { ascending: false }).limit(11);
+  if (cursor) query = query.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`);
   if (signal) query = query.abortSignal(signal);
   const { data, error } = await query;
   if (error || !Array.isArray(data)) throw new Error('이전 검토 메모를 불러오지 못했습니다.');
-  return data as WeeklySavedMemo[];
+  if (signal?.aborted) throw signal.reason;
+  const rows = (data as WeeklySavedMemo[]).slice(0, 10);
+  const last = rows.at(-1);
+  return { rows, next: data.length > 10 && last ? { created_at: last.created_at, id: last.id } : null };
 }
