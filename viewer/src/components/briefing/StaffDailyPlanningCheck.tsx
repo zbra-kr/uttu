@@ -31,22 +31,22 @@ export default function StaffDailyPlanningCheck({ state, compact }: {
   const filter = state.filter ?? DEFAULT_STAFF_FILTER;
   return <div>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
-      <FilterBlock label="담당 카테고리">
-        <select aria-label="담당 카테고리" className="input-date" value={filter.selectedCategory}
+      <div><FilterBlock label="담당 카테고리">
+        <select aria-label="담당 카테고리" className="input-date" style={{ height: 26, padding: '0 8px' }} value={filter.selectedCategory}
           onChange={e => state.changeFilter({ ...filter, selectedCategory: e.target.value })}>
-          {Object.entries(CATEGORY_MAP).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+          {Object.entries(CATEGORY_MAP).sort(([a], [b]) => a.localeCompare(b)).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
         </select>
-      </FilterBlock>
-      <FilterBlock label="성별"><PillGroup value={filter.gender} onChange={gender => state.changeFilter({ ...filter, gender })}
-        options={[["A", "전체"], ["M", "남성"], ["F", "여성"]]} /></FilterBlock>
-      <FilterBlock label="연령"><PillGroup value={filter.age} onChange={age => state.changeFilter({ ...filter, age })}
-        options={Object.entries(AGE_MAP)} /></FilterBlock>
+      </FilterBlock></div>
+      <div><FilterBlock label="성별"><PillGroup value={filter.gender} onChange={gender => state.changeFilter({ ...filter, gender })}
+        options={[["A", "전체"], ["M", "남성"], ["F", "여성"]]} /></FilterBlock></div>
+      <div><FilterBlock label="연령"><PillGroup value={filter.age} onChange={age => state.changeFilter({ ...filter, age })}
+        options={Object.entries(AGE_MAP)} /></FilterBlock></div>
     </div>
     {!state.filter && <p role="alert">URL의 담당 범위가 올바르지 않아 조회하지 않았습니다. 범위를 다시 선택하세요.</p>}
     <p className="dim" style={{ fontSize: 11, lineHeight: 1.6, margin: '0 0 8px' }}>
       브리핑 전일의 저장 관측 · 무신사 {CATEGORY_MAP[filter.selectedCategory]} · {filter.gender === 'A' ? '전체 성별' : filter.gender === 'M' ? '남성' : '여성'} · {AGE_MAP[filter.age]} 연령.
       AI 브리핑 생성 여부와 별개로 확인할 자료이며, 판매량·수요 증가나 순위 상승 원인의 증거가 아닙니다.
     </p>
-    <RankingDailyInsights scope={state.scope} load={state.load} compact={compact} heading="오늘 영업기획 확인" />
+    {state.scope && <RankingDailyInsights scope={state.scope} load={state.load} compact={compact} heading="오늘 영업기획 확인" />}
   </div>;
 }
