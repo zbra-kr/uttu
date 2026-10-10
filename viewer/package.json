@@ -29,7 +29,7 @@
     "test:ranking-daily": "node --test tests/ranking-daily-insights*.test.cjs",
     "test:product-history-insights": "node --test --unhandled-rejections=strict tests/product-history-insights*.test.cjs",
     "test:product-category": "node --test --unhandled-rejections=strict tests/product-category-*.test.cjs",
-    "test:performance": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/performance-*.test.cjs",
+    "test:performance": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/performance-*.test.cjs tests/shell-navigation*.test.cjs",
     "test:report-evidence": "node --test tests/report-*-evidence.test.cjs tests/report-responsive-owner.test.cjs",
     "test:briefing-kpi": "node --test --test-concurrency=1 --unhandled-rejections=strict tests/briefing-kpi.test.cjs tests/briefing-read-state.test.cjs",
     "test:home-ranking": "node --test --unhandled-rejections=strict tests/home-ranking-*.test.cjs",

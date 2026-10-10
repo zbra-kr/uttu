@@ -1,5 +1,6 @@
 'use client';
 import React from 'react';
+import { SHELL_SEARCH_PAGES, shellPageMatches } from '@/lib/shell-navigation';
 import { useRouter } from 'next/navigation';
 import { IcSearch } from '../ui/icons';
 import { searchCompanies, searchBrands, searchProducts } from '@/lib/queries';
@@ -30,19 +31,7 @@ function dedupeNo<T extends { musinsa_no: number }>(arr: T[]): T[] {
   return arr.filter(x => { if (seen.has(x.musinsa_no)) return false; seen.add(x.musinsa_no); return true; });
 }
 
-const PAGES = [
-  { label: '홈',         path: '/' },
-  { label: '랭킹',       path: '/ranking' },
-  { label: '이상탐지',   path: '/anomaly' },
-  { label: '프로모션',   path: '/promo' },
-  { label: '스냅샷',     path: '/snap' },
-  { label: '매거진',     path: '/magazine' },
-  { label: '리뷰',       path: '/reviews' },
-  { label: '브랜드 랭킹', path: '/brand-ranking' },
-  { label: '회사 목록',  path: '/companies' },
-  { label: '매핑',       path: '/admin/mapping' },
-  { label: '내 프로필',   path: '/me' },
-];
+const PAGES = SHELL_SEARCH_PAGES;
 
 type ResultItem =
   | { kind: '페이지';  label: string; path: string }
@@ -81,14 +70,19 @@ export default function CmdK({ open, onClose }: CmdKProps) {
   const inputRef  = React.useRef<HTMLInputElement>(null);
   const timerRef  = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const router    = useRouter();
+  const readEpoch = React.useRef(0);
 
   React.useEffect(() => {
+    readEpoch.current++;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    let focusTimer: ReturnType<typeof setTimeout> | undefined;
     if (open) {
       setQuery(''); setKbdIdx(0);
       setResults(PAGES.map(p => ({ kind: '페이지', ...p })));
       setLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 10);
+      focusTimer = setTimeout(() => inputRef.current?.focus(), 10);
     }
+    return () => { readEpoch.current++; clearTimeout(focusTimer); if (timerRef.current) clearTimeout(timerRef.current); };
   }, [open]);
 
   React.useEffect(() => {
@@ -100,6 +94,7 @@ export default function CmdK({ open, onClose }: CmdKProps) {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const q = e.target.value;
+    const epoch = ++readEpoch.current;
     setQuery(q);
     setKbdIdx(0);
 
@@ -124,6 +119,7 @@ export default function CmdK({ open, onClose }: CmdKProps) {
         Promise.all(kws.map(k => searchProducts(k, 8))),
       ]);
 
+      if (readEpoch.current !== epoch) return;
       const companies = dedupeId(companyBatches.flat()).slice(0, 5);
       const brands    = dedupeId(brandBatches.flat()).slice(0, 5);
       const products  = dedupeNo(productBatches.flat()).slice(0, 8);
@@ -131,7 +127,7 @@ export default function CmdK({ open, onClose }: CmdKProps) {
       // 페이지는 원본 + 스왑 둘 다 로컬 필터
       const pageKws = [...new Set([kw.toLowerCase(), swapped.toLowerCase()])];
       const pageMatches = PAGES
-        .filter(p => pageKws.some(k => p.label.toLowerCase().includes(k)))
+        .filter(p => pageKws.some(k => shellPageMatches(p, k)))
         .map(p => ({ kind: '페이지' as const, ...p }));
 
       const next: ResultItem[] = [

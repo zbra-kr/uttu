@@ -28,6 +28,7 @@ function load(file, role = 'viewer', options = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const requireFixture = id => {
+    if (id === '@/lib/shell-navigation') return require('./helpers/load-source.cjs')('src/lib/shell-navigation.ts');
     if (id === 'react' || id === 'react/jsx-runtime') return require(id);
     if (id === 'next/navigation') return { useRouter: () => ({ push: href => pushed.push(href) }) };
     if (id === 'next/link') return { __esModule: true, default: props => React.createElement('a', props) };

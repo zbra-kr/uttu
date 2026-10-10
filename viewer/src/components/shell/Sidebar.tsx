@@ -1,54 +1,13 @@
 'use client';
 import React from 'react';
+import { SHELL_NAVIGATION, SHELL_GROUPS, shellAncestors, shellGroupsForPath, shellPathMatches } from '@/lib/shell-navigation';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import { IcHome, IcRanking, IcBrandRanking, IcFlag, IcCompany, IcBrand, IcProduct, IcPromo, IcSnap, IcBook, IcReview, IcLink, IcMapping, IcMore, IcChevL, IcChevR, IcChevD, IcShield, IcUsers, IcSpark, IcBell, IcCalendar, IcHelp, IcReport, IcRecommend } from '../ui/icons';
+import { IcMore, IcChevL, IcChevR, IcChevD } from '../ui/icons';
 
-const MANUAL_URL = 'https://www.notion.so/36b7af342d908176b629c6343d1c35a7';
-
-type RouteItem = {
-  id: string;
-  path: string;
-  label: string;
-  Icon: React.ComponentType<{ size?: number; style?: React.CSSProperties }>;
-  parent?: string;
-  external?: boolean;
-  adminOnly?: boolean;
-};
-
-const ROUTES: RouteItem[] = [
-  { id: 'home',                path: '/',                    label: '홈',           Icon: IcHome                      },
-  { id: 'today',               path: '/today',               label: '오늘의 매거진',Icon: IcSpark                     },
-  { id: 'report',              path: '/report',              label: '심층 리포트',  Icon: IcReport                    },
-  { id: 'ranking',             path: '/ranking',             label: '상품 랭킹',    Icon: IcRanking                   },
-  { id: 'product',             path: '/product',             label: '상품',         Icon: IcProduct,   parent: 'ranking'       },
-  { id: 'brand-ranking',       path: '/brand-ranking',       label: '브랜드 랭킹',  Icon: IcBrandRanking              },
-  { id: 'brand',               path: '/brand',               label: '브랜드',       Icon: IcBrand,     parent: 'brand-ranking' },
-  { id: 'anomaly',             path: '/anomaly',             label: '이상탐지',     Icon: IcFlag                      },
-  { id: 'companies',           path: '/companies',           label: '회사 목록',    Icon: IcCompany                   },
-  { id: 'company',             path: '/company',             label: '회사 상세',    Icon: IcCompany,   parent: 'companies'     },
-  { id: 'promo',               path: '/promo',               label: '프로모션',     Icon: IcPromo                     },
-  { id: 'recommend',           path: '/recommend',           label: '추천판',       Icon: IcRecommend                 },
-  { id: 'snap',                path: '/snap',                label: '스냅샷',       Icon: IcSnap                      },
-  { id: 'magazine',            path: '/magazine',            label: '매거진',       Icon: IcBook                      },
-  { id: 'reviews',             path: '/reviews',             label: '리뷰',         Icon: IcReview                    },
-  { id: 'matching',            path: '/matching',            label: '자사 매칭',    Icon: IcLink                      },
-  { id: 'manual',              path: MANUAL_URL,             label: '사용 매뉴얼',  Icon: IcHelp,      external: true          },
-  // ── 관리자 그룹 (adminOnly) ─────────────────────────────────────────────────
-  { id: 'admin',               path: '/admin',               label: '관리자',       Icon: IcShield,    adminOnly: true         },
-  { id: 'admin-dashboard',     path: '/admin',               label: '관리 대시보드',Icon: IcShield,    parent: 'admin', adminOnly: true },
-  { id: 'admin-users',         path: '/admin/users',         label: '사용자 관리',  Icon: IcUsers,     parent: 'admin', adminOnly: true },
-  { id: 'admin-llm',           path: '/admin/llm',           label: 'LLM 관리',     Icon: IcSpark,     parent: 'admin', adminOnly: true },
-  { id: 'admin-jobs',          path: '/admin/jobs',          label: '수집 모니터링',Icon: IcCalendar,  parent: 'admin', adminOnly: true },
-  { id: 'admin-notifications', path: '/admin/notifications', label: '알림 모니터링',Icon: IcBell,      parent: 'admin', adminOnly: true },
-  { id: 'admin-mapping',       path: '/admin/mapping',       label: 'DART 매핑',    Icon: IcMapping,   parent: 'admin', adminOnly: true },
-  { id: 'admin-anomalies',     path: '/admin/anomalies',     label: '이상탐지 룰',  Icon: IcFlag,      parent: 'admin', adminOnly: true },
-  { id: 'admin-guides',        path: '/admin/guides',        label: '가이드 관리',  Icon: IcBook,      parent: 'admin', adminOnly: true },
-  { id: 'admin-audit',         path: '/admin/audit',         label: '감사 로그',    Icon: IcBook,      parent: 'admin', adminOnly: true },
-];
-
-const GROUP_PARENTS = new Set(ROUTES.filter(r => r.parent).map(r => r.parent!));
+const ROUTES = SHELL_NAVIGATION.filter(item => !item.sidebarHidden);
+const GROUP_PARENTS = SHELL_GROUPS;
 
 interface SidebarProps {
   collapsed: boolean;
@@ -107,32 +66,12 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
     router.push('/login');
   };
 
-  const isActive = (path: string) => {
-    if (path === '/') return pathname === '/';
-    return pathname === path || pathname.startsWith(path + '/');
-  };
-
-  const [open, setOpen] = React.useState<Set<string>>(() => {
-    const s = new Set<string>();
-    ROUTES.forEach(r => {
-      if (r.parent && (pathname === r.path || pathname.startsWith(r.path + '/'))) {
-        s.add(r.parent);
-      }
-    });
-    return s;
-  });
-
-  // 페이지 이동 시 해당 부모 그룹 자동 열기
+  const [mounted, setMounted] = React.useState(false);
+  const [open, setOpen] = React.useState<Set<string>>(() => new Set());
+  React.useEffect(() => { setMounted(true); }, []);
+  const isActive = (path: string) => mounted && shellPathMatches(pathname ?? '', path);
   React.useEffect(() => {
-    setOpen(s => {
-      const n = new Set(s);
-      ROUTES.forEach(r => {
-        if (r.parent && (pathname === r.path || pathname.startsWith(r.path + '/'))) {
-          n.add(r.parent);
-        }
-      });
-      return n;
-    });
+    setOpen(previous => new Set([...previous, ...shellGroupsForPath(pathname ?? '')]));
   }, [pathname]);
 
   const toggleGroup = (id: string) => {
@@ -177,7 +116,7 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
           const isOpen   = open.has(r.id);
           const isExt    = !!r.external;
 
-          if (isSub && !open.has(r.parent!)) return null;
+          if (!shellAncestors(r.id).every(id => open.has(id))) return null;
 
           // 관리자 그룹 상단에 구분선
           const showDivider = r.id === 'admin' && show;
@@ -188,7 +127,14 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
                 <div style={{ height: 1, background: 'var(--bd)', margin: '6px 10px' }} />
               )}
               <div style={{ position: 'relative' }}>
-                {isExt ? (
+                {r.disclosure ? (
+                  <button type="button" className="sb-item" aria-expanded={isOpen} aria-label={r.label}
+                    title={!show ? r.label : undefined} onClick={() => toggleGroup(r.id)}
+                    style={{ width: '100%', textAlign: 'left' }}>
+                    <r.Icon size={16} />{show && <span>{r.label}</span>}
+                    {show && <IcChevD size={12} style={{ marginLeft: 'auto', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />}
+                  </button>
+                ) : isExt ? (
                   <a
                     href={r.path}
                     target="_blank"
@@ -211,9 +157,12 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
                     {show && navCounts[r.id] ? <span className="num">{navCounts[r.id]}</span> : null}
                   </Link>
                 )}
-                {show && isParent && (
+                {show && isParent && !r.disclosure && (
                   <button
+                    type="button"
                     className="sb-toggle"
+                    aria-label={`${r.label} 하위 메뉴`}
+                    aria-expanded={isOpen}
                     onClick={e => { e.preventDefault(); toggleGroup(r.id); }}
                     title={isOpen ? '접기' : '펼치기'}
                   >
@@ -268,7 +217,7 @@ export default function Sidebar({ collapsed, onToggle, theme, navCounts = {} }: 
         )}
 
         {/* 푸터 행 */}
-        <div className={`sb-foot${pathname === '/me' ? ' active' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: show ? 8 : 0 }}>
+        <div className={`sb-foot${mounted && pathname === '/me' ? ' active' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: show ? 8 : 0 }}>
           <Link
             href="/me"
             onClick={() => setMenuOpen(false)}
