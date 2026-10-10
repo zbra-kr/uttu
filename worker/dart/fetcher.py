@@ -4,7 +4,8 @@ Rate limit: 1,000 req/min → 실제로는 1초 간격 유지
 
 응답 status 코드:
   000 = 정상
-  010 = 조회 결과 없음
+  010 = 등록되지 않은 API 키
+  013 = 조회 결과 없음
   020 = 요청 초과 / 키 오류 / 서버 오류 등
 """
 
@@ -79,8 +80,10 @@ async def _get_json(client: httpx.AsyncClient, url: str, params: dict[str, Any])
     resp.raise_for_status()
     data = resp.json()
     status = data.get("status", "")
-    # 010=조회결과없음, 013=데이터없음 — 정상적인 "없음" 케이스
-    if status in ("010", "013"):
+    if status == "010":
+        raise RuntimeError("dart_json_failed stage=fetch_json classification=authentication_error") from None
+    # 013=데이터없음 — 정상적인 "없음" 케이스
+    if status == "013":
         logger.debug("dart_no_result", url=url, status=status)
         return {}
     if status not in ("000", ""):
@@ -170,7 +173,7 @@ async def fetch_financials(
 ) -> list[dict]:
     """
     단일회사 주요계정 조회 (상장사 + 일부 외감 비상장사).
-    비상장사는 010(조회결과없음) 반환 시 빈 리스트.
+    013(조회결과없음) 반환 시 빈 리스트.
     """
     async with httpx.AsyncClient() as c:
         data = await _get_json(c, f"{BASE}/fnlttSinglAcnt.json", {
