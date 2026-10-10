@@ -2567,8 +2567,11 @@ export async function setMatchStatus(matchId: string, status: 'confirmed' | 'exc
   const response = await supabase
     .from('product_matches')
     .update(updates)
-    .eq('id', matchId).retry(false).setHeader(MATCHING_GUARD_HEADER, 'mutation');
-  checkMatchMutation(response, '매칭 상태 변경');
+    .eq('id', matchId).select('id').retry(false).setHeader(MATCHING_GUARD_HEADER, 'mutation');
+  // A concurrent replacement can delete this id before the PATCH executes.
+  // Verify its same-statement receipt; a successful zero-row update is not a saved decision.
+  const rows = matchRows(response, '매칭 상태 변경', row => matchString(row.id) && row.id === matchId);
+  if (rows.length !== 1) throw new Error('매칭 상태 변경 확인 실패: 목록을 다시 불러온 후 확인하세요.');
 }
 
 function matchString(value: unknown): value is string {
