@@ -128,6 +128,10 @@ jobs:
         run: npm run test:performance
         working-directory: viewer
 
+      - name: Product category scope and read lifecycle regression tests
+        run: npm run test:product-category
+        working-directory: viewer
+
       - name: Daily ranking insights regression tests
         run: npm run test:ranking-daily
         working-directory: viewer
