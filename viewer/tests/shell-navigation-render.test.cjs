@@ -71,3 +71,9 @@ test('CmdK common pages include new public entry points, keep keyboard/profile n
   assert.ok([...f.listeners.values()].some(set=>set.size===1));
  }finally{if(root)await React.act(async()=>root.unmount());assert.ok([...f.listeners.values()].every(set=>set.size===0));if(saved===undefined)delete global.window;else global.window=saved;}
 });
+
+for(const name of ['Sidebar','MobileShell']) test(`${name}: product comparison keeps product portal active without an unscoped comparison link`,()=>surface(name,'/product/compare',async s=>{
+ const product=s.links().find(a=>a.props.href==='/product');assert.ok(product);assert.ok(product.props.className?.includes('active')||product.props.style?.background==='var(--hs-soft)');
+ assert.equal(s.links().some(a=>String(a.props.href).startsWith('/product/compare')),false);assert.equal(s.buttons().some(b=>b.props['aria-label']==='상품 검색 하위 메뉴'),false);
+ s.f.path('/product');await s.render();await s.open();assert.ok(s.links().some(a=>a.props.href==='/product'));
+}));

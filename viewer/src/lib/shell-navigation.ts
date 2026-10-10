@@ -61,7 +61,9 @@ export function shellBreadcrumb(pathname: string): string[] {
   const item = SHELL_NAVIGATION.filter(item => !item.external && shellPathMatches(pathname, item.path))
     .sort((a,b) => b.path.length - a.path.length || Number(!!b.parent) - Number(!!a.parent))[0];
   if (!item) return ['UTTU'];
-  return [...shellAncestors(item.id).map(id => SHELL_NAVIGATION.find(item => item.id === id)!.label), item.label];
+  const labels = [...shellAncestors(item.id).map(id => SHELL_NAVIGATION.find(item => item.id === id)!.label), item.label];
+  // Product-scoped follow-up: retain the portal hierarchy without an unscoped menu URL.
+  return pathname === '/product/compare' ? [...labels, '가격·고객 안내 점검'] : labels;
 }
 export const SHELL_SEARCH_PAGES = SHELL_NAVIGATION.filter(item => item.search && !item.adminOnly && !item.external);
 export function shellPageMatches(item: ShellNavigationItem, keyword: string): boolean {
