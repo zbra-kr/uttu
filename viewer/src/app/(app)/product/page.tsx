@@ -6,6 +6,7 @@ import ProductHistoryCoverage from '@/components/product/ProductHistoryCoverage'
 import { useProductHistory } from '@/lib/use-product-history';
 import { formatFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
+import ProductComparisonLink from '@/components/product/ProductComparisonLink';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { useIsMobile } from '@/hooks/useViewport';
@@ -554,6 +555,7 @@ function ProductPageInner() {
               <InfoRow label="평점" value={formatFiveStarRating(detail.satisfaction_score)} />
               <InfoRow label="리뷰 만족도" value={detail.review_score != null ? `${detail.review_score}%` : '—'} />
               <InfoRow label="리뷰수" value={`${detail.review_count.toLocaleString()}건`} />
+              {detail.is_own && <ProductComparisonLink productNo={String(detail.musinsa_no)} />}
             </section>
 
             {/* Material / Fit */}
