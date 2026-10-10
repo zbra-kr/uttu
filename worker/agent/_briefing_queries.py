@@ -10,6 +10,16 @@ from datetime import date, timedelta
 from loguru import logger
 
 from supabase import Client
+from worker.detectors.rank_observation import LEGACY_RANK_RULES
+
+# Positive complement of the legacy policy, evaluated by PostgREST BEFORE LIMIT.
+# SQL NOT alone would also discard unknown rules with a NULL/missing version.
+_BRIEFING_ANOMALY_FILTER = (
+    "anomaly_type.is.null,"
+    f"anomaly_type.not.in.({','.join(sorted(LEGACY_RANK_RULES))}),"
+    "and(meta->>policy_version.not.is.null,"
+    "meta->>policy_version.neq.legacy-rank-noise-v1)"
+)
 
 # ── 날짜 헬퍼 ─────────────────────────────────────────────────────────────────
 
@@ -255,6 +265,7 @@ def fetch_anomalies(db: Client, target_date: date, severity: str) -> list[dict]:
             .select("id, anomaly_type, entity_type, entity_name, description, module, meta")
             .eq("detection_date", yesterday.isoformat())
             .eq("severity", severity)
+            .or_(_BRIEFING_ANOMALY_FILTER)
             .order("detected_at")
             .limit(20)
             .execute()
