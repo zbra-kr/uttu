@@ -1,4 +1,5 @@
 'use client';
+import { productHistoryInsights } from '@/lib/product-history-insights';
 import { useProductCategoryRanks } from '@/lib/use-product-category-ranks';
 import ProductCategoryReadState from '@/components/product/ProductCategoryReadState';
 import ProductHistoryCoverage from '@/components/product/ProductHistoryCoverage';
@@ -408,9 +409,6 @@ function ProductPageInner() {
   const ranks = rankHistory.map(r => r.rank);
   const minRank = ranks.length > 0 ? Math.min(...ranks) : 0;
   const maxRank = ranks.length > 0 ? Math.max(...ranks) : 0;
-  const rankPeriodLabel = rankHistory.length >= 2
-    ? `${rankHistory[0].date.slice(5)} ~ ${rankHistory[rankHistory.length - 1].date.slice(5)} (${rankHistory.length}${rankHistory.coverage?.mode === 'weekly' ? '주' : '일'})`
-    : rankHistory.length === 1 ? rankHistory[0].date.slice(5) : '';
   const rankChartData = rankHistory.map(r => ({ date: r.date, rank: r.rank }));
   // Y축 반전: rank가 낮을수록(좋을수록) 위에 표시 → domain을 [max, min]으로
   const rankFirst = ranks[0];
@@ -419,30 +417,16 @@ function ProductPageInner() {
   const rankColor = rankTrend === 'up' ? 'var(--slf)' : rankTrend === 'dn' ? 'var(--shf)' : 'var(--f3)';
 
   // ── 랭킹 인사이트 계산 ────────────────────────────────────
-  const rankMean = ranks.length > 0 ? ranks.reduce((s, r) => s + r, 0) / ranks.length : 0;
-  const rankStdDev = ranks.length >= 3
-    ? Math.sqrt(ranks.reduce((s, r) => s + (r - rankMean) ** 2, 0) / ranks.length)
-    : null;
-  const stabilityLabel = rankStdDev === null ? '—' : rankStdDev < 5 ? '안정적' : rankStdDev < 15 ? '보통' : '변동큼';
+  const insights = productHistoryInsights(rankHistory, priceHistory);
+  const rankMean = insights.mean;
+  const rankStdDev = insights.stdDev;
+  const stabilityLabel = rankStdDev === null ? '—' : rankStdDev < 5 ? '안정' : rankStdDev < 15 ? '보통' : '변동큼';
+  const rankVelocity = insights.velocity;
+  const avgRankOnDiscount = insights.discountDelta;
 
-  const recent7 = ranks.slice(-7);
-  const prev7   = ranks.slice(-14, -7);
-  const avg7    = (arr: number[]) => arr.length > 0 ? arr.reduce((s, r) => s + r, 0) / arr.length : null;
-  const velocity7d = (avg7(recent7) !== null && avg7(prev7) !== null)
-    ? Math.round((avg7(prev7) as number) - (avg7(recent7) as number))  // 양수=개선
-    : null;
-
-  // 할인 발생 날짜에서 랭킹 변동 계산
-  const discountDays = priceHistory.slice(1).flatMap((ph, i) => {
-    if (!ph.discount_rate || ph.discount_rate <= 0) return [];
-    const rNow  = rankHistory.find(r => r.date === ph.date);
-    const rPrev = rankHistory.find(r => r.date === priceHistory[i].date);
-    if (!rNow || !rPrev) return [];
-    return [rNow.rank - rPrev.rank]; // 음수=개선
-  });
-  const avgRankOnDiscount = discountDays.length > 0
-    ? Math.round(discountDays.reduce((s, d) => s + d, 0) / discountDays.length)
-    : null;
+  const rankPeriodLabel = rankHistory.length >= 2
+    ? `${rankHistory[0].date.slice(5)} ~ ${rankHistory[rankHistory.length - 1].date.slice(5)} (${rankHistory.length}개 ${insights.sampleLabel})`
+    : rankHistory.length === 1 ? rankHistory[0].date.slice(5) : '';
 
   const activeFlags = detail
     ? FLAG_LABELS.filter(([key]) => (detail as any)[key]).map(([, label]) => label)
@@ -635,7 +619,7 @@ function ProductPageInner() {
             {/* Rank History */}
             <section className="panel">
               <div className="sec-head">
-                <h3>랭킹 추이 <span className="sub">{rankHistory.length}{rankHistory.coverage?.mode === 'weekly' ? '주' : '일'} · 카테고리 최고순위</span></h3>
+                <h3>랭킹 추이 <span className="sub">{rankHistory.length}개 {insights.sampleLabel} · 카테고리 최고순위</span></h3>
                 {ranks.length > 1 && (
                   <span className="mono" style={{ fontSize: 11, color: rankColor }}>
                     {rankTrend === 'up' ? '↑ ' : rankTrend === 'dn' ? '↓ ' : ''}
@@ -686,7 +670,7 @@ function ProductPageInner() {
             {/* Price History */}
             <section className="panel">
               <div className="sec-head">
-                <h3>가격 추이 <span className="sub">{priceHistory.length}{rankHistory.coverage?.mode === 'weekly' ? '주' : '일'} 수집</span></h3>
+                <h3>가격 추이 <span className="sub">{priceHistory.length}개 {insights.sampleLabel}</span></h3>
                 {prices.length >= 2 && (
                   <span className="mono" style={{ fontSize: 11, color: 'var(--f3)' }}>
                     {minPrice === maxPrice
@@ -842,24 +826,24 @@ function ProductPageInner() {
                     <div className="val" style={{ fontSize: 16 }}>{stabilityLabel}</div>
                     <div className="dlt">
                       <span className="muted">
-                        {rankStdDev !== null ? `σ ${rankStdDev.toFixed(1)}` : `${ranks.length}일 데이터`}
+                        {insights.sampleNote}{rankStdDev !== null && ` · σ ${rankStdDev.toFixed(1)}`}
                       </span>
                     </div>
                   </div>
-                  {/* 7일 속도계 */}
+                  {/* 응답 단위와 달력 범위 기준 비교 */}
                   <div className="kpi">
-                    <span className="label">7일 추세</span>
-                    <div className="val" style={{ fontSize: 16, color: velocity7d === null ? 'var(--f4)' : velocity7d > 0 ? 'var(--slf)' : velocity7d < 0 ? 'var(--shf)' : 'var(--f3)' }}>
-                      {velocity7d === null ? '—'
-                        : velocity7d > 0 ? `↑ ${velocity7d}`
-                        : velocity7d < 0 ? `↓ ${Math.abs(velocity7d)}`
+                    <span className="label">{insights.trendLabel}</span>
+                    <div className="val" style={{ fontSize: 16, color: rankVelocity === null ? 'var(--f4)' : rankVelocity > 0 ? 'var(--slf)' : rankVelocity < 0 ? 'var(--shf)' : 'var(--f3)' }}>
+                      {rankVelocity === null ? '—'
+                        : rankVelocity > 0 ? `↑ ${rankVelocity}`
+                        : rankVelocity < 0 ? `↓ ${Math.abs(rankVelocity)}`
                         : '보합'}
                     </div>
-                    <div className="dlt"><span className="muted">전전주 평균 대비</span></div>
+                    <div className="dlt"><span className="muted">{insights.trendNote}</span></div>
                   </div>
                   {/* 할인 시 반응 */}
                   <div className="kpi">
-                    <span className="label">할인 반응</span>
+                    <span className="label">할인 관측 변화</span>
                     <div className="val" style={{ fontSize: 16, color: avgRankOnDiscount === null ? 'var(--f4)' : avgRankOnDiscount < 0 ? 'var(--slf)' : avgRankOnDiscount > 0 ? 'var(--shf)' : 'var(--f3)' }}>
                       {avgRankOnDiscount === null ? '—'
                         : avgRankOnDiscount < 0 ? `↑ ${Math.abs(avgRankOnDiscount)}`
@@ -867,7 +851,7 @@ function ProductPageInner() {
                         : '변화없음'}
                     </div>
                     <div className="dlt">
-                      <span className="muted">{discountDays.length > 0 ? `${discountDays.length}일 관측` : '할인 데이터 없음'}</span>
+                      <span className="muted">{insights.discountNote}</span>
                     </div>
                   </div>
                 </div>
@@ -875,7 +859,7 @@ function ProductPageInner() {
                 <div className="row-flex gap-16" style={{ marginTop: 10, paddingTop: 8, borderTop: '0.5px dashed var(--bs)' }}>
                   <InfoRow label={`최고 순위 (${rankPeriodLabel})`} value={`#${minRank}`} />
                   <InfoRow label={`최저 순위 (${rankPeriodLabel})`} value={`#${maxRank}`} />
-                  <InfoRow label="평균 순위" value={`#${Math.round(rankMean)}`} />
+                  <InfoRow label={insights.meanLabel} value={rankMean === null ? '—' : `#${Math.round(rankMean)}`} />
                 </div>
               </section>
             )}
