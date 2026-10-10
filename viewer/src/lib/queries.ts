@@ -1760,23 +1760,47 @@ export interface CategoryRanksResult {
   rows: CategoryRankRow[];
 }
 
-export async function fetchProductCategoryRanks(musinsaNo: string): Promise<CategoryRanksResult> {
-  const no = parseInt(musinsaNo, 10);
-  const { data: latestRow } = await supabase
-    .from('ranking_snapshots')
-    .select('snapshot_date')
-    .eq('musinsa_no', no)
-    .order('snapshot_date', { ascending: false })
-    .limit(1);
-  if (!latestRow?.length) return { snapshot_date: '', rows: [] };
-  const latestDate = (latestRow[0] as any).snapshot_date;
-
-  const { data } = await supabase
-    .from('ranking_snapshots')
-    .select('category_code, rank_position, gender_filter, age_filter')
-    .eq('musinsa_no', no)
-    .eq('snapshot_date', latestDate)
-    .order('rank_position', { ascending: true });
+export async function fetchProductCategoryRanks(musinsaNo: string, signal?: AbortSignal): Promise<CategoryRanksResult> {
+  if (!/^[1-9]\d*$/.test(musinsaNo) || !Number.isSafeInteger(Number(musinsaNo))) throw new Error('Invalid product number');
+  signal?.throwIfAborted();
+  const no = Number(musinsaNo);
+  let latestQuery = supabase.from('ranking_snapshots').select('snapshot_date')
+    .eq('store_code', 'musinsa').eq('musinsa_no', no)
+    .order('snapshot_date', { ascending: false }).limit(1);
+  if (signal) latestQuery = latestQuery.abortSignal(signal);
+  const { data: latestRow, error: latestError } = await latestQuery;
+  signal?.throwIfAborted();
+  if (latestError) throw latestError;
+  if (!Array.isArray(latestRow)) throw new Error('Missing category snapshot receipt');
+  if (!latestRow.length) return { snapshot_date: '', rows: [] };
+  const latestDate = latestRow[0].snapshot_date;
+  if (typeof latestDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(latestDate) ||
+      !Number.isFinite(Date.parse(latestDate)) || new Date(latestDate).toISOString().slice(0, 10) !== latestDate) {
+    throw new Error('Invalid category snapshot date');
+  }
+  const data: { category_code: string; rank_position: number; gender_filter: string; age_filter: string }[] = [];
+  // Do not silently truncate the segment count at PostgREST's row cap.
+  for (let offset = 0; ; offset += 500) {
+    let query = supabase.from('ranking_snapshots')
+      .select('category_code, rank_position, gender_filter, age_filter')
+      .eq('store_code', 'musinsa').eq('musinsa_no', no).eq('snapshot_date', latestDate)
+      .order('rank_position', { ascending: true }).order('category_code').order('gender_filter').order('age_filter')
+      .range(offset, offset + 499);
+    if (signal) query = query.abortSignal(signal);
+    const { data: page, error } = await query;
+    signal?.throwIfAborted();
+    if (error) throw error;
+    if (!Array.isArray(page)) throw new Error('Missing category rank receipt');
+    for (const row of page) {
+      if (!Number.isSafeInteger(row.rank_position) || row.rank_position <= 0 ||
+          typeof row.category_code !== 'string' || !row.category_code ||
+          typeof row.gender_filter !== 'string' || typeof row.age_filter !== 'string') {
+        throw new Error('Invalid category rank receipt');
+      }
+      data.push(row);
+    }
+    if (page.length < 500) break;
+  }
 
   const GENDER_ORDER: Record<string, number> = { A: 0, M: 1, F: 2 };
   const AGE_ORDER: Record<string, number> = {
@@ -1788,7 +1812,7 @@ export async function fetchProductCategoryRanks(musinsaNo: string): Promise<Cate
     (AGE_ORDER[a.age] ?? 9) - (AGE_ORDER[b.age] ?? 9);
 
   const groups = new Map<string, { best: number; gender: string; age: string; segments: { gender: string; age: string; rank: number }[] }>();
-  for (const r of (data ?? []) as any[]) {
+  for (const r of data) {
     const g = groups.get(r.category_code);
     if (!g) {
       groups.set(r.category_code, { best: r.rank_position, gender: r.gender_filter, age: r.age_filter, segments: [{ gender: r.gender_filter, age: r.age_filter, rank: r.rank_position }] });

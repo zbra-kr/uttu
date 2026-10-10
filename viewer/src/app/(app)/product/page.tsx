@@ -1,4 +1,6 @@
 'use client';
+import { useProductCategoryRanks } from '@/lib/use-product-category-ranks';
+import ProductCategoryReadState from '@/components/product/ProductCategoryReadState';
 import ProductHistoryCoverage from '@/components/product/ProductHistoryCoverage';
 import { useProductHistory } from '@/lib/use-product-history';
 import { formatFiveStarRating } from '@/lib/rating-format';
@@ -20,7 +22,7 @@ import { IcSearch, IcEdit } from '@/components/ui/icons';
 import BookmarkToggle from '@/components/me/BookmarkToggle';
 import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
 import { fetchNoteCountForEntity, logView } from '@/lib/queries-me';
-import { searchProducts, fetchProductDetail, fetchProductCategoryRanks, fetchReviews, fetchBodyStats, CATEGORY_MAP, AGE_MAP, type ProductDetail, type ReviewRow, type ProductSearchResult, type BodyStats, type CategoryRankRow } from '@/lib/queries';
+import { searchProducts, fetchProductDetail, fetchReviews, fetchBodyStats, CATEGORY_MAP, AGE_MAP, type ProductDetail, type ReviewRow, type ProductSearchResult, type BodyStats } from '@/lib/queries';
 
 function ProductSearch({ onSelect }: { onSelect: (no: string) => void }) {
   const [query, setQuery] = React.useState('');
@@ -316,11 +318,14 @@ function ProductPageInner() {
   const selectedNo = noFromUrl;
   const [detail, setDetail] = React.useState<ProductDetail | null>(null);
   const { priceHistory, rankHistory, status: historyStatus, retry: retryHistory } = useProductHistory(selectedNo);
-  const [categoryRanks,  setCategoryRanks]  = React.useState<CategoryRankRow[]>([]);
-  const [categoryRanksDate, setCategoryRanksDate] = React.useState<string>('');
+  const categoryRead = useProductCategoryRanks(selectedNo);
+  const categoryRanks = categoryRead.data?.rows ?? [];
+  const categoryRanksDate = categoryRead.data?.snapshot_date ?? '';
   const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
   const [bodyStats, setBodyStats] = React.useState<BodyStats | null>(null);
   const [loading, setLoading] = React.useState(!!noFromUrl);
+  const [stateProductNo, setStateProductNo] = React.useState(selectedNo);
+  const detailLoading = loading || stateProductNo !== selectedNo;
   const [noteCount, setNoteCount] = React.useState(0);
   const { noteDrawerOpen, setNoteDrawerOpen } = useSourceNoteDrawer(noFromUrl);
 
@@ -333,15 +338,14 @@ function ProductPageInner() {
   React.useEffect(() => {
     if (!selectedNo) return;
     let active = true;
+    setStateProductNo(selectedNo);
     setLoading(true);
     setDetail(null);
+    setBodyStats(null);
     setReviews([]);
-    setCategoryRanks([]);
-    setCategoryRanksDate('');
     let requestFailed = false;
     const detailRequest = fetchProductDetail(selectedNo);
-    // These reads depend only on product identity, not on price/rank histories.
-    // Settle failures as data until the original first-wave UI boundary is reached.
+    // Extras follow identity independently; settle failures while detail becomes visible.
     const ownExtrasRequest = detailRequest.then(async d => {
       if (!active || requestFailed || !d?.is_own) return null;
       const values = await Promise.all([
@@ -350,12 +354,10 @@ function ProductPageInner() {
       ]);
       return { values };
     }).catch(error => ({ error }));
-    Promise.all([
-      detailRequest,
-      fetchProductCategoryRanks(selectedNo),
-    ]).then(async ([d, cr]) => {
+    detailRequest.then(async d => {
       if (!active) return;
       setDetail(d);
+      setLoading(false);
       if (d) {
         window.dispatchEvent(new CustomEvent('uttu:crumb', { detail: { brand: d.brand_name, name: d.name } }));
         window.dispatchEvent(new CustomEvent('uttu:ai-context', { detail: [
@@ -365,8 +367,6 @@ function ProductPageInner() {
           ...(d.rank_position ? [`현재 ${d.rank_position}위`] : []),
         ] }));
       }
-      setCategoryRanks(cr.rows);
-      setCategoryRanksDate(cr.snapshot_date);
       if (d?.is_own) {
         const extras = await ownExtrasRequest;
         if (!active) return;
@@ -454,7 +454,7 @@ function ProductPageInner() {
 
   return (
     <div className="col-flex gap-14">
-      {!loading && !detail?.id && <div role="status">상품 정보를 찾을 수 없습니다.<SourceNoteFallback /></div>}
+      {!detailLoading && !detail?.id && <div role="status">상품 정보를 찾을 수 없습니다.<SourceNoteFallback /></div>}
       {detail?.id && String(detail.musinsa_no) === selectedNo && (
         <NoteDrawer
           key={detail.id}
@@ -468,7 +468,7 @@ function ProductPageInner() {
       )}
       <div className="page-title">
         <div className="col-flex gap-2">
-          <h1>{loading ? '…' : (detail?.name ?? '')}</h1>
+          <h1>{detailLoading ? '…' : (detail?.name ?? '')}</h1>
           {detail?.name_eng && (
             <span style={{ fontSize: 11, color: 'var(--f4)', fontStyle: 'italic' }}>{detail.name_eng}</span>
           )}
@@ -501,7 +501,7 @@ function ProductPageInner() {
         </div>
       </div>
 
-      {loading ? (
+      {detailLoading ? (
         <div style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>로딩 중…</div>
       ) : !detail ? null : (
         <div className="grid" style={{ gridTemplateColumns: '300px 1fr', gap: 14, alignItems: 'start' }}>
@@ -771,6 +771,7 @@ function ProductPageInner() {
             )}
 
             {/* 카테고리별 진입 현황 */}
+            <ProductCategoryReadState status={categoryRead.status} empty={!categoryRanks.length} retry={categoryRead.retry} />
             {categoryRanks.length > 0 && (
               <section className="panel">
                 <div className="sec-head">

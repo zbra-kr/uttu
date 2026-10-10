@@ -11,7 +11,7 @@ async function scenario(name,opts={}){
  const client={from:table=>query(table,false),rpc:(name,args)=>query(name,true,args)};
  const actual=load('src/lib/queries.ts',{'./supabase/client':{supabaseBrowser:()=>client}});
  const helpers={...actual};for(const helper of Object.keys(delays))helpers[helper]=(...args)=>{const product=typeof args[0]==='object'?args[0].productId:args[0];log('helper-start',{helper,product});return als.run({helper,product},()=>actual[helper](...args)).then(v=>{log('helper-end',{helper,product});return v})};
- const hidden={__esModule:true,default:()=>null};const component=load('src/app/(app)/product/MobileProductDetailView.tsx',{'react/jsx-runtime':require(path.join(root,'node_modules/react/jsx-runtime')),'react':{...React,useState(initial){const [value,set]=React.useState(initial);return[value,(next)=>{log('setter-attempt',{unmounted});set(next)}]}},'@/lib/queries':helpers,'next/navigation':{useSearchParams:()=>new URLSearchParams({no}),useRouter:()=>({push(){}})},'@/components/mobile/MobileEmptyState':hidden,'@/components/mobile/ReviewDetailSheet':{__esModule:true,default:({review,showProductButton})=>{log('sheet-props',{review,showProductButton});return React.createElement('sheet-fixture',{'data-review':review.id,'data-review-details':review,'data-show-product-button':showProductButton},'SHEET-'+review.id)}},'@/components/me/NoteDrawer':{...hidden,useSourceNoteDrawer:()=>({noteDrawerOpen:false,setNoteDrawerOpen(){}}),SourceNoteFallback:()=>null},recharts:Object.fromEntries(['LineChart','Line','XAxis','YAxis','ResponsiveContainer','Tooltip','ReferenceDot'].map(k=>[k,()=>null]))}).default;
+ const hidden={__esModule:true,default:()=>null};const component=load('src/app/(app)/product/MobileProductDetailView.tsx',{'react/jsx-runtime':require(path.join(root,'node_modules/react/jsx-runtime')),'react':{...React,useState(initial){const [value,set]=React.useState(initial);return[value,(next)=>{log('setter-attempt',{unmounted});set(next)}]}},'@/lib/supabase/client': { supabaseBrowser: () => ({ auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), getUser: async () => ({ data: { user: { id: 'fixture-user' } } }) } }) }, '@/lib/queries':helpers,'next/navigation':{useSearchParams:()=>new URLSearchParams({no}),useRouter:()=>({push(){}})},'@/components/mobile/MobileEmptyState':hidden,'@/components/mobile/ReviewDetailSheet':{__esModule:true,default:({review,showProductButton})=>{log('sheet-props',{review,showProductButton});return React.createElement('sheet-fixture',{'data-review':review.id,'data-review-details':review,'data-show-product-button':showProductButton},'SHEET-'+review.id)}},'@/components/me/NoteDrawer':{...hidden,useSourceNoteDrawer:()=>({noteDrawerOpen:false,setNoteDrawerOpen(){}}),SourceNoteFallback:()=>null},recharts:Object.fromEntries(['LineChart','Line','XAxis','YAxis','ResponsiveContainer','Tooltip','ReferenceDot'].map(k=>[k,()=>null]))}).default;
  const flush=async()=>{for(let i=0;i<20;i++)await Promise.resolve()};
  const snapshot=()=>{const rendered=tree.toJSON();log('render',{sheetProps:rendered?tree.root.findAllByType('sheet-fixture')[0]?.props:null,unmounted,loading:rendered?.type==='div'&&rendered?.props?.style?.padding==='60px 0',text:JSON.stringify(rendered).includes('Fixture'),product123:JSON.stringify(rendered).includes('Fixture 123'),product456:JSON.stringify(rendered).includes('Fixture 456'),reviewA:JSON.stringify(rendered).includes('REVIEW-uuid-123'),reviewB:JSON.stringify(rendered).includes('REVIEW-uuid-456'),bodyA:JSON.stringify(rendered).includes('HEIGHT-uuid-123'),bodyB:JSON.stringify(rendered).includes('HEIGHT-uuid-456'),sheetA:JSON.stringify(rendered).includes('SHEET-review-uuid-123'),sheetB:JSON.stringify(rendered).includes('SHEET-review-uuid-456')})};
  await React.act(async()=>{tree=Renderer.create(React.createElement(component));await flush()});snapshot();
@@ -25,22 +25,23 @@ async function scenario(name,opts={}){
 }
 
 const test=require('node:test'),assert=require('node:assert/strict');
+// Aborted category reads stop after the first receipt, before segment dispatch.
 const cases=[
- ['own slow history',{},70,5,2,10],
- ['own slow detail',{delays:{fetchProductDetail:120}},170,5,2,120],
- ['non-own',{own:false},70,5,1,70],
- ['missing detail',{missing:true},70,4,1,null],
- ['early history failure',{fail:'fetchProductHistories',delays:{fetchProductHistories:5}},70,5,2,10],
+ ['own slow history',{},10,5,2,10],
+ ['own slow detail',{delays:{fetchProductDetail:120}},120,5,2,120],
+ ['non-own',{own:false},10,5,1,10],
+ ['missing detail',{missing:true},10,4,1,null],
+ ['early history failure',{fail:'fetchProductHistories',delays:{fetchProductHistories:5}},10,5,2,10],
  ['detail failure',{fail:'fetchProductDetail'},10,4,1,null],
- ['late history failure',{fail:'fetchProductHistories'},70,5,2,10],
- ['review rejection',{fail:'fetchReviews'},70,5,2,10],
- ['body SDK degradation',{sdkFail:'fetchBodyStats'},70,5,2,10],
- ['review SDK error',{sdkFail:'fetchReviews'},70,5,2,10],
- ['body transport rejection',{fail:'fetchBodyStats'},70,5,2,10],
- ['cancel before identity',{cancelAt:5},undefined,4,1,null],
- ['cancel after extras',{cancelAt:20},undefined,5,2,10],
- ['navigate before identity',{navigateAt:5},75,9,3,15],
- ['navigate during extras',{navigateAt:20},90,10,4,10],
+ ['late history failure',{fail:'fetchProductHistories'},10,5,2,10],
+ ['review rejection',{fail:'fetchReviews'},10,5,2,10],
+ ['body SDK degradation',{sdkFail:'fetchBodyStats'},10,5,2,10],
+ ['review SDK error',{sdkFail:'fetchReviews'},10,5,2,10],
+ ['body transport rejection',{fail:'fetchBodyStats'},10,5,2,10],
+ ['cancel before identity',{cancelAt:5},undefined,3,1,null],
+ ['cancel after extras',{cancelAt:20},10,4,2,10],
+ ['navigate before identity',{navigateAt:5},15,8,3,15],
+ ['navigate during extras',{navigateAt:20},10,9,4,10],
 ];
 for(const[name,opts,ready,reads,rpcs,extraAt]of cases)test('MobileProduct actual reader waterfall: '+name,async()=>{
  const r=await scenario(name,opts);assert.equal(r.readyAt,ready);assert.equal(r.tableReads,reads);assert.equal(r.rpcCalls,rpcs);
@@ -67,7 +68,7 @@ for(const failure of [null,'fetchReviews','fetchBodyStats'])test('MobileProduct 
 });
 test('MobileProduct unmount after initial wave observes late extras rejection without setters',async()=>{
  const r=await scenario('unmount awaiting A extras',{cancelAt:120,fail:'fetchReviews',productDelays:{'uuid-123':{fetchReviews:300,fetchBodyStats:300}}});
- assert.ok(r.events.some(e=>e.kind==='setter-attempt'&&e.at===70&&!e.unmounted));
+ assert.ok(r.events.some(e=>e.kind==='setter-attempt'&&e.at===10&&!e.unmounted));
  assert.ok(r.events.some(e=>e.kind==='transport-reject'&&e.at===310));
  assert.equal(r.events.filter(e=>e.kind==='setter-attempt'&&e.unmounted).length,0);
  for(const helper of ['fetchReviews','fetchBodyStats']){const start=r.events.find(e=>e.kind==='helper-start'&&e.helper===helper);assert.equal(start.product,'uuid-123');assert.equal(start.at,10)}
