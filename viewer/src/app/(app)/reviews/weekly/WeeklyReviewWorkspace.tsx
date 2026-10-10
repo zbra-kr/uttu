@@ -10,6 +10,7 @@ import { fetchWeeklyReviews, fetchWeeklyMemos, type WeeklySavedMemo, type Weekly
 import { WEEKLY_EVIDENCE_LIMIT, WEEKLY_MEMO_TAG, buildWeeklyMemo, formatWeeklyTime, kstClosedWeek,
   parseWeeklyLocation, uniqueWeeklyEvidence, weeklyHref, weeklyMemoHref, weeklyPeriodError,
   type WeeklyEvidence, type WeeklyCursor, type WeeklyScope } from '@/lib/weekly-review';
+import { groupLoadedWeeklyMemos, parseWeeklyMemoNextDate, type WeeklyMemoOrder } from '@/lib/weekly-memo-view';
 import WeeklyEvidenceList from './WeeklyEvidenceList';
 import styles from './weekly-review.module.css';
 
@@ -42,11 +43,14 @@ export default function WeeklyReviewWorkspace() {
   const listCache = React.useRef(new Map<string, ReviewState>());
   const [retry, setRetry] = React.useState(0);
   const [memos, setMemos] = React.useState<{ owner: string; brand: string; rows: WeeklySavedMemo[]; next: WeeklyMemoCursor | null; loading: boolean; error: string | null }>({ owner: '', brand: '', rows: [], next: null, loading: false, error: null });
+  const [memoOrder, setMemoOrder] = React.useState<WeeklyMemoOrder>('latest');
   const memoRequest = React.useRef<AbortController | null>(null);
   const memoVersion = React.useRef(0);
   const [memoRetry, setMemoRetry] = React.useState(0);
   const [draftValue, setDraft] = React.useState<WeeklyDraft | null>(null);
   const [draftUser, setDraftUser] = React.useState<string | null>(null);
+  const visibleMemos = memos.owner === draftUser && memos.brand === selectedBrandId ? memos.rows : [];
+  const memoGroups = groupLoadedWeeklyMemos(visibleMemos, memoOrder);
   const currentDraftUser = React.useRef<string | null>(null);
   currentDraftUser.current = draftUser;
   const [draftOwner, setDraftOwner] = React.useState<string | null>(null);
@@ -347,12 +351,19 @@ export default function WeeklyReviewWorkspace() {
           {memos.owner === draftUser && memos.brand === scope.brand && memos.loading && <p role="status">이전 검토를 불러오는 중…</p>}
           {memos.owner === draftUser && memos.brand === scope.brand && memos.error && <p role="alert">{memos.error} <button className={styles.secondary} onClick={loadMoreMemos}>메모 다시 조회</button></p>}
           {memos.owner === draftUser && memos.brand === scope.brand && !memos.loading && !memos.error && memos.rows.length === 0 && <p className={styles.muted}>아직 이 브랜드의 상품 개선 검토 메모가 없습니다.</p>}
-          <ul className={styles.memoList}>{memos.owner === draftUser && memos.brand === scope.brand && memos.rows.map(memo => <li key={memo.id}>
+          <label className={styles.field}>불러온 메모 보기<select value={memoOrder} onChange={event => setMemoOrder(event.target.value as WeeklyMemoOrder)}><option value="latest">최신순</option><option value="nextDate">다음 확인일 기준</option></select></label>
+          <p className={styles.muted}>현재 불러온 메모 {visibleMemos.length}개만 정리합니다. 전체 메모·할 일 수가 아니며, 확인일로 완료 여부를 판단하지 않습니다.</p>
+          {memoGroups.map(group => <React.Fragment key={group.date ?? 'unknown'}>
+          {memoOrder === 'nextDate' && group.rows.length > 0 && <h3>{group.date ? `다음 확인일 ${group.date}` : '다음 확인일 확인 불가'} · {group.rows.length}개</h3>}
+          <ul className={styles.memoList}>{group.rows.map(memo => {
+            const nextDate = parseWeeklyMemoNextDate(memo.body);
+            return <li key={memo.id}>
             <time className={styles.muted}>{formatWeeklyTime(memo.created_at)}</time>
-            <p className={styles.memoBody}>{memo.body.split('\n').filter(line => /^(관찰:|다음 확인:|다음 확인일:)/.test(line)).join('\n') || '검토 메모'}</p>
+            <p className={styles.memoBody}>{memo.body.split('\n').filter(line => /^(관찰:|다음 확인:)/.test(line)).join('\n') || '검토 메모'}</p>
+            <p className={styles.muted}>{nextDate ? `다음 확인일: ${nextDate}` : '다음 확인일 확인 불가'}</p>
             <div className={styles.actions}><Link href={`/me/notes/${memo.id}?view=memo`}>저장한 메모</Link>
               {weeklyMemoHref(memo.body) && <Link href={weeklyMemoHref(memo.body)!} scroll={false}>당시 근거 다시 보기</Link>}</div>
-          </li>)}</ul>
+          </li>; })}</ul></React.Fragment>)}
           {memos.owner === draftUser && memos.brand === scope.brand && memos.next && <button className={styles.secondary} disabled={memos.loading} onClick={loadMoreMemos}>이전 메모 10개 더 보기</button>}
           {memos.owner === draftUser && memos.brand === scope.brand && !memos.next && !memos.loading && !memos.error && memos.rows.length > 0 && <p className={styles.muted}>더 불러올 이전 검토 메모가 없습니다.</p>}
         </section>
