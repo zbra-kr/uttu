@@ -17,7 +17,7 @@ function fixture(mobile, initialQuery = 'no=123') {
     '@/components/product/ProductReviewMode': { __esModule: true, default: ({ children }) => children },
     '@/components/me/BookmarkToggle': hidden,
     '@/components/me/NoteDrawer': { ...hidden, SourceNoteFallback: () => null, useSourceNoteDrawer: () => ({ noteDrawerOpen: false, setNoteDrawerOpen() {} }) },
-    '@/lib/queries': queries, '@/lib/queries-me': { fetchNoteCountForEntity: async () => 0, logView: async () => {} },
+    '@/lib/supabase/client': { supabaseBrowser: () => ({ auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), getUser: async () => ({ data: { user: { id: 'fixture-user' } } }) } }) }, '@/lib/queries': queries, '@/lib/queries-me': { fetchNoteCountForEntity: async () => 0, logView: async () => {} },
     'next/navigation': { useSearchParams: () => new URLSearchParams(query), useRouter: () => ({ push() {} }) },
     'next/link': { __esModule: true, default: ({ children, ...props }) => React.createElement('a', props, children) },
     recharts: Object.fromEntries(['LineChart', 'Line', 'XAxis', 'YAxis', 'Tooltip', 'ResponsiveContainer', 'ReferenceDot'].map(name => [name, () => null])),

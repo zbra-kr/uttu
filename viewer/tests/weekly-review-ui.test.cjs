@@ -81,7 +81,7 @@ function harness(href = w.weeklyHref(SCOPE), options = {}) {
 async function readyBrands(h, rows = BRANDS) { h.brands.at(-1).resolve(rows); await h.flush(); }
 async function readyReviews(h, rows = [row()], next = null) { h.reviews.at(-1).resolve(page(rows, next)); await h.flush(); }
 const boxes = h => h.nodes().filter(node => node.type === 'input' && node.props.type === 'checkbox');
-function control(h, label) { const node = h.nodes().find(n => n.type === 'label' && textOf(n).includes(label)); assert.ok(node, `Missing accessible label ${label}`); const c = walk(node).find(n => ['input', 'select', 'textarea'].includes(n.type)); assert.ok(c); return c; }
+function control(h, label) { const node = h.nodes().find(n => n.type === 'label' && textOf(Array.isArray(n.props.children) ? n.props.children[0] : n.props.children).includes(label)); assert.ok(node, `Missing accessible label ${label}`); const c = walk(node).find(n => ['input', 'select', 'textarea'].includes(n.type)); assert.ok(c); return c; }
 function change(h, label, value) { control(h, label).props.onChange({ target: { value } }); h.tree(); }
 function select(h, index = 0) { assert.ok(boxes(h)[index]); boxes(h)[index].props.onChange(); h.tree(); }
 const memoForm = h => h.nodes().find(node => node.type === 'form' && walk(node).some(n => n.type === 'textarea'));
@@ -316,5 +316,35 @@ for (const change of ['brand','account','logout','unmount']) test(`memo paginati
 test('memo deadline settles UI even if authentication or transport ignores abort',async()=>{
  const h=harness();try{await readyBrands(h);const old=h.memos[0];h.fireTimeouts();await h.flush();assert.match(h.html(),/메모가 없는 것은 아닙니다/);assert.doesNotMatch(h.html(),/이전 검토를 불러오는 중/);
  h.find('button','메모 다시 조회').props.onClick();h.memos[1].resolve(page([]));await h.flush();old.resolve(page([{id:id(999),created_at:SCOPE.at,body:'관찰: Late timeout data'}]));await h.flush();assert.doesNotMatch(h.html(),/Late timeout data/);assert.match(h.html(),/아직 이 브랜드의 상품 개선 검토 메모가 없습니다/);
+ }finally{h.dispose();}
+});
+
+test('loaded memo order toggle groups strict dates, preserves links and cursor order, and makes no reads',async()=>{
+ const h=harness(),memo=(n,date)=>({id:id(600-n),created_at:SCOPE.at,body:w.buildWeeklyMemo(draft({nextDate:date,observation:`Loaded memo ${n}`}))}),rows=[memo(1,'2024-03-20'),memo(2,'2024-03-12'),{id:id(598),created_at:SCOPE.at,body:'관찰: Edited note\n다음 확인일: 2000-01-01'},memo(4,'2024-03-12')],c={created_at:SCOPE.at,id:rows.at(-1).id};
+ try{await readyBrands(h);h.memos[0].resolve(page(rows,c));await h.flush();
+ const links=()=>h.nodes().filter(n=>n.type==='a'&&textOf(n)==='저장한 메모').map(n=>n.props.href);
+ assert.deepEqual(links(),rows.map(r=>`/me/notes/${r.id}?view=memo`));const before={memos:h.memos.length,reviews:h.reviews.length,brands:h.brands.length};
+ change(h,'불러온 메모 보기','nextDate');assert.deepEqual({memos:h.memos.length,reviews:h.reviews.length,brands:h.brands.length},before);
+ assert.deepEqual(links(),[rows[1],rows[3],rows[0],rows[2]].map(r=>`/me/notes/${r.id}?view=memo`));assert.match(h.html(),/다음 확인일 2024-03-12 · 2개/);assert.match(h.html(),/다음 확인일 확인 불가 · 1개/);assert.match(h.html(),/현재 불러온 메모 4개만/);assert.doesNotMatch(h.html(),/연체|미완료|마감|2000-01-01/);
+ assert.equal(h.nodes().filter(n=>n.type==='a'&&textOf(n)==='당시 근거 다시 보기').length,3);
+ const loading=h.find('button','이전 메모 10개 더 보기').props.onClick();assert.deepEqual(h.memos.at(-1).args[3],c);change(h,'불러온 메모 보기','latest');change(h,'불러온 메모 보기','nextDate');assert.equal(h.memos.length,2);
+ h.memos.at(-1).resolve(page([memo(5,'2024-02-29'),memo(6,'2024-03-12')]));await loading;await h.flush();assert.match(h.html(),/현재 불러온 메모 6개만/);assert.match(h.html(),/다음 확인일 2024-03-12 · 3개/);assert.equal(links()[0],`/me/notes/${id(595)}?view=memo`);
+ change(h,'불러온 메모 보기','latest');assert.deepEqual(links(),[...rows,memo(5,'2024-02-29'),memo(6,'2024-03-12')].map(r=>`/me/notes/${r.id}?view=memo`));
+ }finally{h.dispose();}
+});
+for(const changeScope of ['brand','account','logout'])test(`date grouping hides old private rows on ${changeScope} and ignores late pages`,async()=>{
+ const h=harness(),r={id:id(601),created_at:SCOPE.at,body:w.buildWeeklyMemo(draft({observation:'Private old memo'}))},c={created_at:r.created_at,id:r.id};
+ try{await readyBrands(h);h.memos[0].resolve(page([r],c));await h.flush();change(h,'불러온 메모 보기','nextDate');const loading=h.find('button','이전 메모 10개 더 보기').props.onClick(),old=h.memos.at(-1);
+ if(changeScope==='brand')h.commit(w.weeklyHref(OTHER));else h.auth(changeScope==='account'?UB:null);
+ assert.doesNotMatch(h.html(),/Private old memo|현재 불러온 메모 1개/);assert.equal(old.args[1].aborted,true);old.resolve(page([{...r,id:id(600),body:w.buildWeeklyMemo(draft({observation:'Late private date memo'}))}]));await loading;await h.flush();assert.doesNotMatch(h.html(),/Late private date memo|Private old memo/);
+ if(changeScope!=='logout'){h.memos.at(-1).resolve(page([]));await h.flush();assert.match(h.html(),/아직 이 브랜드의 상품 개선 검토 메모가 없습니다/);assert.match(h.html(),/현재 불러온 메모 0개만/);}
+ assert.equal(h.lateUpdates(),0);
+ }finally{h.dispose();}
+});
+test('date grouping escapes malicious memo text and keeps failed next page with same retry cursor',async()=>{
+ const h=harness(),r={id:id(601),created_at:SCOPE.at,body:w.buildWeeklyMemo(draft({observation:'<script>alert(1)</script>',nextDate:'2024-02-29'}))},c={created_at:r.created_at,id:r.id};
+ try{await readyBrands(h);h.memos[0].resolve(page([r],c));await h.flush();change(h,'불러온 메모 보기','nextDate');assert.match(h.html(),/&lt;script&gt;/);assert.doesNotMatch(h.html(),/<script|연체|미완료/);
+ const loading=h.find('button','이전 메모 10개 더 보기').props.onClick();h.memos[1].reject(Error('offline'));await loading;await h.flush();assert.match(h.html(),/다음 확인일 2024-02-29 · 1개/);assert.match(h.html(),/메모가 없는 것은 아닙니다/);
+ const retry=h.find('button','메모 다시 조회').props.onClick();assert.deepEqual(h.memos[2].args[3],c);h.memos[2].resolve(page([]));await retry;await h.flush();assert.match(h.html(),/더 불러올 이전 검토 메모가 없습니다/);
  }finally{h.dispose();}
 });

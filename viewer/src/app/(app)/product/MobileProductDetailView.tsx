@@ -1,4 +1,6 @@
 'use client';
+import { useProductCategoryRanks } from '@/lib/use-product-category-ranks';
+import ProductCategoryReadState from '@/components/product/ProductCategoryReadState';
 import ProductHistoryCoverage from '@/components/product/ProductHistoryCoverage';
 import { useProductHistory } from '@/lib/use-product-history';
 import { formatFiveStarRating } from '@/lib/rating-format';
@@ -7,9 +9,9 @@ import { useSearchParams } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import {
   fetchProductDetail,
-  fetchProductCategoryRanks, fetchReviews, fetchBodyStats,
+  fetchReviews, fetchBodyStats,
   CATEGORY_MAP, AGE_MAP,
-  type ProductDetail, type ReviewRow, type CategoryRankRow, type BodyStats,
+  type ProductDetail, type ReviewRow, type BodyStats,
 } from '@/lib/queries';
 import MobileEmptyState from '@/components/mobile/MobileEmptyState';
 import NoteDrawer, { useSourceNoteDrawer, SourceNoteFallback } from '@/components/me/NoteDrawer';
@@ -71,8 +73,9 @@ export default function MobileProductDetailView() {
 
   const [detail,         setDetail]         = useState<ProductDetail | null>(null);
   const { priceHistory, rankHistory, status: historyStatus, retry: retryHistory } = useProductHistory(no);
-  const [categoryRanks,  setCategoryRanks]  = useState<CategoryRankRow[]>([]);
-  const [categoryDate,   setCategoryDate]   = useState('');
+  const categoryRead = useProductCategoryRanks(no);
+  const categoryRanks = categoryRead.data?.rows ?? [];
+  const categoryDate = categoryRead.data?.snapshot_date ?? '';
   const [reviews,        setReviews]        = useState<ReviewRow[]>([]);
   const [bodyStats,      setBodyStats]      = useState<BodyStats | null>(null);
   const [loading,        setLoading]        = useState(true);
@@ -92,7 +95,7 @@ export default function MobileProductDetailView() {
     let failed = false;
     const detailPromise = fetchProductDetail(no);
     // Own-product extras need only the resolved identity, not history data.
-    // Capture failures immediately while retaining the initial-wave loading gate.
+    // Capture failures immediately while detail becomes visible independently.
     const ownExtras = detailPromise.then(async det => {
       if (!active || failed || !det?.is_own) return null;
       try {
@@ -105,14 +108,10 @@ export default function MobileProductDetailView() {
         return { ok: false as const, error };
       }
     }, () => null);
-    Promise.all([
-      detailPromise,
-      fetchProductCategoryRanks(no),
-    ]).then(async ([det, cr]) => {
+    detailPromise.then(async det => {
       if (!active) return;
       setDetail(det);
-      setCategoryRanks(cr.rows);
-      setCategoryDate(cr.snapshot_date);
+      setLoading(false);
       if (det?.is_own) {
         const extras = await ownExtras;
         if (!active) return;
@@ -352,6 +351,7 @@ export default function MobileProductDetailView() {
       )}
 
       {/* ── 카테고리 침투율 ── */}
+      <ProductCategoryReadState status={categoryRead.status} empty={!categoryRanks.length} retry={categoryRead.retry} />
       {categoryRanks.length > 0 && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>

@@ -164,6 +164,8 @@ for (const [kind, mobile, parameter] of [['product', 'MobileProductDetailView', 
       modulePath: `src/app/(app)/${kind}/${mobile}.tsx`,
       mocks: {
         '@/lib/observation-review-context': { useObservationReviewState: () => null },
+        // This tiny runtime tests note navigation; shared read races use real React in product-category tests.
+        '@/lib/use-product-category-ranks': { useProductCategoryRanks: () => ({ status: 'loading', data: null, retry() { assert.fail('unexpected category retry'); } }) },
         '@/components/product/ProductReviewMode': { __esModule: true, default: ({ children }) => children },
         '@/lib/queries': { fetchProductDetail: info, fetchProductHistories:async()=>({price:[],rank:[]}),fetchProductPriceHistory: empty, fetchProductRankHistory: empty,
           fetchProductCategoryRanks: async () => ({ rows: [], snapshot_date: '' }), fetchReviews: async () => ({ rows: [] }),
@@ -189,13 +191,74 @@ for (const [kind, mobile, parameter] of [['product', 'MobileProductDetailView', 
     assert(rt.elements().some(el => /정보를 찾을 수 없습니다/.test(el.props?.title)));
   });
 }
-test('snapshot-only deleted products offer memo fallback without a nonfunctional composer', () => {
-  const desktop = fs.readFileSync(path.join(__dirname, '../src/app/(app)/product/page.tsx'), 'utf8');
-  const mobile = fs.readFileSync(path.join(__dirname, '../src/app/(app)/product/MobileProductDetailView.tsx'), 'utf8');
-  assert.match(desktop, /!loading && !detail\?\.id[\s\S]*?<SourceNoteFallback/);
-  assert.match(mobile, /!detail\.id && <SourceNoteFallback/);
-  assert.match(mobile, /detail\.id && <NoteDrawer/);
-  assert.match(mobile, /detail\.id && <button[^>]*[\s\S]*?>메모/);
+for (const mobile of [false, true]) test(`${mobile ? 'mobile' : 'desktop'} loading and failed navigation preserve deleted-source fallback without a composer`, async () => {
+  const React = require('react'), Renderer = require('react-test-renderer');
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const saved = { window: global.window, fetch: global.fetch, document: global.document, error: console.error };
+  global.window = { matchMedia: () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }), dispatchEvent() {} };
+  global.document = { activeElement: null };
+  global.fetch = () => { throw Error('live network forbidden'); };
+  const detailReads = new Map(), errors = [];
+  console.error = error => errors.push(error);
+  let query = 'no=42';
+  const snapshot = { musinsa_no: 42, name: 'Saved snapshot', brand_name: 'Saved brand', is_own: false,
+    final_price: 1000, list_price: 1000, review_count: 0, rating: null, ranking_best_records: [], item_seasons: [], labels: [], colors: [], sizes: [] };
+  const hidden = { __esModule: true, default: () => null };
+  const Fallback = () => React.createElement('aside', { 'data-source-fallback': true }, '기존 메모 확인');
+  const Drawer = props => React.createElement('aside', { 'data-note-composer': props.entity_id });
+  const Component = load(mobile ? 'src/app/(app)/product/MobileProductDetailView.tsx' : 'src/app/(app)/product/page.tsx', {
+    '@/lib/queries': { CATEGORY_MAP: {}, AGE_MAP: {},
+      fetchProductDetail: no => new Promise((resolve, reject) => detailReads.set(no, { resolve, reject })),
+      fetchProductHistories: async () => ({ price: [], rank: [] }),
+      fetchProductCategoryRanks: () => new Promise(() => {}), fetchReviews: async () => ({ rows: [], total: 0 }) },
+    '@/lib/supabase/client': { supabaseBrowser: () => ({ auth: {
+      getUser: async () => ({ data: { user: { id: uid } } }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) } }) },
+    '@/lib/queries-me': { fetchNoteCountForEntity: async () => 0, logView: async () => {} },
+    '@/lib/observation-review-context': { useObservationReviewState: () => null },
+    'next/navigation': { useSearchParams: () => new URLSearchParams(query), useRouter: () => ({ push() {} }) },
+    'next/link': { __esModule: true, default: ({ children, ...props }) => React.createElement('a', props, children) },
+    '@/components/product/ProductObservationPanel': hidden,
+    '@/components/me/BookmarkToggle': hidden, '@/components/mobile/ReviewDetailSheet': hidden,
+    '@/components/me/NoteDrawer': { __esModule: true, default: Drawer, SourceNoteFallback: Fallback,
+      useSourceNoteDrawer: () => ({ noteDrawerOpen: true, setNoteDrawerOpen() {} }) },
+    recharts: Object.fromEntries(['LineChart', 'Line', 'XAxis', 'YAxis', 'Tooltip', 'ResponsiveContainer', 'ReferenceDot'].map(name => [name, () => null])),
+  }).default;
+  let root;
+  const fallbackCount = () => root.root.findAll(node => node.type === 'aside' && node.props['data-source-fallback']).length;
+  const composerCount = () => root.root.findAll(node => node.type === 'aside' && node.props['data-note-composer']).length;
+  const memoControls = () => root.root.findAllByType('button').filter(button => /메모/.test(button.children.filter(child => typeof child === 'string').join(''))).length;
+  try {
+    await React.act(async () => { root = Renderer.create(React.createElement(Component)); });
+    assert.equal(fallbackCount(), 0, 'pending identity must not look deleted');
+    assert.equal(composerCount(), 0);
+    await React.act(async () => detailReads.get('42').resolve({ ...snapshot, id: entityId }));
+    assert.equal(composerCount(), 1, 'resolved source still connects its memo drawer');
+    assert.equal(fallbackCount(), 0);
+    assert.ok(memoControls() > 0);
+    query = 'no=43';
+    await React.act(async () => root.update(React.createElement(Component)));
+    assert.equal(composerCount(), 0, 'old source cannot compose after navigation');
+    assert.equal(fallbackCount(), 0, 'pending next identity must not look deleted');
+    await React.act(async () => detailReads.get('43').resolve({ ...snapshot, musinsa_no: 43 }));
+    assert.equal(fallbackCount(), 1, 'snapshot with no product ID still offers existing memo');
+    assert.equal(composerCount(), 0);
+    assert.equal(memoControls(), 0, 'snapshot cannot open a nonfunctional composer');
+    assert.ok(JSON.stringify(root.toJSON()).includes('Saved snapshot'), 'category delay does not hide saved source');
+    query = 'no=44';
+    await React.act(async () => root.update(React.createElement(Component)));
+    assert.equal(fallbackCount(), 0, 'previous fallback is hidden during next identity read');
+    await React.act(async () => detailReads.get('44').reject(Error('source unavailable')));
+    assert.equal(fallbackCount(), 1, 'failed detail still permits existing memo lookup');
+    assert.equal(composerCount(), 0);
+    assert.equal(memoControls(), 0);
+    assert.ok(!JSON.stringify(root.toJSON()).includes('Saved snapshot'), 'failed navigation clears previous source');
+    assert.equal(errors.filter(error => error instanceof Error && error.message === 'source unavailable').length, mobile ? 0 : 1);
+  } finally {
+    if (root) await React.act(async () => root.unmount());
+    console.error = saved.error;
+    for (const key of ['window', 'fetch', 'document']) { if (saved[key] === undefined) delete global[key]; else global[key] = saved[key]; }
+  }
 });
 test('blocked source snapshot disables new-save control but leaves exact memo readable', () => withFetch(async () => {
   const rt = runtime(`note=${targetId}`, { fetchNotesForEntity: async () => [note()], createNote: () => assert.fail('must not save') });
