@@ -91,7 +91,7 @@ jobs:
         run: npm run test:report-evidence
         working-directory: viewer
 
-      - name: Matching score regression tests
+      - name: Matching score and desktop BrandPool regression tests
         run: npm run test:matching
         working-directory: viewer
 
