@@ -65,7 +65,7 @@ for (const [level, expectedA, expectedB] of [[0,100,65],[1,90,60],[2,85,50],[3,7
   });
 }
 test('manual matches retain null and confirmation retains score', async () => {
-  const {calls,queries} = queryHarness([{error:null},{error:null}]);
+  const {calls,queries} = queryHarness([{error:null},{data:[{id:'match'}],error:null}]);
   await queries.addManualMatch('own','competitor');
   await queries.setMatchStatus('match','confirmed');
   const ops = calls.flatMap(c => c.ops);
