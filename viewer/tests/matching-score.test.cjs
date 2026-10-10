@@ -85,7 +85,7 @@ test('mobile renders real score 100 as points and explains category priority', (
   const states = [[], 'brand', [], {id:'own',name:'선택 상품'}, [
     {id:'m',score:100,status:'auto',competitor_name:'경쟁 상품',competitor_brand:'브랜드',competitor_musinsa_no:'123'},
     {id:'manual',score:null,status:'confirmed',competitor_name:'직접 추가',competitor_brand:'브랜드',competitor_musinsa_no:'456'},
-  ], false, false];
+  ], false, false, {ready:true,userId:'account-1',epoch:0}, {brands:null,products:null,matches:null}, {brands:0,products:0,matches:0}, false];
   const {default: Mobile} = load('src/app/(app)/matching/MobileMatchingView.tsx', {
     react:{...React,useState:()=>[states.shift(),()=>{}],useEffect:()=>{}},
     'next/link':({children, ...props})=>React.createElement('a', props, children),
