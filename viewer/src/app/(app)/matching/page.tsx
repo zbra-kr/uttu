@@ -37,56 +37,146 @@ function BrandPool() {
   const [searching, setSearching] = React.useState(false);
   const [adding, setAdding] = React.useState<string | null>(null);
   const [removing, setRemoving] = React.useState<string | null>(null);
-  const searchRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [targetVersion, setTargetVersion] = React.useState(0);
+  const [ownLoading, setOwnLoading] = React.useState(true);
+  const [ownError, setOwnError] = React.useState<string | null>(null);
+  const [poolError, setPoolError] = React.useState<string | null>(null);
+  const [searchError, setSearchError] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [ownRetry, setOwnRetry] = React.useState(0);
+  const [searchVersion, setSearchVersion] = React.useState(0);
+  const [auth, setAuth] = React.useState({ ready: false, userId: null as string | null, epoch: 0 });
+  const identity = React.useRef(auth);
+  const mounted = React.useRef(false);
+  const target = React.useRef({ brandId: null as string | null, version: 0 });
+  const poolRequest = React.useRef(0);
+  const searchRequest = React.useRef(0);
+  const keywordRef = React.useRef('');
+  const mutation = React.useRef<object | null>(null);
+  const scope = () => ({ ...target.current, epoch: identity.current.epoch });
+  const current = React.useCallback((s: { brandId: string | null; version: number; epoch: number }) =>
+    mounted.current && identity.current.userId !== null && identity.current.epoch === s.epoch &&
+    target.current.version === s.version && target.current.brandId === s.brandId, []);
+
+  const selectBrand = React.useCallback((brandId: string | null) => {
+    if (brandId && target.current.brandId === brandId) return;
+    target.current = { brandId, version: target.current.version + 1 };
+    setTargetVersion(target.current.version);
+    poolRequest.current += 1; searchRequest.current += 1; keywordRef.current = '';
+    setSelectedBrandId(brandId); setPool([]); setPoolError(null); setLoading(!!brandId);
+    setKeyword(''); setResults([]); setSearching(false); setSearchError(null); setActionError(null);
+  }, []);
 
   React.useEffect(() => {
-    fetchOwnBrands().then(brands => {
-      setOwnBrands(brands);
-      if (brands.length > 0) setSelectedBrandId(brands[0].id);
-    }).catch(console.error);
-  }, []);
+    mounted.current = true;
+    let cancelled = false;
+    const { data: { subscription } } = supabaseBrowser().auth.onAuthStateChange((_event, session) => {
+      if (cancelled || !mounted.current) return;
+      const userId = session?.user.id ?? null;
+      if (identity.current.ready && identity.current.userId === userId) return;
+      identity.current = { ready: true, userId, epoch: identity.current.epoch + 1 };
+      selectBrand(null); setOwnBrands([]); setOwnError(null); setOwnLoading(!!userId);
+      mutation.current = null; setBusy(false); setAdding(null); setRemoving(null);
+      setAuth(identity.current);
+    });
+    return () => {
+      cancelled = true; mounted.current = false; poolRequest.current += 1; searchRequest.current += 1;
+      subscription.unsubscribe();
+    };
+  }, [selectBrand]);
 
-  const loadPool = React.useCallback((brandId: string) => {
-    setLoading(true);
-    fetchCompetitorBrands(brandId).then(setPool).catch(console.error).finally(() => setLoading(false));
-  }, []);
+  React.useEffect(() => {
+    if (!auth.ready || !auth.userId) return;
+    let cancelled = false;
+    const epoch = auth.epoch;
+    const active = () => !cancelled && mounted.current && identity.current.epoch === epoch;
+    setOwnLoading(true); setOwnError(null);
+    fetchOwnBrands().then(brands => {
+      if (!active()) return;
+      if (!Array.isArray(brands) || brands.some(b => !b || typeof b.id !== 'string' || typeof b.name !== 'string')) throw new Error('Invalid brands');
+      setOwnBrands(brands); selectBrand(brands[0]?.id ?? null);
+    }).catch(() => { if (active()) setOwnError('자사 브랜드 목록을 불러오지 못했습니다.'); })
+      .finally(() => { if (active()) setOwnLoading(false); });
+    return () => { cancelled = true; };
+  }, [auth.ready, auth.userId, auth.epoch, ownRetry, selectBrand]);
+
+  const loadPool = React.useCallback(async (s: { brandId: string | null; version: number; epoch: number }) => {
+    if (!s.brandId || !current(s)) return;
+    const request = ++poolRequest.current;
+    const active = () => current(s) && request === poolRequest.current;
+    setLoading(true); setPool([]); setPoolError(null);
+    try {
+      const rows = await fetchCompetitorBrands(s.brandId);
+      if (!active()) return;
+      if (!Array.isArray(rows) || rows.some(r => !r || typeof r.id !== 'string' || r.own_brand_id !== s.brandId ||
+        typeof r.brand_id !== 'string' || typeof r.brand_name !== 'string' || typeof r.added_at !== 'string')) throw new Error('Invalid pool');
+      setPool(rows);
+    } catch { if (active()) setPoolError('경쟁 브랜드 풀을 불러오지 못했습니다.'); }
+    finally { if (active()) setLoading(false); }
+  }, [current]);
 
   React.useEffect(() => {
     if (!selectedBrandId) return;
-    loadPool(selectedBrandId);
-    setKeyword('');
-    setResults([]);
-  }, [selectedBrandId, loadPool]);
+    void loadPool({ brandId: selectedBrandId, version: target.current.version, epoch: auth.epoch });
+    return () => { poolRequest.current += 1; };
+  }, [selectedBrandId, targetVersion, auth.epoch, loadPool]);
 
+  const changeKeyword = (value: string) => {
+    if (keywordRef.current === value) return;
+    setSearchVersion(n => n + 1);
+    searchRequest.current += 1; keywordRef.current = value;
+    setKeyword(value); setResults([]); setSearchError(null); setSearching(!!value.trim());
+  };
   React.useEffect(() => {
-    if (searchRef.current) clearTimeout(searchRef.current);
-    if (!keyword.trim()) { setResults([]); return; }
-    setSearching(true);
-    searchRef.current = setTimeout(() => {
-      searchBrandsForPool(keyword).then(setResults).catch(console.error).finally(() => setSearching(false));
+    const s = { brandId: selectedBrandId, version: target.current.version, epoch: auth.epoch };
+    if (!keyword.trim() || !s.brandId || !current(s)) return;
+    const request = ++searchRequest.current;
+    const active = () => current(s) && request === searchRequest.current && keywordRef.current === keyword;
+    setSearching(true); setResults([]); setSearchError(null);
+    const timer = setTimeout(async () => {
+      try {
+        const rows = await searchBrandsForPool(keyword);
+        if (!active()) return;
+        if (!Array.isArray(rows) || rows.some(r => !r || typeof r.id !== 'string' || typeof r.name !== 'string')) throw new Error('Invalid search');
+        setResults(rows);
+      } catch { if (active()) setSearchError('브랜드 검색 결과를 불러오지 못했습니다.'); }
+      finally { if (active()) setSearching(false); }
     }, 300);
-  }, [keyword]);
+    return () => { clearTimeout(timer); searchRequest.current += 1; };
+  }, [keyword, selectedBrandId, targetVersion, auth.epoch, searchVersion, current]);
 
   const poolBrandIds = new Set(pool.map(p => p.brand_id));
   const selectedBrandName = ownBrands.find(b => b.id === selectedBrandId)?.name ?? '—';
-
-  const handleAdd = async (br: BrandSearchRow) => {
-    if (!selectedBrandId || poolBrandIds.has(br.id)) return;
-    setAdding(br.id);
+  // Capture the rendered scope too: retained buttons from an old view cannot write.
+  const renderedScope = scope();
+  const renderedSearch = searchRequest.current;
+  const runAction = async (action: () => Promise<void>, id: string, kind: 'add' | 'remove') => {
+    if (!current(renderedScope) || !selectedBrandId || loading || poolError || mutation.current) return;
+    const operation = {};
+    mutation.current = operation; setBusy(true); setActionError(null);
+    if (kind === 'add') setAdding(id); else setRemoving(id);
     try {
-      await addCompetitorBrand(selectedBrandId, br.id);
-      loadPool(selectedBrandId);
-    } catch (e) { console.error(e); }
-    finally { setAdding(null); }
+      await action();
+      // A completion may refresh a reselected A, but never B or another account.
+      if (mounted.current && identity.current.epoch === renderedScope.epoch && target.current.brandId === selectedBrandId) {
+        await loadPool(scope());
+      }
+    } catch {
+      if (current(renderedScope)) setActionError(kind === 'add' ? '브랜드를 추가하지 못했습니다.' : '브랜드를 제거하지 못했습니다.');
+    } finally {
+      if (mounted.current && mutation.current === operation) {
+        mutation.current = null; setBusy(false); setAdding(null); setRemoving(null);
+      }
+    }
   };
-
-  const handleRemove = async (id: string) => {
-    setRemoving(id);
-    try {
-      await removeCompetitorBrand(id);
-      setPool(prev => prev.filter(p => p.id !== id));
-    } catch (e) { console.error(e); }
-    finally { setRemoving(null); }
+  const handleAdd = (br: BrandSearchRow) => {
+    if (renderedSearch !== searchRequest.current || searching || searchError || !results.some(r => r.id === br.id) || poolBrandIds.has(br.id)) return;
+    return runAction(() => addCompetitorBrand(selectedBrandId!, br.id), br.id, 'add');
+  };
+  const handleRemove = (id: string) => {
+    if (!pool.some(r => r.id === id)) return;
+    return runAction(() => removeCompetitorBrand(id), id, 'remove');
   };
 
   const brandChipStyle: React.CSSProperties = {
@@ -110,9 +200,12 @@ function BrandPool() {
       <section className="panel" style={{ padding: '12px 14px' }}>
         <div style={{ marginBottom: 10 }}>
           <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>자사 브랜드 선택</h3>
+          {ownLoading && <div className="dim" style={{ fontSize: 12 }}>자사 브랜드 불러오는 중…</div>}
+          {ownError && <div role="alert" style={{ color: 'var(--grade-dn)', fontSize: 12 }}>{ownError} <button className="btn sm" onClick={() => { if (current(renderedScope)) setOwnRetry(n => n + 1); }}>자사 브랜드 다시 시도</button></div>}
+          {!ownLoading && !ownError && ownBrands.length === 0 && <div className="dim" style={{ fontSize: 12 }}>{auth.userId ? '자사 브랜드가 없습니다.' : '로그인 후 브랜드 풀을 확인하세요.'}</div>}
           <div className="row-flex gap-4" style={{ flexWrap: 'wrap' }}>
             {ownBrands.map(b => (
-              <button key={b.id} onClick={() => setSelectedBrandId(b.id)}
+              <button key={b.id} onClick={() => { if (mounted.current && identity.current.epoch === renderedScope.epoch) selectBrand(b.id); }}
                 className={`btn sm ${selectedBrandId === b.id ? 'active' : ''}`}
                 style={{ textTransform: 'none', letterSpacing: 0, fontSize: 12 }}>
                 {b.name}
@@ -127,7 +220,7 @@ function BrandPool() {
             경쟁 브랜드 추가 — <span style={{ color: 'var(--hs)' }}>{selectedBrandName}</span> 풀에 추가
           </div>
           <input
-            type="text" value={keyword} onChange={e => setKeyword(e.target.value)}
+            type="text" value={keyword} disabled={!selectedBrandId} onChange={e => { if (current(renderedScope)) changeKeyword(e.target.value); }}
             placeholder="브랜드 검색…"
             style={{
               width: '100%', fontFamily: 'var(--sans)', fontSize: 12, padding: '6px 10px',
@@ -137,7 +230,8 @@ function BrandPool() {
           {searching && (
             <div style={{ padding: '10px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>검색 중…</div>
           )}
-          {!searching && keyword && results.length === 0 && (
+          {searchError && <div role="alert" style={{ padding: '10px 0', color: 'var(--grade-dn)', fontSize: 12 }}>{searchError} <button className="btn sm" onClick={() => { if (current(renderedScope) && renderedSearch === searchRequest.current && keywordRef.current === keyword) { searchRequest.current += 1; setSearchVersion(n => n + 1); } }}>검색 다시 시도</button></div>}
+          {!searching && !searchError && keyword.trim() && results.length === 0 && (
             <div style={{ padding: '10px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
               "{keyword}"에 해당하는 브랜드가 없습니다
             </div>
@@ -175,7 +269,7 @@ function BrandPool() {
                     {inPool ? (
                       <span style={{ fontSize: 11, color: 'var(--f4)' }}>추가됨</span>
                     ) : (
-                      <button onClick={() => handleAdd(br)} disabled={adding === br.id}
+                      <button onClick={() => handleAdd(br)} disabled={busy || loading || !!poolError}
                         className="btn sm" style={{ opacity: adding === br.id ? 0.5 : 1 }}>
                         <IcPlus size={11} /> 추가
                       </button>
@@ -197,11 +291,18 @@ function BrandPool() {
             <span style={{ fontSize: 12, color: 'var(--f3)' }}>경쟁 브랜드 풀</span>
           </div>
           <span className="mono dim" style={{ fontSize: 11 }}>
-            {loading ? '…' : `${pool.length}개`}
+            {loading ? '…' : poolError ? '—' : `${pool.length}개`}
           </span>
         </div>
 
-        {loading ? (
+        {actionError && <div role="alert" style={{ padding: '10px 14px', color: 'var(--grade-dn)', fontSize: 12 }}>{actionError}</div>}
+        {poolError ? (
+          <div role="alert" style={{ padding: '32px 14px', textAlign: 'center', color: 'var(--grade-dn)', fontSize: 12 }}>
+            {poolError} <button className="btn sm" onClick={() => { if (current(renderedScope)) void loadPool(renderedScope); }}>풀 다시 시도</button>
+          </div>
+        ) : !selectedBrandId ? (
+          <div className="dim" style={{ padding: '32px 14px', textAlign: 'center', fontSize: 12 }}>자사 브랜드를 선택하세요.</div>
+        ) : loading ? (
           <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>불러오는 중…</div>
         ) : pool.length === 0 ? (
           <div style={{ padding: '48px 16px', textAlign: 'center', color: 'var(--f4)', fontSize: 12 }}>
@@ -353,7 +454,7 @@ function BrandPool() {
                       </td>
                       {/* 제거 */}
                       <td style={{ padding: '9px 6px', textAlign: 'center' }}>
-                        <button onClick={() => handleRemove(b.id)} disabled={removing === b.id}
+                        <button onClick={() => handleRemove(b.id)} disabled={busy}
                           className="btn sm icon" title="풀에서 제거"
                           style={{ opacity: removing === b.id ? 0.5 : 1 }}>
                           <IcX />

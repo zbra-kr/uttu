@@ -91,7 +91,7 @@ jobs:
         run: npm run test:report-evidence
         working-directory: viewer
 
-      - name: Matching score regression tests
+      - name: Matching score and desktop BrandPool regression tests
         run: npm run test:matching
         working-directory: viewer
 
@@ -126,6 +126,10 @@ jobs:
 
       - name: Loading performance regression tests
         run: npm run test:performance
+        working-directory: viewer
+
+      - name: Product history calendar KPI regression tests
+        run: npm run test:product-history-insights
         working-directory: viewer
 
       - name: Product category scope and read lifecycle regression tests

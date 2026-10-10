@@ -1,4 +1,5 @@
 'use client';
+import { productHistoryInsights } from '@/lib/product-history-insights';
 import { useProductCategoryRanks } from '@/lib/use-product-category-ranks';
 import ProductCategoryReadState from '@/components/product/ProductCategoryReadState';
 import ProductHistoryCoverage from '@/components/product/ProductHistoryCoverage';
@@ -143,25 +144,12 @@ export default function MobileProductDetailView() {
   const rankColor = rankTrend === 'up' ? 'var(--slf)' : rankTrend === 'dn' ? 'var(--shf)' : 'var(--f3)';
 
   // 랭킹 인사이트
-  const rankMean   = ranks.length > 0 ? ranks.reduce((s, r) => s + r, 0) / ranks.length : 0;
-  const rankStdDev = ranks.length >= 3
-    ? Math.sqrt(ranks.reduce((s, r) => s + (r - rankMean) ** 2, 0) / ranks.length)
-    : null;
+  const insights = productHistoryInsights(rankHistory, priceHistory);
+  const rankMean = insights.mean;
+  const rankStdDev = insights.stdDev;
   const stabilityLabel = rankStdDev === null ? '—' : rankStdDev < 5 ? '안정' : rankStdDev < 15 ? '보통' : '변동큼';
-  const recent7 = ranks.slice(-7);
-  const prev7   = ranks.slice(-14, -7);
-  const avg7 = (a: number[]) => a.length > 0 ? a.reduce((s, r) => s + r, 0) / a.length : null;
-  const velocity7d = (avg7(recent7) !== null && avg7(prev7) !== null)
-    ? Math.round((avg7(prev7) as number) - (avg7(recent7) as number)) : null;
-  const discountDays = priceHistory.slice(1).flatMap((ph, i) => {
-    if (!ph.discount_rate || ph.discount_rate <= 0) return [];
-    const rNow  = rankHistory.find(r => r.date === ph.date);
-    const rPrev = rankHistory.find(r => r.date === priceHistory[i].date);
-    if (!rNow || !rPrev) return [];
-    return [rNow.rank - rPrev.rank];
-  });
-  const avgRankOnDiscount = discountDays.length > 0
-    ? Math.round(discountDays.reduce((s, d) => s + d, 0) / discountDays.length) : null;
+  const rankVelocity = insights.velocity;
+  const avgRankOnDiscount = insights.discountDelta;
 
   // 가격 차트
   const prices    = priceHistory.map(p => p.price).filter((price): price is number => price !== null);
@@ -255,7 +243,7 @@ export default function MobileProductDetailView() {
       {rankHistory.length >= 1 && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>랭킹 추이 ({rankHistory.length}{rankHistory.coverage?.mode === 'weekly' ? '주' : '일'})</span>
+            <span style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>랭킹 추이 ({rankHistory.length}개 {insights.sampleLabel})</span>
             <span style={{ fontSize: 11, color: rankColor, fontFamily: 'var(--mono)', fontWeight: 600 }}>
               {rankTrend === 'up' ? '↑ ' : rankTrend === 'dn' ? '↓ ' : ''}#{rankFirst} → #{rankLast}
             </span>
@@ -279,7 +267,7 @@ export default function MobileProductDetailView() {
       {priceHistory.length >= 1 && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>가격 추이 ({priceHistory.length}{rankHistory.coverage?.mode === 'weekly' ? '주' : '일'})</span>
+            <span style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)' }}>가격 추이 ({priceHistory.length}개 {insights.sampleLabel})</span>
             <span style={{ fontSize: 11, color: 'var(--f3)', fontFamily: 'var(--mono)' }}>
               {prices.length === 0 ? '가격 관측 없음' : minPrice === maxPrice ? `${minPrice.toLocaleString()}원` : `${minPrice.toLocaleString()} ~ ${maxPrice.toLocaleString()}원`}
             </span>
@@ -303,24 +291,24 @@ export default function MobileProductDetailView() {
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10 }}>
           <div style={{ fontSize: 11, color: 'var(--f4)', fontFamily: 'var(--mono)', marginBottom: 10 }}>랭킹 인사이트</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <MiniKpi label="안정성" value={stabilityLabel} sub={rankStdDev !== null ? `σ ${rankStdDev.toFixed(1)}` : undefined} />
+            <MiniKpi label="안정성" value={stabilityLabel} sub={`${insights.sampleNote}${rankStdDev !== null ? ` · σ ${rankStdDev.toFixed(1)}` : ''}`} />
             <MiniKpi
-              label="7일 추세"
-              value={velocity7d === null ? '—' : velocity7d > 0 ? `↑ ${velocity7d}` : velocity7d < 0 ? `↓ ${Math.abs(velocity7d)}` : '보합'}
-              valueColor={velocity7d === null ? undefined : velocity7d > 0 ? 'var(--slf)' : velocity7d < 0 ? 'var(--shf)' : undefined}
-              sub="전전주 대비"
+              label={insights.trendLabel}
+              value={rankVelocity === null ? '—' : rankVelocity > 0 ? `↑ ${rankVelocity}` : rankVelocity < 0 ? `↓ ${Math.abs(rankVelocity)}` : '보합'}
+              valueColor={rankVelocity === null ? undefined : rankVelocity > 0 ? 'var(--slf)' : rankVelocity < 0 ? 'var(--shf)' : undefined}
+              sub={insights.trendNote}
             />
             <MiniKpi
-              label="할인 반응"
+              label="할인 관측 변화"
               value={avgRankOnDiscount === null ? '—' : avgRankOnDiscount < 0 ? `↑ ${Math.abs(avgRankOnDiscount)}` : avgRankOnDiscount > 0 ? `↓ ${avgRankOnDiscount}` : '변화없음'}
               valueColor={avgRankOnDiscount === null ? undefined : avgRankOnDiscount < 0 ? 'var(--slf)' : avgRankOnDiscount > 0 ? 'var(--shf)' : undefined}
-              sub={discountDays.length > 0 ? `${discountDays.length}일 관측` : '데이터 없음'}
+              sub={insights.discountNote}
             />
           </div>
           <div style={{ display: 'flex', gap: 12, fontSize: 10, color: 'var(--f4)', fontFamily: 'var(--mono)', paddingTop: 8, borderTop: '0.5px dashed var(--bs)' }}>
             <span>최고 #{minRank}</span>
             <span>최저 #{maxRank}</span>
-            <span>평균 #{Math.round(rankMean)}</span>
+            <span>{insights.meanLabel} {rankMean === null ? '—' : `#${Math.round(rankMean)}`}</span>
           </div>
         </div>
       )}
