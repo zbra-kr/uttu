@@ -1,52 +1,23 @@
 'use client';
 import React from 'react';
+import { SHELL_NAVIGATION, SHELL_GROUPS, shellAncestors, shellGroupsForPath, shellPathMatches } from '@/lib/shell-navigation';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import AiPanel from './AiPanel';
 import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import HelpButton from '../help/HelpButton';
-import {
-  IcHome, IcSpark, IcRanking, IcFlag, IcUser,
-  IcReport, IcBrandRanking, IcCompany, IcReview, IcPromo,
-  IcBook, IcSnap, IcLink, IcRecommend, IcShield, IcBell, IcX, IcChevL,
-} from '../ui/icons';
+import { IcBell, IcX, IcChevL } from '../ui/icons';
 import { fetchUnreadCount } from '@/lib/queries-me';
 import InboxList from '../me/InboxList';
 import type { ShellStats } from '@/lib/queries';
 
-/* ── left drawer nav definition ── */
-type NavItem = { id: string; path: string; label: string; Icon: React.ComponentType<{ size?: number }>; badge?: number; adminOnly?: boolean };
-type NavSection = { divider: true };
-const DRAWER_NAV: (NavItem | NavSection)[] = [
-  { id: 'home',          path: '/',              label: '홈',           Icon: IcHome      },
-  { id: 'today',         path: '/today',         label: '오늘의 매거진', Icon: IcSpark     },
-  { id: 'report',        path: '/report',        label: '심층 리포트',  Icon: IcReport    },
-  { divider: true },
-  { id: 'ranking',       path: '/ranking',       label: '상품 랭킹',    Icon: IcRanking   },
-  { id: 'brand-ranking', path: '/brand-ranking', label: '브랜드 랭킹',  Icon: IcBrandRanking },
-  { id: 'companies',     path: '/companies',     label: '회사 목록',    Icon: IcCompany   },
-  { id: 'reviews',       path: '/reviews',       label: '자사 리뷰',    Icon: IcReview    },
-  { id: 'promo',         path: '/promo',         label: '프로모션',     Icon: IcPromo     },
-  { id: 'magazine',      path: '/magazine',      label: '매거진',       Icon: IcBook      },
-  { id: 'snap',          path: '/snap',          label: '스냅샷',       Icon: IcSnap      },
-  { id: 'anomaly',       path: '/anomaly',       label: '이상탐지',     Icon: IcFlag      },
-  { id: 'matching',      path: '/matching',      label: '자사 매칭',    Icon: IcLink      },
-  { id: 'recommend',     path: '/recommend',     label: '추천판',       Icon: IcRecommend },
-  { divider: true },
-  { id: 'me',            path: '/me',            label: '내 정보',      Icon: IcUser      },
-  { id: 'admin',         path: '/admin',         label: '관리자',       Icon: IcShield,   adminOnly: true },
-];
+const DRAWER_NAV = SHELL_NAVIGATION.filter(item => !item.mobileHidden);
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return name.slice(0, 2).toUpperCase();
-}
-
-function isActive(pathname: string, path: string): boolean {
-  if (path === '/') return pathname === '/';
-  return pathname.startsWith(path);
 }
 
 interface MobileShellProps {
@@ -62,6 +33,13 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
   const tour = useOnboarding();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
+  const [navOpen, setNavOpen] = React.useState<Set<string>>(() => new Set());
+  React.useEffect(() => { setMounted(true); }, []);
+  React.useEffect(() => { setNavOpen(previous => new Set([...previous, ...shellGroupsForPath(pathname ?? '')])); }, [pathname]);
+  const toggleNav = (id: string) => setNavOpen(previous => {
+    const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
   const [aipOpen, setAipOpen] = React.useState(false);
   const visibleAi = tour.active ? tour.step === 1 : aipOpen;
   const [bellOpen, setBellOpen] = React.useState(false);
@@ -136,6 +114,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
       }}>
         {/* hamburger */}
         <button
+          aria-label="메뉴 열기"
           onClick={() => setDrawerOpen(true)}
           style={{
             width: 30, height: 30, border: '1px solid var(--bs)', borderRadius: 7,
@@ -150,7 +129,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
         </button>
 
         {/* back button — root 탭 페이지에서는 숨김 */}
-        {!ROOT_PATHS.has(pathname) && (
+        {mounted && !ROOT_PATHS.has(pathname) && (
           <button
             onClick={() => router.back()}
             style={{
@@ -327,6 +306,7 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
 
             {/* close button inside drawer header */}
             <button
+              aria-label="메뉴 닫기"
               onClick={() => setDrawerOpen(false)}
               style={{
                 position: 'absolute', top: 14, right: 14,
@@ -340,30 +320,29 @@ export default function MobileShell({ children, shellStats, context }: MobileShe
 
             {/* nav links */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {DRAWER_NAV.map((item, i) => {
-                if ('divider' in item) {
-                  return <div key={`div-${i}`} style={{ height: 1, background: 'var(--bs)', margin: '7px 11px' }} />;
-                }
+              {DRAWER_NAV.map(item => {
                 const { id, path, label, Icon, adminOnly } = item;
                 if (adminOnly && user?.role !== 'admin') return null;
-                const active = isActive(pathname, path);
-                return (
-                  <Link
-                    key={id}
-                    href={path}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 11, padding: '8px 11px',
-                      borderRadius: 7, fontSize: 12.5, color: active ? 'var(--hs)' : 'var(--f2)',
-                      background: active ? 'var(--hs-soft)' : 'transparent',
-                      fontWeight: active ? 600 : 400, textDecoration: 'none',
-                    }}
-                  >
-                    <span style={{ width: 18, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon size={15} />
-                    </span>
-                    {label}
-                  </Link>
-                );
+                if (!shellAncestors(id).every(parent => navOpen.has(parent))) return null;
+                const active = shellPathMatches(pathname ?? '', path);
+                const grouped = SHELL_GROUPS.has(id);
+                const style: React.CSSProperties = {
+                  display: 'flex', alignItems: 'center', gap: 11, padding: '8px 11px',
+                  borderRadius: 7, fontSize: 12.5, color: active ? 'var(--hs)' : 'var(--f2)',
+                  background: active ? 'var(--hs-soft)' : 'transparent',
+                  fontWeight: active ? 600 : 400, textDecoration: 'none',
+                  marginLeft: item.parent && item.parent !== 'reference' ? 12 : 0,
+                };
+                const contents = <><span style={{ width: 18, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon size={15} /></span>{label}</>;
+                return <div key={id} style={{ display: 'flex', alignItems: 'center' }}>
+                  {item.disclosure ? <button type="button" style={{ ...style, width: '100%', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                    aria-label={label} aria-expanded={navOpen.has(id)} onClick={() => toggleNav(id)}>{contents}<IcChevL size={12} style={{ marginLeft: 'auto', transform: navOpen.has(id) ? 'rotate(-90deg)' : 'rotate(180deg)' }} /></button>
+                    : <Link href={path} onClick={() => setDrawerOpen(false)} style={{ ...style, flex: 1 }}>{contents}</Link>}
+                  {grouped && !item.disclosure && <button type="button" aria-label={`${label} 하위 메뉴`} aria-expanded={navOpen.has(id)}
+                    onClick={() => toggleNav(id)} style={{ border: 'none', background: 'transparent', color: 'var(--f3)', cursor: 'pointer', padding: 8 }}>
+                    <IcChevL size={12} style={{ transform: navOpen.has(id) ? 'rotate(-90deg)' : 'rotate(180deg)' }} />
+                  </button>}
+                </div>;
               })}
             </div>
           </div>

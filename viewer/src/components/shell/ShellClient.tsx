@@ -3,6 +3,7 @@ import DailyReportBoundary from '@/components/report/DailyReportBoundary';
 import CSDailyReviewBoundary from '@/components/briefing/CSDailyReviewBoundary';
 import ObservationReviewBoundary from '@/components/product/ObservationReviewBoundary';
 import React from 'react';
+import { shellBreadcrumb } from '@/lib/shell-navigation';
 import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -13,24 +14,6 @@ import { fetchShellStats, ShellStats } from '@/lib/queries';
 import { useIsMobile } from '@/hooks/useViewport';
 import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 import { kstToday } from '@/lib/format';
-
-const BREADCRUMBS: Record<string, string[]> = {
-  '/':                ['홈', '대시보드'],
-  '/ranking':         ['랭킹', '글로벌 상품'],
-  '/anomaly':         ['이상탐지'],
-  '/company':         ['회사'],
-  '/brand':           ['브랜드'],
-  '/product':         ['상품'],
-  '/promo':           ['프로모션 / 세일'],
-  '/snap':            ['스냅샷'],
-  '/magazine':        ['매거진'],
-  '/reviews':         ['리뷰'],
-  '/today':           ['인텔리전스', '오늘의 매거진'],
-  '/matching':        ['자사 매칭'],
-  '/admin':           ['매핑', '회사 ↔ 브랜드'],
-  '/admin/mapping':   ['매핑', 'Corp Code'],
-  '/me':              ['마이페이지'],
-};
 
 const CONTEXTS: Record<string, string[]> = {
   '/':          ['전사 대시보드'],
@@ -165,7 +148,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
           ? brandCrumb.company
             ? [`회사 · ${brandCrumb.company}`, `브랜드 · ${brandCrumb.name}`]
             : [`브랜드 · ${brandCrumb.name}`]
-          : (BREADCRUMBS[presentationPathname] || ['UTTU']);
+          : shellBreadcrumb(presentationPathname);
 
   const todayStr = kstToday().replace(/-/g, '.');
   const a       = shellStats?.anomalyCount ?? 0;

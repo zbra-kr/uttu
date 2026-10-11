@@ -1,4 +1,5 @@
 'use client';
+import ProductComparisonLink from '@/components/product/ProductComparisonLink';
 import { productHistoryInsights } from '@/lib/product-history-insights';
 import { useProductCategoryRanks } from '@/lib/use-product-category-ranks';
 import ProductCategoryReadState from '@/components/product/ProductCategoryReadState';
@@ -239,6 +240,7 @@ export default function MobileProductDetailView() {
       </div>
 
       {/* ── 랭킹 추이 ── */}
+      {detail.is_own && <ProductComparisonLink productNo={String(detail.musinsa_no)} />}
       <ProductHistoryCoverage coverage={rankHistory.coverage} status={historyStatus} onRetry={retryHistory} />
       {rankHistory.length >= 1 && (
         <div style={{ padding: '12px 13px', background: 'var(--sur)', border: '1px solid var(--bd)', borderRadius: 10, overflow: 'hidden' }}>
