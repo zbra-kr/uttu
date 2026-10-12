@@ -34,6 +34,37 @@ _IS_PAGE_KEYS = ("손익계산서", "포괄손익계산서")
 _BS_PAGE_KEYS = ("재무상태표",)
 
 
+def _safe_audit_context(corp_code: str, year: int | None = None) -> str:
+    corp = corp_code if type(corp_code) is str and re.fullmatch(r"[0-9]{8}", corp_code) else "unknown"
+    context = f"corp_code={corp}"
+    if year is not None:
+        safe_year = year if type(year) is int and 1000 <= year <= 9999 else "unknown"
+        context += f" year={safe_year}"
+    return context
+
+
+def _audit_error_kind(error: Exception) -> str:
+    # Never use exception text, arbitrary class names or traceback locals.
+    try:
+        # Use type's own descriptor, not an exception metaclass's __mro__ property.
+        lineage = type.__dict__["__mro__"].__get__(type(error))
+        for kind, label in ((UnicodeError, "encoding_error"), (KeyError, "missing_field"),
+                            (TypeError, "invalid_type"), (ValueError, "invalid_value"),
+                            (AttributeError, "missing_attribute"), (OSError, "io_error")):
+            if any(base is kind for base in lineage):
+                return label
+    except Exception:
+        pass  # Diagnostics must not interrupt the existing continue policy.
+    return "unknown_error"
+
+
+def _audit_summary(corp_code: str, counts: dict[str, int]) -> None:
+    fields = " ".join(f"{key}={counts[key]}" for key in
+                      ("reports", "attempted", "ok", "empty", "parse_error", "year_skip",
+                       "search_error", "corp_missing"))
+    logger.info(f"dart_fss_summary {_safe_audit_context(corp_code)} {fields}")
+
+
 def _extract_amounts(text: str, keyword: str) -> tuple[int | None, int | None]:
     """
     평문 텍스트에서 keyword 이후 첫 두 금액 추출.
@@ -83,7 +114,7 @@ def _parse_report_financials(report: Any, fiscal_year: int) -> dict[str, int | N
                     cur, _ = _extract_amounts(text, kw)
                     if cur is not None:
                         result[col] = cur
-                        logger.debug("dart_fss_parsed", col=col, value=cur, page=title)
+                        logger.debug(f"dart_fss_parsed column={col}")
 
         elif any(k in title for k in _BS_PAGE_KEYS):
             text = _page_text(page.html or "")
@@ -92,7 +123,7 @@ def _parse_report_financials(report: Any, fiscal_year: int) -> dict[str, int | N
                     cur, _ = _extract_amounts(text, kw)
                     if cur is not None:
                         result[col] = cur
-                        logger.debug("dart_fss_parsed", col=col, value=cur, page=title)
+                        logger.debug(f"dart_fss_parsed column={col}")
 
     return result
 
@@ -108,6 +139,8 @@ def fetch_audit_financials(
                total_assets, total_liabilities, data_source}, ...]
     """
     import datetime
+    counts = dict.fromkeys(("reports", "attempted", "ok", "empty", "parse_error", "year_skip",
+                            "search_error", "corp_missing"), 0)
     dart.set_api_key(api_key)
 
     # corp_code로 Corp 검색
@@ -116,7 +149,9 @@ def fetch_audit_financials(
         (c for c in corp_list if c.corp_code == corp_code), None
     )
     if not corp_obj:
-        logger.warning("dart_fss_corp_not_found", corp_code=corp_code)
+        counts["corp_missing"] += 1
+        logger.warning(f"dart_fss_corp_not_found {_safe_audit_context(corp_code)}")
+        _audit_summary(corp_code, counts)
         return []
 
     current_year = datetime.datetime.now().year
@@ -129,8 +164,11 @@ def fetch_audit_financials(
             bgn_de=bgn_de, end_de=end_de, page_count=100
         )
     except Exception as e:
-        # dart-fss는 DART status 010(조회결과없음)을 APIKeyError로 잘못 매핑 → 정상 케이스
-        logger.debug("dart_fss_search_no_result", corp_code=corp_code, error=str(e))
+        # Preserve the existing search failure policy; diagnostics do not infer no-data.
+        counts["search_error"] += 1
+        logger.debug(f"dart_fss_search_no_result {_safe_audit_context(corp_code)}"
+                     f" stage=search classification={_audit_error_kind(e)}")
+        _audit_summary(corp_code, counts)
         return []
 
     # 감사보고서만 필터 (연결 제외 — 개별 재무 기준)
@@ -138,25 +176,30 @@ def fetch_audit_financials(
         f for f in filings
         if "감사보고서" in (f.report_nm or "") and "연결" not in (f.report_nm or "")
     ]
-    logger.debug("dart_fss_filings_found", corp_code=corp_code,
-                 total=len(filings), audit=len(audit_reports))
+    counts["reports"] = len(audit_reports)
+    logger.debug(f"dart_fss_filings_found {_safe_audit_context(corp_code)}"
+                 f" total={len(filings)} audit={len(audit_reports)}")
 
     results: list[dict[str, Any]] = []
     for report in audit_reports:
         # 보고서 이름에서 사업연도 추출: "감사보고서 (2024.12)" → 2024
         year_match = re.search(r"\((\d{4})\.\d{2}\)", report.report_nm or "")
         if not year_match:
-            logger.debug("dart_fss_year_parse_skip", report_nm=report.report_nm)
+            counts["year_skip"] += 1
+            logger.debug(f"dart_fss_year_parse_skip {_safe_audit_context(corp_code)}")
             continue
         fiscal_year = int(year_match.group(1))
 
-        logger.info("dart_fss_parsing", corp_code=corp_code, year=fiscal_year,
-                    rcept_no=report.rcept_no)
+        # Preserve the existing receipt-property access without logging its value.
+        _ = report.rcept_no
+        counts["attempted"] += 1
+        logger.info(f"dart_fss_parsing {_safe_audit_context(corp_code, fiscal_year)}")
         try:
             financials = _parse_report_financials(report, fiscal_year)
         except Exception as e:
-            logger.warning("dart_fss_parse_error", corp_code=corp_code,
-                           year=fiscal_year, error=str(e))
+            counts["parse_error"] += 1
+            logger.warning(f"dart_fss_parse_error {_safe_audit_context(corp_code, fiscal_year)}"
+                           f" stage=report_parse classification={_audit_error_kind(e)}")
             continue
 
         if financials:
@@ -165,9 +208,11 @@ def fetch_audit_financials(
                 "data_source":       "audit_report_html",
                 **financials,
             })
-            logger.info("dart_fss_ok", corp_code=corp_code, year=fiscal_year,
-                        keys=list(financials))
+            counts["ok"] += 1
+            logger.info(f"dart_fss_ok {_safe_audit_context(corp_code, fiscal_year)}")
         else:
-            logger.warning("dart_fss_no_data", corp_code=corp_code, year=fiscal_year)
+            counts["empty"] += 1
+            logger.warning(f"dart_fss_no_data {_safe_audit_context(corp_code, fiscal_year)}")
 
+    _audit_summary(corp_code, counts)
     return results

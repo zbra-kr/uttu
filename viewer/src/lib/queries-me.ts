@@ -492,18 +492,27 @@ export interface SavedFilter {
   created_at: string;
 }
 
-export async function fetchSavedFilters(page: string): Promise<SavedFilter[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
-  const { data, error } = await supabase
+export type SavedFiltersRead =
+  | { status: 'ready'; filters: SavedFilter[] }
+  | { status: 'signed-out' };
+
+export async function fetchSavedFilters(page: string, signal?: AbortSignal): Promise<SavedFiltersRead> {
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (signal?.aborted) throw new Error('Saved filters read cancelled');
+  if (authError?.name === 'AuthSessionMissingError') return { status: 'signed-out' };
+  if (authError) throw authError;
+  if (!user) return { status: 'signed-out' };
+  const query = supabase
     .from('user_saved_filters')
     .select('id, page, name, filter_data, created_at')
     .eq('user_id', user.id)
     .eq('page', page)
     .order('created_at', { ascending: false })
     .limit(20);
-  if (error) { console.error('[fetchSavedFilters]', error); return []; }
-  return (data ?? []) as SavedFilter[];
+  const { data, error } = await (signal ? query.abortSignal(signal) : query);
+  if (signal?.aborted) throw new Error('Saved filters read cancelled');
+  if (error) throw error;
+  return { status: 'ready', filters: (data ?? []) as SavedFilter[] };
 }
 
 export async function fetchAllSavedFilters(): Promise<SavedFilter[]> {

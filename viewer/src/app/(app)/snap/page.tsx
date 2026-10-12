@@ -1400,6 +1400,12 @@ function SnapDesktopView() {
             </div>
           )}
 
+          {tab === 'MEMBER' && (
+            <p className="muted" style={{ fontSize: 12 }}>
+              조회·좋아요는 조회된 고유 스냅의 최신 저장 누적값 합계입니다. 기간 내 증가량이나 전체 게시물 통계가 아니며, 조회 상한으로 일부만 포함될 수 있습니다.
+            </p>
+          )}
+
           {/* 테이블 */}
           <section className="panel" style={{ padding: 0, overflowX: 'auto' }}>
             <div className="tbl" style={{ border: 'none', borderRadius: 0 }}>

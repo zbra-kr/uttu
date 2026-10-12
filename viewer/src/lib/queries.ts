@@ -2282,6 +2282,27 @@ export interface OwnProductWithPrice {
   erp_style_code: string | null;
 }
 
+// Review filter options do not consume prices or a total count.
+export type ReviewProductOption = Pick<OwnProductWithPrice, 'id' | 'musinsa_no' | 'name' | 'brand_name'>;
+
+export async function fetchReviewProductOptions(keyword: string): Promise<ReviewProductOption[]> {
+  let q = supabase
+    .from('products')
+    .select('id, musinsa_no, name, brands(name)')
+    .eq('is_own', true)
+    .order('review_count', { ascending: false })
+    .range(0, 9);
+  if (keyword) q = q.or(`name.ilike.%${keyword}%,style_no.ilike.%${keyword}%,erp_style_code.ilike.%${keyword}%`);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map(p => ({
+    id: p.id,
+    musinsa_no: String(p.musinsa_no),
+    name: p.name ?? '—',
+    brand_name: (p.brands as unknown as { name: string } | null)?.name ?? '—',
+  }));
+}
+
 export async function fetchOwnProductsWithPrices(opts: {
   brandIds?: string[];
   categoryCodes?: string[];

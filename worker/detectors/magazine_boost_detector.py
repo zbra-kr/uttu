@@ -21,6 +21,7 @@ from loguru import logger
 
 from supabase import Client
 from worker.detectors.base import Anomaly
+from worker.detectors.effect_rank_observation import add_observation, checked_rank_page
 
 MODULE = "magazine"
 
@@ -33,8 +34,6 @@ RANK_STORE     = "musinsa"
 ARTICLE_LOOKBACK_DAYS = 7   # 며칠 전 발행 기사까지 대상으로 할지
 BEFORE_WINDOW_DAYS    = 3   # 발행 전 최대 몇 일 전 랭킹을 "before"로 볼지
 AFTER_WINDOW_DAYS     = 3   # 발행 후 최대 몇 일 후 랭킹을 "after"로 볼지
-
-RANK_UNCHARTED = 9999       # 랭킹 미진입 시 대체값
 
 HIGH_DELTA   = 50;  HIGH_TOP   = 30    # 50위↑ 상승 + TOP30 진입
 MED_DELTA    = 20;  MED_TOP    = 100   # 20위↑ 상승 + TOP100 진입
@@ -103,27 +102,31 @@ def _load_ranking_window(
         return {}
 
     ranks: dict[str, dict[date, int]] = defaultdict(dict)
+    rejected = set()
     for i in range(0, len(musinsa_nos), 500):
         chunk = musinsa_nos[i:i+500]
         offset = 0
+        total = None
         while True:
-            batch = (
+            response = (
                 client.table("ranking_snapshots")
-                .select("musinsa_no, snapshot_date, rank_position")
+                .select("musinsa_no, snapshot_date, rank_position", count="exact")
                 .in_("musinsa_no", chunk)
                 .gte("snapshot_date", date_from.isoformat())
                 .lte("snapshot_date", date_to.isoformat())
                 .eq("category_code", RANK_CATEGORY)
                 .eq("gender_filter",  RANK_GENDER)
                 .eq("store_code",     RANK_STORE)
+                .eq("age_filter", "AGE_BAND_ALL")
+                .order("id")
                 .range(offset, offset + 999)
                 .execute()
-                .data or []
             )
+            batch, total, complete = checked_rank_page(response, offset, total)
             for row in batch:
                 d = date.fromisoformat(row["snapshot_date"])
-                ranks[row["musinsa_no"]][d] = row["rank_position"]
-            if len(batch) < 1000:
+                add_observation(ranks, rejected, row["musinsa_no"], d, row["rank_position"])
+            if complete:
                 break
             offset += 1000
     return ranks
@@ -165,7 +168,7 @@ def detect_magazine_boost(client: Client, today: date) -> list[Anomaly]:
         snap   = ranks.get(mno, {})
 
         # before: 발행일 전 최대 BEFORE_WINDOW_DAYS일 중 가장 최근 데이터
-        before_rank: int = RANK_UNCHARTED
+        before_rank: int | None = None
         for d_offset in range(1, BEFORE_WINDOW_DAYS + 1):
             d = pub_dt - timedelta(days=d_offset)
             if d in snap:
@@ -181,8 +184,8 @@ def detect_magazine_boost(client: Client, today: date) -> list[Anomaly]:
                 if after_rank is None or r < after_rank:
                     after_rank = r
 
-        if after_rank is None:
-            continue  # 발행 후 랭킹 데이터 없음
+        if before_rank is None or after_rank is None:
+            continue  # 전후 유효 순위가 모두 있어야 비교 가능
 
         delta = before_rank - after_rank  # 양수 = 순위 상승
 
@@ -195,19 +198,11 @@ def detect_magazine_boost(client: Client, today: date) -> list[Anomaly]:
         else:
             continue
 
-        is_new_entry = before_rank >= RANK_UNCHARTED
-        anomaly_type = "magazine_rank_new_entry" if is_new_entry else "magazine_rank_boost"
-
-        if is_new_entry:
-            desc = (
-                f"매거진 '{art['title']}' 발행 후 랭킹 외 → {after_rank}위 신규 진입 "
-                f"· 기사 조회 {art['view_count']:,}"
-            )
-        else:
-            desc = (
-                f"매거진 '{art['title']}' 발행 후 {before_rank}위 → {after_rank}위 "
-                f"({delta}위 상승) · 기사 조회 {art['view_count']:,}"
-            )
+        anomaly_type = "magazine_rank_boost"
+        desc = (
+            f"매거진 '{art['title']}' 발행 후 {before_rank}위 → {after_rank}위 "
+            f"({delta}위 상승) · 기사 조회 {art['view_count']:,}"
+        )
 
         anomalies.append(Anomaly(
             module       = MODULE,
@@ -223,9 +218,9 @@ def detect_magazine_boost(client: Client, today: date) -> list[Anomaly]:
                 "article_title":         art["title"],
                 "pub_date":              pub_dt.isoformat(),
                 "musinsa_no":            art["musinsa_no"],
-                "rank_before":           None if is_new_entry else before_rank,
+                "rank_before":           before_rank,
                 "rank_after":            after_rank,
-                "rank_delta":            None if is_new_entry else delta,
+                "rank_delta":            delta,
                 "article_views":         art["view_count"],
                 "is_own":                art["is_own"],
             },

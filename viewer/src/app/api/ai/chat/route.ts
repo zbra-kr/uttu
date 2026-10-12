@@ -136,8 +136,10 @@ function monthStartKST(): string {
   return `${kst.getFullYear()}-${String(kst.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
-// 첫 번째 대화 교환 후 Haiku로 세션 제목 자동 생성 (fire-and-forget)
-async function generateSessionTitle(userMsg: string, assistantMsg: string): Promise<string> {
+// 첫 번째 대화 교환 후 Haiku로 제목 생성; 확인된 usage는 같은 일별 정산에 포함.
+async function generateSessionTitle(userMsg: string, assistantMsg: string): Promise<{
+  title: string; inputTokens: number; outputTokens: number;
+}> {
   const res = await anthropic.messages.create({
     model:      'claude-haiku-4-5-20251001',
     max_tokens: 30,
@@ -148,7 +150,13 @@ async function generateSessionTitle(userMsg: string, assistantMsg: string): Prom
 AI: ${assistantMsg.slice(0, 300)}`,
     }],
   });
-  return ((res.content[0] as Anthropic.TextBlock).text ?? '').trim().slice(0, 30);
+  const confirmedTokens = (value: unknown): number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  return {
+    title: (res.content[0]?.type === 'text' ? res.content[0].text : '').trim().slice(0, 30),
+    inputTokens: confirmedTokens(res.usage?.input_tokens),
+    outputTokens: confirmedTokens(res.usage?.output_tokens),
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -492,6 +500,8 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         emit({ type: 'error', message: e instanceof Error ? e.message : '알 수 없는 오류' });
       } finally {
+        let titleInputTokens = 0;
+        let titleOutputTokens = 0;
         // ── DB 저장: controller.close() 이전에 완료해야 serverless에서 보장됨 ──
         if (sessionId) {
           const assistantSeq = userSeq + 1;
@@ -501,7 +511,11 @@ export async function POST(req: NextRequest) {
           let title: string | undefined;
           if (isFirstTurn && accumulatedText) {
             try {
-              title = await generateSessionTitle(userText, accumulatedText);
+              const generated = await generateSessionTitle(userText, accumulatedText);
+              title = generated.title;
+              // 기존 INTEGER 정산 범위를 넘는 제목 값이 알려진 본문 정산을 막지 않게 한다.
+              if (totalInputTokens + generated.inputTokens <= 2_147_483_647) titleInputTokens = generated.inputTokens;
+              if (totalOutputTokens + generated.outputTokens <= 2_147_483_647) titleOutputTokens = generated.outputTokens;
             } catch {
               // 제목 생성 실패 시 무시
             }
@@ -529,9 +543,9 @@ export async function POST(req: NextRequest) {
         }
 
         // 일별 사용량 누적 (userId 있을 때만)
-        if (userId && (totalInputTokens > 0 || totalOutputTokens > 0)) {
+        if (userId && (totalInputTokens + titleInputTokens > 0 || totalOutputTokens + titleOutputTokens > 0)) {
           const settlement = await accumulateAiUsage(
-            supabase, userId, todayKST(), totalInputTokens, totalOutputTokens, { signal: req.signal },
+            supabase, userId, todayKST(), totalInputTokens + titleInputTokens, totalOutputTokens + titleOutputTokens, { signal: req.signal },
           );
           if (settlement.status !== 'recorded') {
             // No user IDs, provider content or database error payloads in logs.

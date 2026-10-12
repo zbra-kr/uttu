@@ -110,9 +110,11 @@ def row(rule='sold_out', meta=None, severity='high', index=0, **extra):
 def formatter():
     source = Path(queries.__file__).with_name('briefing_writer.py')
     names = {'_j', '_header', '_format_executive_message', '_format_staff_message',
-             '_format_cs_message', 'format_user_message'}
+             '_format_cs_message', 'format_user_message', '_briefing_model_inputs'}
     nodes = [n for n in ast.parse(source.read_text()).body
-             if isinstance(n, ast.FunctionDef) and n.name in names]
+             if (isinstance(n, ast.FunctionDef) and n.name in names)
+             or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name)
+                 and t.id == '_BRIEFING_INPUT_FIELDS' for t in n.targets))]
     env = {'json': json, 'date': date}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), 'exec'), env)
     return env['format_user_message']

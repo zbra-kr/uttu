@@ -3,10 +3,11 @@ const React = require('react'), Renderer = require('react-test-renderer');
 const load = require('./helpers/load-source.cjs');
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 function deferred() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
-function fixture({ lateIdentity = false } = {}) {
+function fixture({ lateIdentity = false, authFailure = false } = {}) {
   const calls = [], identities = [], listeners = new Set();
+  let identityCalls = 0;
   const client = { auth: { onAuthStateChange(fn) { listeners.add(fn); return { data: { subscription: { unsubscribe() { listeners.delete(fn); } } } }; },
-    getUser() { if (!lateIdentity) return Promise.resolve({ data: { user: { id: 'account-a' } } }); const d = deferred(); identities.push(d); return d.promise; } } };
+    getUser() { identityCalls++; if (authFailure && identityCalls <= 2) return Promise.resolve({ data: { user: null }, error: Error('offline') }); if (!lateIdentity) return Promise.resolve({ data: { user: { id: 'account-a' } } }); const d = deferred(); identities.push(d); return d.promise; } } };
   const Page = load('src/app/(app)/reviews/page.tsx', {
     'next/link': { __esModule: true, default: ({ children, ...props }) => React.createElement('a', props, children) },
     '@/hooks/useResolvedViewport': { useResolvedViewport: () => 'desktop' },
@@ -14,7 +15,7 @@ function fixture({ lateIdentity = false } = {}) {
     '@/lib/queries': { CATEGORY_MAP: {}, fetchOwnProducts: async () => [], fetchCsAnomalies: async () => [], fetchReviewStats(days, signal) { const d = deferred(); calls.push({ ...d, days, signal }); return d.promise; } },
     '@/lib/excel-export': {}, '@/components/ui/filters': {}, '@/components/ui/icons': {}, '@/components/me/NoteDrawer': { __esModule: true, default: () => null },
   }).default;
-  return { Page, calls, identities, auth(id) { for (const fn of listeners) fn(id ? 'SIGNED_IN' : 'SIGNED_OUT', id ? { user: { id } } : null); } };
+  return { Page, calls, identities, get identityCalls() { return identityCalls; }, auth(id) { for (const fn of listeners) fn(id ? 'SIGNED_IN' : 'SIGNED_OUT', id ? { user: { id } } : null); } };
 }
 const stats = total => ({ total, avgRating: total ? 4 : 0, lowCount: 0, ratingDist: [0, total, 0, 0, 0], imageCount: 0 });
 const text = root => JSON.stringify(root.toJSON());
@@ -104,5 +105,26 @@ test('late getUser cannot override sign-out in the real dashboard', async () => 
     await React.act(async () => { root = Renderer.create(React.createElement(f.Page)); });
     await React.act(async () => { f.auth(null); f.identities[0].resolve({ data: { user: { id: 'account-a' } } }); await Promise.resolve(); });
     assert.equal(f.calls.length, 0); assert.match(text(root), /로그인 후 리뷰 통계/);
+  } finally { if (root) await React.act(async () => root.unmount()); }
+});
+
+test('actual statistics auth-error UI retries identity and restores metrics while fixed panels recover independently', async () => {
+  const f = fixture({ authFailure: true }); let root;
+  try {
+    await React.act(async () => { root = Renderer.create(React.createElement(f.Page)); });
+    const area = () => root.root.findByProps({ 'data-review-stats-state': 'autherror' });
+    assert.match(JSON.stringify(area().findByProps({ role: 'alert' }).children), /로그인 상태를 확인하지 못했습니다/);
+    const button = area().findByType('button'); assert.equal(button.props['aria-disabled'], false);
+    assert.equal(f.calls.length, 0);
+    await React.act(async () => { button.props.onClick(); button.props.onClick(); });
+    assert.equal(f.identityCalls, 3); assert.equal(f.calls.length, 1);
+    await React.act(async () => f.calls[0].resolve(stats(42)));
+    assert.equal(values(root)[0], '42');
+    for (const name of ['products', 'cs']) {
+      const panel = root.root.findByProps({ 'data-dashboard-panel': name });
+      const action = panel.findAllByType('button').find(node => node.props['aria-label']);
+      await React.act(async () => action.props.onClick());
+    }
+    assert.equal(f.calls.length, 1); assert.equal(values(root)[0], '42');
   } finally { if (root) await React.act(async () => root.unmount()); }
 });

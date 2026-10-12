@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { DB_SCHEMA } from '@/lib/ai-schema';
+import { confirmedTokenCount, ConfirmedUsageLedger } from '@/lib/ai/confirmed-usage';
 
 // 사용자 개인정보·운영 테이블 — AI 쿼리 완전 차단
 // DB 레벨: uttu_ai_readonly 역할(01408)이 1차 차단
@@ -81,10 +82,14 @@ const MCP_QUERY_TOOL: Anthropic.Tool = {
   },
 };
 
-export interface InferenceResult {
+export interface InferenceUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  responseKey?: string;
+}
+
+export interface InferenceResult extends InferenceUsage {
   text: string;
-  inputTokens: number;
-  outputTokens: number;
 }
 
 // 비스트리밍 Anthropic 추론 루프 — MCP ask_uttu 전용
@@ -96,6 +101,7 @@ export async function runInferenceLoop(opts: {
   model?: string;
   maxTurns?: number;
   signal?: AbortSignal;
+  onUsage?: (usage: InferenceUsage) => void;
 }): Promise<InferenceResult> {
   const {
     question,
@@ -103,6 +109,7 @@ export async function runInferenceLoop(opts: {
     model = process.env.MCP_ASK_MODEL ?? 'claude-haiku-4-5-20251001',
     maxTurns = 3,
     signal,
+    onUsage,
   } = opts;
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
@@ -113,8 +120,7 @@ export async function runInferenceLoop(opts: {
 
   let msgs: Anthropic.MessageParam[] = [{ role: 'user', content: question }];
   let text = '';
-  let inputTokens = 0;
-  let outputTokens = 0;
+  const usageLedger = new ConfirmedUsageLedger();
 
   for (let i = 0; i < maxTurns; i++) {
     const resp = await anthropic.messages.create(
@@ -128,8 +134,14 @@ export async function runInferenceLoop(opts: {
       { signal },
     );
 
-    inputTokens  += resp.usage?.input_tokens  ?? 0;
-    outputTokens += resp.usage?.output_tokens ?? 0;
+    const usage = {
+      inputTokens: confirmedTokenCount(resp.usage?.input_tokens),
+      outputTokens: confirmedTokenCount(resp.usage?.output_tokens),
+      responseKey: typeof resp.id === 'string' && resp.id.length > 0 ? `turn:${i}:response:${resp.id}` : `turn:${i}`,
+    };
+    // Report before parsing/tool execution: a later failure must not lose returned usage.
+    onUsage?.(usage);
+    usageLedger.observe(usage);
 
     const textBlocks = resp.content.filter((b): b is Anthropic.TextBlock => b.type === 'text');
     text = textBlocks.map(b => b.text).join('');
@@ -155,5 +167,5 @@ export async function runInferenceLoop(opts: {
     ];
   }
 
-  return { text, inputTokens, outputTokens };
+  return { text, inputTokens: usageLedger.inputTokens, outputTokens: usageLedger.outputTokens };
 }

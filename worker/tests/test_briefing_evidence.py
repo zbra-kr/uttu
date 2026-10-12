@@ -17,7 +17,7 @@ SOURCE = Path(__file__).parents[1] / 'agent' / 'briefing_writer.py'
 
 def prompt_constants():
     tree = ast.parse(SOURCE.read_text())
-    allowed = {'_SYSTEM_EXECUTIVE', '_SYSTEM_STAFF', '_SYSTEM_CS', '_SYSTEM_INSIGHT_PAGE', '_EVIDENCE_RULES', '_SYSTEM_PROMPTS'}
+    allowed = {'_SYSTEM_EXECUTIVE', '_SYSTEM_STAFF', '_SYSTEM_CS', '_SYSTEM_INSIGHT_PAGE', '_EVIDENCE_RULES', '_SYSTEM_PROMPTS', '_BRIEFING_INPUT_FIELDS'}
     nodes = []
     for node in tree.body:
         target = node.targets[0] if isinstance(node, ast.Assign) else getattr(node, 'target', None)
@@ -65,7 +65,8 @@ def offline_runtime():
     tree = ast.parse(SOURCE.read_text())
     names = {'_extract_json_dict', 'generate_briefing', 'generate_insight_pages',
              'generate_insight_page', '_validate_insight_detail', '_upsert_briefing',
-             '_failure_diagnostic', '_failure_kind'}
+             '_failure_diagnostic', '_failure_kind', '_allowed_insight_links',
+             '_validate_insight_links', '_briefing_model_inputs'}
     nodes = [ast.ImportFrom(module='__future__', names=[ast.alias(name='annotations')], level=0)]
     nodes += [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names]
     env = {**prompt_constants(), 'json': json, 'math': math, 're': re, 'time': time, 'asyncio': asyncio,
@@ -114,7 +115,7 @@ class EmptyInsightRuntimeTests(unittest.IsolatedAsyncioTestCase):
         client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock(side_effect=RuntimeError('offline failure'))))
         insight = {'title': '확인 필요', 'body': '근거 부족', 'link': '/reviews?brand=example'}
         with self.assertRaisesRegex(RuntimeError, 'offline failure'):
-            await env['generate_insight_page'](0, insight, {}, 'cs', client)
+            await env['generate_insight_page'](0, insight, {'low_reviews': [insight]}, 'cs', client)
 
 
 if __name__ == '__main__':

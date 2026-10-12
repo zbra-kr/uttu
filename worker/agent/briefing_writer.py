@@ -275,6 +275,12 @@ _SYSTEM_CS = """당신은 B.CAVE CS팀의 매거진을 작성하는 분석가다
 - news_picks 출력 안 함
 - 권장 대응(예: "사이즈 가이드 보강 필요")은 리뷰 근거가 충분할 때만 포함. 근거 부족 시 확인 필요로 표시
 
+## 리뷰 날짜·조회 상태
+- 어제는 review_date 기준 작성일이다. created_at은 DB 최초 삽입 시각으로 작성일과 다르다.
+- '어제 수집 리뷰'라는 문구를 사용하지 말고 '어제 작성된 저장 리뷰 조회 N건'으로 표현한다.
+- review_input_scope.state가 complete여도 수집 완전성은 미확인이다. 0건은 해당 작성일 저장 리뷰의 조회 결과이며 외부 리뷰 전체가 없다는 뜻이 아니다.
+- 조회 범위·상태가 누락되거나 불완전하면 확인 필요로 표시하고 리뷰 없음/0건으로 단정하지 않는다.
+
 ## 데이터 영역 격리 규칙 (절대)
 당신은 CS 시점 전용이다. Executive·Staff 영역은 절대 다루지 않는다.
 금지: 랭킹, 매출, 재무, 외부 뉴스, 경쟁사 리뷰, 이상탐지
@@ -363,6 +369,7 @@ def _header(target_date, weekday: str, audience: str) -> str:
 
 
 def _format_executive_message(inputs: dict) -> str:
+    inputs = _briefing_model_inputs("executive", inputs)
     lines = [
         _header(inputs["date"], inputs["weekday"], "executive"),
         "## 자사 매출 ERP (Snowflake 미연동 — 현재 빈 dict)",
@@ -401,6 +408,7 @@ def _format_executive_message(inputs: dict) -> str:
 
 
 def _format_staff_message(inputs: dict) -> str:
+    inputs = _briefing_model_inputs("staff", inputs)
     lines = [
         _header(inputs["date"], inputs["weekday"], "staff"),
         "## 자사 상품 랭킹 변동 (어제 vs 그제, 전체카테고리·A·AGE_BAND_ALL)",
@@ -438,15 +446,18 @@ def _format_staff_message(inputs: dict) -> str:
 
 
 def _format_cs_message(inputs: dict) -> str:
+    inputs = _briefing_model_inputs("cs", inputs)
     lines = [
         _header(inputs["date"], inputs["weekday"], "cs"),
-        "## 자사 리뷰 요약 (어제, 건수·평균별점·분포)",
+        "## 리뷰 조회 범위·완전성 (작성일과 DB 삽입 시각 구분)",
+        _j(inputs.get("review_input_scope") or {"state": "unavailable"}),
+        "## 자사 저장 리뷰 요약 (어제 작성일, 건수·평균별점·분포)",
         _j(inputs.get("review_summary_yesterday") or {}),
         "",
-        "## 1~2점 리뷰 샘플 (어제, 최대 10건 — 닉네임·ID 제외)",
+        "## 1~2점 리뷰 샘플 (어제 작성일, 최대 10건 — 닉네임·ID 제외)",
         _j(inputs.get("low_reviews") or []),
         "",
-        "## 4~5점 리뷰 샘플 (어제, 최대 10건 — 닉네임·ID 제외)",
+        "## 4~5점 리뷰 샘플 (어제 작성일, 최대 10건 — 닉네임·ID 제외)",
         _j(inputs.get("high_reviews") or []),
         "",
         "## 이번 주 자사 브랜드별 리뷰 패턴 (평균별점·건수)",
@@ -486,6 +497,93 @@ def _extract_json_dict(text: str) -> dict:
         raise ValueError(f"JSON parse error: {e}. Raw: {text[:300]}") from e
 
 
+# Sections shared by audience formatting and navigation validation. None means
+# aggregate/source content only; tuples name the only supported child row lists.
+_BRIEFING_INPUT_FIELDS = {
+    "executive": {
+        "own_sales": None, "dart_disclosures": (), "dart_financial_signals": (),
+        "news_hot": None, "news_own": None, "news_common": None, "news_major": None,
+        "anomalies_high_own": (), "competitor_company_movers": (), "own_weekly_summary": (),
+    },
+    "staff": {
+        "own_ranking_delta": (), "own_weekly_trend": (),
+        "category_trends": ("top_brands",), "competitor_brand_new_entrants": (),
+        "competitor_brand_movers": (), "active_promotions": ("own_brand_items",),
+        "anomalies_all": ("high", "medium"), "snap_effectiveness": (),
+        "promo_effectiveness": (), "magazine_effectiveness": (),
+    },
+    "cs": {
+        "review_input_scope": None, "review_summary_yesterday": None, "low_reviews": (), "high_reviews": (),
+        "weekly_review_pattern": (), "problem_products_top": (), "strength_products_top": (),
+    },
+}
+
+
+def _briefing_model_inputs(audience: str, inputs: dict) -> dict:
+    """Select precisely the sections formatted for this audience."""
+    fields = ("date", "weekday", *_BRIEFING_INPUT_FIELDS[audience])
+    return {key: inputs[key] for key in fields if key in inputs}
+
+
+def _allowed_insight_links(inputs: dict, audience: str) -> set[str]:
+    """Explicit audience evidence rows only; does not verify article facts.
+
+    Do not recurse arbitrary metadata or use external news source_url. Preserve
+    exact queries, including legitimate percent encoding, without normalization.
+    """
+    allowed = {"", "/ranking"}  # Existing no-link and generic ranking contracts.
+
+    def add_row(row):
+        if not isinstance(row, dict):
+            return
+        link = row.get("link")
+        if (isinstance(link, str)
+                and not re.search(r"[\x00-\x1f\x7f-\x9f]|%(?:0[0-9a-f]|1[0-9a-f]|7f)", link, re.I)
+                and re.fullmatch(
+                    r"/(?:anomaly|company|product|brand|ranking|reviews)(?:\?[^\s\\#]*)?", link
+                )):
+            allowed.add(link)
+        if "link" not in row:
+            for field, prefix in (("product_id", "/product?id="),
+                                  ("brand_slug", "/brand?slug=")):
+                identifier = row.get(field)
+                if isinstance(identifier, str) and re.fullmatch(r"[A-Za-z0-9_-]+", identifier):
+                    allowed.add(prefix + identifier)
+
+    visible = _briefing_model_inputs(audience, inputs)
+    for section, children in _BRIEFING_INPUT_FIELDS[audience].items():
+        if children is None:
+            continue
+        value = visible.get(section)
+        # anomalies_all is the sole evidence container rather than a row list.
+        rows = [value] if section == "anomalies_all" else value
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if section != "anomalies_all":
+                add_row(row)
+            if isinstance(row, dict):
+                for child in children:
+                    child_rows = row.get(child)
+                    if isinstance(child_rows, list):
+                        for child_row in child_rows:
+                            add_row(child_row)
+    return allowed
+
+
+def _validate_insight_links(insights, inputs: dict, audience: str) -> None:
+    """Reject the revision rather than persisting an invented evidence link."""
+    if not isinstance(insights, list):
+        raise ValueError("insights must be an array")
+    allowed = _allowed_insight_links(inputs, audience)
+    for insight in insights:
+        if (not isinstance(insight, dict)
+                or not isinstance(insight.get("link", ""), str)
+                or insight.get("link", "") not in allowed):
+            # Do not log untrusted model URLs or source content.
+            raise ValueError("insight link is not supported by input data")
+
+
 # ── LLM 호출 ──────────────────────────────────────────────────────────────────
 
 async def generate_briefing(
@@ -507,6 +605,7 @@ async def generate_briefing(
     generation_ms = int((time.monotonic() - start_ms) * 1000)
     text   = resp.content[0].text
     parsed = _extract_json_dict(text)
+    _validate_insight_links(parsed["insights"], inputs, audience)
 
     return {
         "audience":      audience,
@@ -575,12 +674,13 @@ async def generate_insight_page(
                    for key in ("title", "body"))
             or not isinstance(insight.get("link", ""), str)):
         raise ValueError("invalid insight summary fields")
+    _validate_insight_links([insight], inputs, audience)
     user_msg = (
         f"## 인사이트 ({audience}, #{idx + 1})\n"
         f"제목: {insight.get('title', '')}\n"
         f"요약: {insight.get('body', '')}\n"
         f"링크: {insight.get('link', '')}\n\n"
-        f"## 배경 데이터\n{_j(inputs)}"
+        f"## 배경 데이터\n{_j(_briefing_model_inputs(audience, inputs))}"
     )
     try:
         resp = await client.messages.create(
@@ -691,13 +791,18 @@ async def run(
         "cs":        collect_cs_inputs,
     }
     inputs_map: dict[str, dict] = {}
-    for aud in target_audiences:
-        inputs_map[aud] = _collect_fn[aud](db, target_date)
-        logger.info(
-            "briefing_inputs_collected",
-            audience=aud,
-            keys=[k for k in inputs_map[aud] if k not in ("date", "weekday")],
-        )
+    try:
+        for aud in target_audiences:
+            inputs_map[aud] = _collect_fn[aud](db, target_date)
+            logger.info(
+                "briefing_inputs_collected",
+                audience=aud,
+                keys=[k for k in inputs_map[aud] if k not in ("date", "weekday")],
+            )
+    except Exception:
+        if not dry_run:
+            await tracker.error("briefing inputs incomplete; generation not started")
+        raise
 
     if dry_run:
         for aud in target_audiences:

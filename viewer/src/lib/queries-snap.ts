@@ -327,7 +327,13 @@ export async function getProfileSnapStats(
 
   const snapMap = new Map((snaps as any[]).map(s => [s.snap_id, s]));
   const result = new Map<string, ProfileSnapStats>();
+  // Dates identify observations, not additional snaps for a profile.
+  const seenByProfile = new Map<string, Set<string>>();
   for (const link of links as any[]) {
+    const seen = seenByProfile.get(link.profile_id) ?? new Set<string>();
+    if (seen.has(link.snap_id)) continue;
+    seen.add(link.snap_id);
+    seenByProfile.set(link.profile_id, seen);
     const s = snapMap.get(link.snap_id);
     if (!s) continue;
     const ex = result.get(link.profile_id) ?? {

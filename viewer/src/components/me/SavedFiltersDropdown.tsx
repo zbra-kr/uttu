@@ -1,5 +1,6 @@
 'use client';
 import React from 'react';
+import { supabaseBrowser } from '@/lib/supabase/client';
 import {
   SavedFilter,
   fetchSavedFilters,
@@ -14,8 +15,28 @@ interface Props {
   onLoad: (filter: unknown) => void;
 }
 
-export default function SavedFiltersDropdown({ page, currentFilter, onLoad }: Props) {
+// A scope change remounts the controls, including pending mutation callbacks.
+export default function SavedFiltersDropdown(props: Props) {
+  const [identity, setIdentity] = React.useState<{ id: string | null | undefined; version: number }>({ id: undefined, version: 0 });
+  React.useEffect(() => {
+    const { data: { subscription } } = supabaseBrowser().auth.onAuthStateChange((_event, session) => {
+      const id = session?.user.id ?? null;
+      setIdentity(previous => previous.id === id ? previous : { id, version: previous.version + 1 });
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+  return <SavedFiltersControls key={JSON.stringify([props.page, identity.version])} {...props} signedOut={identity.id === null} />;
+}
+
+function SavedFiltersControls({ page, currentFilter, onLoad, signedOut }: Props & { signedOut: boolean }) {
   const [filters, setFilters] = React.useState<SavedFilter[]>([]);
+  const [readStatus, setReadStatus] = React.useState<'loading' | 'ready' | 'error' | 'signed-out'>(signedOut ? 'signed-out' : 'loading');
+  const readRef = React.useRef<AbortController | null>(null);
+  const readUpdates = React.useRef<Array<(rows: SavedFilter[]) => SavedFilter[]>>([]);
+  const updateFilters = (update: (rows: SavedFilter[]) => SavedFilter[]) => {
+    if (readRef.current) readUpdates.current.push(update);
+    setFilters(update);
+  };
   const [loadOpen, setLoadOpen] = React.useState(false);
   const [saveMode, setSaveMode] = React.useState<'idle' | 'input' | 'overwrite'>('idle');
   const [saveName, setSaveName] = React.useState('');
@@ -25,9 +46,29 @@ export default function SavedFiltersDropdown({ page, currentFilter, onLoad }: Pr
   const dropRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
+  const readFilters = React.useCallback(() => {
+    if (signedOut || readRef.current) return;
+    const controller = new AbortController();
+    readRef.current = controller;
+    readUpdates.current = [];
+    setReadStatus('loading');
+    fetchSavedFilters(page, controller.signal).then(result => {
+      if (controller.signal.aborted) return;
+      setFilters(result.status === 'ready'
+        ? readUpdates.current.reduce((rows, update) => update(rows), result.filters)
+        : []);
+      setReadStatus(result.status);
+    }).catch(() => {
+      if (!controller.signal.aborted) { setFilters([]); setReadStatus('error'); }
+    }).finally(() => {
+      if (readRef.current === controller) readRef.current = null;
+    });
+  }, [page, signedOut]);
+
   React.useEffect(() => {
-    fetchSavedFilters(page).then(setFilters);
-  }, [page]);
+    readFilters();
+    return () => { readRef.current?.abort(); readRef.current = null; };
+  }, [readFilters]);
 
   React.useEffect(() => {
     if (!loadOpen) return;
@@ -61,7 +102,7 @@ export default function SavedFiltersDropdown({ page, currentFilter, onLoad }: Pr
       }
       return;
     }
-    if (data) setFilters(prev => [data, ...prev]);
+    if (data) updateFilters(prev => [data, ...prev.filter(f => f.id !== data.id)]);
     setSaveMode('idle');
     setSaveName('');
   };
@@ -73,8 +114,9 @@ export default function SavedFiltersDropdown({ page, currentFilter, onLoad }: Pr
     const { error } = await overwriteFilter(overwriteTarget.id, currentFilter);
     setSaving(false);
     if (error) { setErr(error); return; }
-    setFilters(prev => prev.map(f =>
-      f.id === overwriteTarget.id ? { ...f, filter_data: currentFilter } : f,
+    const targetId = overwriteTarget.id;
+    updateFilters(prev => prev.map(f =>
+      f.id === targetId ? { ...f, filter_data: currentFilter } : f,
     ));
     setSaveMode('idle');
     setSaveName('');
@@ -84,7 +126,7 @@ export default function SavedFiltersDropdown({ page, currentFilter, onLoad }: Pr
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const { error } = await deleteSavedFilter(id);
-    if (!error) setFilters(prev => prev.filter(f => f.id !== id));
+    if (!error) updateFilters(prev => prev.filter(f => f.id !== id));
   };
 
   const cancelSave = () => { setSaveMode('idle'); setSaveName(''); setErr(null); setOverwriteTarget(null); };
@@ -107,7 +149,16 @@ export default function SavedFiltersDropdown({ page, currentFilter, onLoad }: Pr
               borderRadius: 5, boxShadow: '0 4px 12px rgba(0,0,0,.18)', zIndex: 100,
               overflow: 'hidden',
             }}>
-              {filters.length === 0 ? (
+              {readStatus === 'loading' ? (
+                <div role="status" style={{ padding: '10px 12px', fontSize: 12, color: 'var(--f4)' }}>저장된 필터 불러오는 중…</div>
+              ) : readStatus === 'error' ? (
+                <div style={{ padding: '10px 12px', fontSize: 12 }}>
+                  <div role="alert" style={{ color: 'var(--shf)', marginBottom: 6 }}>저장된 필터를 불러오지 못했습니다.</div>
+                  <button className="btn sm" onClick={readFilters}>다시 시도</button>
+                </div>
+              ) : readStatus === 'signed-out' ? (
+                <div role="status" style={{ padding: '10px 12px', fontSize: 12, color: 'var(--f4)' }}>로그인이 필요합니다.</div>
+              ) : filters.length === 0 ? (
                 <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--f4)' }}>저장된 필터 없음</div>
               ) : filters.map((f, i) => (
                 <div
