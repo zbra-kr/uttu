@@ -47,7 +47,7 @@ test('actual page preserves REST timeout reason and withholds amount rows',async
  const s=setup({binding:true,responses:[plan,{status:408,body:{message:'PRIVATE_TIMEOUT'}}]});const html=await s.render();assert.match(html,/data-central-state="error"/);assert.match(html,/제한 시간 초과/);assert.doesNotMatch(html,/PRIVATE_TIMEOUT|SYN-STYLE|≈ 1.3/);
 });
 test('checked-in composition remains null; page has actual Node runtime call and no request identity wiring',()=>{
- const binding=load('src/lib/erp/central-sales-composition.ts');assert.equal(binding.configuredCentralRequesterBinding(),null);
- const source=fs.readFileSync('src/lib/erp/central-sales-composition.ts','utf8');assert.doesNotMatch(source,/process\.env|PRIVATE_KEY|fetch\(|getUser\(/);
+ const binding=load('src/lib/erp/existing-node-binding.ts');assert.equal(binding.bindingFromExistingEnvironment({}),null);
+ const source=fs.readFileSync('src/lib/erp/central-sales-composition.ts','utf8');assert.match(source,/bindingFromExistingEnvironment\(process\.env\)/);assert.doesNotMatch(source,/PRIVATE_KEY|fetch\(|getUser\(/);
  const page=fs.readFileSync('src/app/(app)/erp-insights-review/page.tsx','utf8');assert.match(page,/runtime='nodejs'/);assert.match(page,/await readConfiguredCurrentCentralSales/);assert.doesNotMatch(page,/params\.(userId|expectedRequesterId|role|token|host)/);
 });

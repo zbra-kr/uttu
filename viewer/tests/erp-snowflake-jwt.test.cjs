@@ -42,6 +42,6 @@ test('invalid clock and thrown dependency failures expose fixed reason only',asy
 });
 test('factory has no key loading/env/network/cache; real runtime composition stays unconfigured',()=>{
  const source=fs.readFileSync('src/lib/erp/snowflake-jwt.ts','utf8');assert.doesNotMatch(source,/process\.env|readFile|createPrivateKey|fetch\(|https?:\/\/|generateKeyPair|console\./);
- const C=load('src/lib/erp/central-sales-composition.ts');assert.equal(C.configuredCentralRequesterBinding(),null);
+ const C=load('src/lib/erp/existing-node-binding.ts');assert.equal(C.bindingFromExistingEnvironment({}),null);
  const composition=fs.readFileSync('src/lib/erp/central-sales-composition.ts','utf8');assert.doesNotMatch(composition,/snowflake-jwt|createSnowflakeJwtSupplier/);
 });
