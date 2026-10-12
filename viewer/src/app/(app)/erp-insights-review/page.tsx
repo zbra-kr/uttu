@@ -9,7 +9,7 @@ import { readConfiguredCurrentCentralSales } from '@/lib/erp/central-sales-runti
 // Review only. No menu, landing, API, credentials or synthetic fixture imports.
 export const dynamic='force-dynamic';
 export const runtime='nodejs';
-export default async function ErpInsightsReviewPage({searchParams}:{searchParams?:Promise<Record<string,string|string[]|undefined>>}={}) {
+export default async function ErpInsightsReviewPage({searchParams}:{searchParams?:Promise<Record<string,string|string[]|undefined>>}) {
   const params=await searchParams??{};
   const central=await readConfiguredCurrentCentralSales({brand:params.brand,from:params.from,to:params.to});
   const state = await readConfiguredSalesInventory();

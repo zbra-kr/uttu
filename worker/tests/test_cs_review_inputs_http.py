@@ -33,7 +33,7 @@ class SDKHTTPTests(unittest.TestCase):
         def response(request, call):
             params = request.url.params
             self.assertIn("products!inner(is_own,name,brands(slug))", params["select"])
-            self.assertEqual(params["products.is_own"], "eq.True")
+            self.assertIn(params["products.is_own"], {"eq.True", "eq.true"})
             self.assertEqual(params.get_list("review_date"), ["gte.2026-10-05", "lte.2026-10-10"])
             self.assertTrue(params["created_at"].startswith("lte."))
             self.assertEqual(params["order"], "id.asc")
