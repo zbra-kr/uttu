@@ -15,6 +15,15 @@ export function formatStoredCount(count: number | null | undefined): string {
   return count == null ? '조회 불가' : count.toLocaleString();
 }
 
+/** Counts describe stored cache rows, not ERP connectivity or source balances. */
+export function collectionObservationLabel(stat: {id:string;status:string}): string {
+  const labels:Record<string,string>={stored:'저장됨',empty:'0건',unknown:'미확인'};
+  const label=labels[stat.status]??'미확인';
+  if(stat.id!=='own-sales'&&stat.id!=='own-inventory')return label;
+  const stored=stat.status==='empty'?'저장 0건':stat.status==='stored'?'저장됨':'저장 조회 미확인';
+  return `${stored} · 연동 미확인`;
+}
+
 /** Storage insertion timestamp, explicitly KST; not source freshness/completeness. */
 export function kstInsertDate(value: unknown): string | null {
   if (typeof value !== 'string' || !/(Z|[+-]\d{2}:\d{2})$/.test(value)) return null;

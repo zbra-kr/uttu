@@ -109,6 +109,23 @@ test('home actual UI keeps zero, unknown denominator, KST and cap explicit',()=>
  assert.match(html,/running 기록 20건 \(최근 최대 20건\)/);assert.match(html,/행 저장 시각\(KST\)/);
  assert.doesNotMatch(html,/20수집중|활성 ·|undefined|NaN/);
 });
+test('ERP cache zero stays zero with explicit unverified connectivity; other cache status unchanged',()=>{
+ assert.equal(status.formatStoredCount(0),'0');
+ assert.equal(status.collectionObservationLabel({id:'own-sales',status:'empty'}),'저장 0건 · 연동 미확인');
+ assert.equal(status.collectionObservationLabel({id:'own-inventory',status:'stored'}),'저장됨 · 연동 미확인');
+ assert.equal(status.collectionObservationLabel({id:'own-inventory',status:'unknown'}),'저장 조회 미확인 · 연동 미확인');
+ assert.equal(status.collectionObservationLabel({id:'reviews',status:'empty'}),'0건');
+ const html=renderHome([
+  {id:'own-sales',label:'자사 매출 (ERP)',count:0,latestDate:null,target:null,status:'empty',link:null},
+  {id:'own-inventory',label:'자사 재고 (ERP)',count:0,latestDate:null,target:null,status:'empty',link:null},
+ ],{state:'available',jobs:[],limit:20});
+ assert.match(html,/>0</);assert.equal((html.match(/저장 0건 · 연동 미확인/g)||[]).length,2);
+ assert.doesNotMatch(html,/미연동|연동 성공|연동 완료/);
+});
+test('ERP count failure remains unknown and never normalized into stored zero',()=>{
+ const html=renderHome([{id:'own-sales',label:'자사 매출 (ERP)',count:null,latestDate:null,target:null,status:'unknown',link:null}],{state:'available',jobs:[],limit:20});
+ assert.match(html,/저장 조회 미확인 · 연동 미확인/);assert.match(html,/조회 불가/);assert.doesNotMatch(html,/저장 0건 · 연동 미확인/);
+});
 for(const rows of [null,[],[{id:'1',script:'test',status:'running',started_at:'2026-10-03T00:00:00Z',rows_done:1,target:2}]])test(`mobile admin renders ${rows===null?'unknown':rows.length?'running':'empty'}`,()=>{
  const states=[rows,false];
  const {default:Page}=load('src/app/(app)/admin/jobs/MobileAdminJobsView.tsx',{react:{...React,useState:()=>[states.shift(),()=>{}],useEffect:()=>{}},'@/lib/queries-admin':{}});

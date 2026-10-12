@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "plugins": [],
+    "types": [
+      "node",
+      "react",
+      "next"
+    ]
+  },
+  "include": [
+    "src/components/erp-insights/**/*.tsx",
+    "src/lib/erp-insight-workspace.ts",
+    "src/app/(app)/erp-insights-review/page.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next",
+    "dev"
+  ]
+}

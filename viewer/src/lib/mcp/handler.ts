@@ -2,6 +2,7 @@ import { createMcpHandler } from 'mcp-handler';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { runInferenceLoop, execQueryDb } from '@/lib/ai/pipeline';
+import { ConfirmedUsageLedger } from '@/lib/ai/confirmed-usage';
 import { accumulateMcpDailyUsage, type UsageSettlementOptions } from '@/lib/ai/usage-accounting';
 
 // ─── Supabase 클라이언트 팩토리 ────────────────────────────────────────────
@@ -49,7 +50,7 @@ async function checkMcpQuota(): Promise<{ allowed: boolean; limit: number }> {
 }
 
 // Await known completed usage settlement before returning from the tool.
-async function accumulateMcpUsage(inputTokens: number, outputTokens: number, options: UsageSettlementOptions): Promise<void> {
+async function accumulateMcpUsage(inputTokens: number | null, outputTokens: number | null, options: UsageSettlementOptions): Promise<void> {
   if (!inputTokens && !outputTokens) return;
   const dateStr = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
   const settlement = await accumulateMcpDailyUsage(sbSvc(), dateStr, inputTokens, outputTokens, options);
@@ -59,6 +60,32 @@ async function accumulateMcpUsage(inputTokens: number, outputTokens: number, opt
 }
 
 const LIMIT = 50;
+
+// Only these public codes/messages may leave the inference error boundary.
+const INFERENCE_ERROR_MESSAGES = {
+  timeout: '분석 시간 초과(25초)입니다. 질문을 더 구체적으로 바꾸거나 나누어 시도해 주세요.',
+  cancelled: '분석이 취소되었습니다. 필요하면 다시 요청해 주세요.',
+  workspace_limit:
+    'UTTU 분석 AI의 월별 API 한도가 초과되었습니다. ' +
+    '**query_db 도구를 사용해 SQL을 직접 실행하면 동일한 분석이 가능합니다.** ' +
+    '예: `SELECT brand_name, AVG(rank_position) FROM ranking_snapshots WHERE snapshot_date BETWEEN \'2026-06-01\' AND \'2026-06-30\' GROUP BY brand_name ORDER BY AVG(rank_position) LIMIT 20`',
+  inference_failed: '분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+} as const;
+
+function inferenceErrorCode(error: unknown, timedOut: boolean): keyof typeof INFERENCE_ERROR_MESSAGES {
+  if (timedOut) return 'timeout';
+  try {
+    // Even instanceof/property access can throw on a provider-supplied Proxy/getter.
+    if (!(error instanceof Error)) return 'inference_failed';
+    const message = error.message;
+    if (typeof message === 'string' && message.includes('workspace API usage limits')) return 'workspace_limit';
+    const name = error.name;
+    if (name === 'AbortError') return 'cancelled';
+  } catch {
+    // Never let an inspection exception or raw provider value escape this boundary.
+  }
+  return 'inference_failed';
+}
 
 function kstToday() {
   return new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
@@ -501,46 +528,40 @@ export function createUttuMcpHandler(endpoint: string) {
           const timer = setTimeout(() => controller.abort(), 25_000);
 
           let inferenceResult: Awaited<ReturnType<typeof runInferenceLoop>>;
+          const usageLedger = new ConfirmedUsageLedger();
+          let usageObserved = false;
+          let inferenceFailed = true;
           try {
             inferenceResult = await runInferenceLoop({
               question,
               supabase: sbSvc(),
               maxTurns: 3,
               signal: controller.signal,
+              onUsage: usage => {
+                usageObserved = true;
+                usageLedger.observe(usage);
+              },
             });
+            inferenceFailed = false;
+            // Completed aggregate fallback for callers/test adapters without an observer.
+            if (!usageObserved) usageLedger.observe(inferenceResult);
           } catch (e) {
-            clearTimeout(timer);
-            if (controller.signal.aborted) {
-              return {
-                content: [{
-                  type: 'text' as const,
-                  text: '분석 시간 초과(25초)입니다. 질문을 더 구체적으로 바꾸거나 나누어 시도해 주세요.',
-                }],
-              };
-            }
-            const errMsg = e instanceof Error ? e.message : '알 수 없는 오류';
-            if (errMsg.includes('workspace API usage limits')) {
-              return {
-                content: [{
-                  type: 'text' as const,
-                  text: 'UTTU 분석 AI의 월별 API 한도가 초과되었습니다. ' +
-                        '**query_db 도구를 사용해 SQL을 직접 실행하면 동일한 분석이 가능합니다.** ' +
-                        '예: `SELECT brand_name, AVG(rank_position) FROM ranking_snapshots WHERE snapshot_date BETWEEN \'2026-06-01\' AND \'2026-06-30\' GROUP BY brand_name ORDER BY AVG(rank_position) LIMIT 20`',
-                }],
-              };
-            }
             return {
               content: [{
                 type: 'text' as const,
-                text: `분석 오류: ${errMsg}`,
+                text: INFERENCE_ERROR_MESSAGES[inferenceErrorCode(e, controller.signal.aborted)],
               }],
             };
-          }
-          try {
-            await accumulateMcpUsage(inferenceResult.inputTokens, inferenceResult.outputTokens,
-                                     { signal: controller.signal, deadlineAt });
           } finally {
-            clearTimeout(timer);
+            try {
+              if (usageLedger.incomplete) console.warn('mcp_inference_usage status=incomplete reason=missing_or_invalid_usage');
+              // A failed/aborted inference cannot cancel its already-confirmed usage.
+              // Failure settlement retains the helper's 2s bound; success retains its original budget.
+              await accumulateMcpUsage(usageLedger.inputTokens, usageLedger.outputTokens,
+                inferenceFailed ? {} : { signal: controller.signal, deadlineAt });
+            } finally {
+              clearTimeout(timer);
+            }
           }
 
           return {

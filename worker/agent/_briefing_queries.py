@@ -1,15 +1,15 @@
 """
 브리핑 워커용 DB 쿼리 함수 모음.
-모든 함수는 실패 시 빈 구조를 반환한다 (외부에서 except 불필요).
+레거시 함수는 실패 시 빈 구조를 반환한다. CS 리뷰 입력은 불완전 조회 시 예외로 중단한다.
 """
 from __future__ import annotations
 
-from collections import Counter
 from datetime import date, timedelta
 
 from loguru import logger
 
 from supabase import Client
+from worker.agent._cs_review_inputs import read_cs_review_inputs
 from worker.detectors.rank_observation import LEGACY_RANK_RULES
 
 # Positive complement of the legacy policy, evaluated by PostgREST BEFORE LIMIT.
@@ -432,50 +432,8 @@ def fetch_active_promotions(
 def fetch_review_summary(
     db: Client, target_date: date, own_product_ids: list[str]
 ) -> dict:
-    """어제 자사 브랜드 리뷰 요약 — 건수·평균 별점·저점/고점 샘플."""
-    yesterday = _prev(target_date, 1)
-    if not own_product_ids:
-        return {}
-    try:
-        # .in_() 안전 상한: product_id 최대 100개
-        res = (
-            db.table("reviews")
-            .select("rating, review_text, product_id")
-            .in_("product_id", own_product_ids[:100])
-            .eq("review_date", yesterday.isoformat())
-            .order("helpful_count", desc=True)
-            .limit(200)
-            .execute()
-        )
-        reviews = res.data or []
-        if not reviews:
-            return {"count": 0, "avg_rating": None, "low_samples": [], "high_samples": []}
-
-        ratings    = [r["rating"] for r in reviews]
-        avg_rating = round(sum(ratings) / len(ratings), 2)
-
-        low  = [r for r in reviews if r["rating"] <= 2][:5]
-        high = [r for r in reviews if r["rating"] >= 4][:5]
-
-        return {
-            "count":      len(reviews),
-            "avg_rating": avg_rating,
-            "rating_dist": {
-                str(i): sum(1 for r in reviews if r["rating"] == i)
-                for i in range(1, 6)
-            },
-            "low_samples": [
-                {"rating": r["rating"], "text": (r["review_text"] or "")[:200]}
-                for r in low
-            ],
-            "high_samples": [
-                {"rating": r["rating"], "text": (r["review_text"] or "")[:200]}
-                for r in high
-            ],
-        }
-    except Exception as e:
-        logger.warning("review_summary_failed", error=str(e))
-        return {}
+    """Compatibility reader: complete own-review scope, without product-ID truncation."""
+    return read_cs_review_inputs(db, target_date)["review_summary_yesterday"]
 
 
 # ── DART ──────────────────────────────────────────────────────────────────────
@@ -882,63 +840,15 @@ def fetch_dart_financial_signals(db: Client, target_date: date) -> list[dict]:
 def fetch_low_reviews(
     db: Client, target_date: date, own_product_ids: list[str], max_samples: int = 10
 ) -> list[dict]:
-    """어제 자사 1~2점 리뷰 본문 샘플 (닉네임·사용자ID 절대 포함 금지)."""
-    yesterday = _prev(target_date, 1)
-    if not own_product_ids:
-        return []
-    try:
-        res = (
-            db.table("reviews")
-            .select("rating, review_text, review_date, product_id")
-            .in_("product_id", own_product_ids[:100])
-            .eq("review_date", yesterday.isoformat())
-            .lte("rating", 2)
-            .order("helpful_count", desc=True)
-            .limit(max_samples)
-            .execute()
-        )
-        return [
-            {
-                "rating":      r["rating"],
-                "text":        (r["review_text"] or "")[:200],
-                "review_date": r["review_date"],
-            }
-            for r in (res.data or [])
-        ]
-    except Exception as e:
-        logger.warning("low_reviews_failed", error=str(e))
-        return []
+    """Compatibility reader: complete own-review scope, without product-ID truncation."""
+    return read_cs_review_inputs(db, target_date)["low_reviews"]
 
 
 def fetch_high_reviews(
     db: Client, target_date: date, own_product_ids: list[str], max_samples: int = 10
 ) -> list[dict]:
-    """어제 자사 4~5점 리뷰 본문 샘플 (닉네임·사용자ID 절대 포함 금지)."""
-    yesterday = _prev(target_date, 1)
-    if not own_product_ids:
-        return []
-    try:
-        res = (
-            db.table("reviews")
-            .select("rating, review_text, review_date, product_id")
-            .in_("product_id", own_product_ids[:100])
-            .eq("review_date", yesterday.isoformat())
-            .gte("rating", 4)
-            .order("helpful_count", desc=True)
-            .limit(max_samples)
-            .execute()
-        )
-        return [
-            {
-                "rating":      r["rating"],
-                "text":        (r["review_text"] or "")[:200],
-                "review_date": r["review_date"],
-            }
-            for r in (res.data or [])
-        ]
-    except Exception as e:
-        logger.warning("high_reviews_failed", error=str(e))
-        return []
+    """Compatibility reader: complete own-review scope, without product-ID truncation."""
+    return read_cs_review_inputs(db, target_date)["high_reviews"]
 
 
 # ── CS: 이번 주 브랜드별 리뷰 패턴 ──────────────────────────────────────────
@@ -947,62 +857,8 @@ def fetch_weekly_review_pattern(
     db: Client, target_date: date,
     own_product_ids: list[str], own_slugs: list[str],
 ) -> list[dict]:
-    """이번 주(월~전날) 자사 브랜드별 평균 별점·신규 건수."""
-    monday    = _week_monday(target_date)
-    yesterday = _prev(target_date, 1)
-    if monday > yesterday or not own_product_ids:
-        return []
-    try:
-        res = (
-            db.table("reviews")
-            .select("rating, product_id")
-            .in_("product_id", own_product_ids[:100])
-            .gte("review_date", monday.isoformat())
-            .lte("review_date", yesterday.isoformat())
-            .limit(1000)
-            .execute()
-        )
-        reviews = res.data or []
-        if not reviews:
-            return []
-
-        # product_id → brand_slug 매핑
-        all_pids = list({r["product_id"] for r in reviews})
-        brand_map: dict[str, str] = {}
-        try:
-            pr = (
-                db.table("products")
-                .select("id, brand_slug")
-                .in_("id", all_pids[:100])
-                .limit(100)
-                .execute()
-            )
-            brand_map = {p["id"]: p["brand_slug"] for p in (pr.data or [])}
-        except Exception:
-            pass
-
-        by_brand: dict[str, list[int]] = {}
-        for r in reviews:
-            slug = brand_map.get(r["product_id"], "unknown")
-            by_brand.setdefault(slug, []).append(r["rating"])
-
-        period = f"{monday.isoformat()} ~ {yesterday.isoformat()}"
-        return [
-            {
-                "brand_slug": slug,
-                "period":     period,
-                "count":      len(ratings),
-                "avg_rating": round(sum(ratings) / len(ratings), 2),
-                "rating_dist": {
-                    str(i): sum(1 for rt in ratings if rt == i)
-                    for i in range(1, 6)
-                },
-            }
-            for slug, ratings in sorted(by_brand.items())
-        ]
-    except Exception as e:
-        logger.warning("weekly_review_pattern_failed", error=str(e))
-        return []
+    """Compatibility reader: complete own-review scope, without product-ID truncation."""
+    return read_cs_review_inputs(db, target_date)["weekly_review_pattern"]
 
 
 # ── CS: 문제 상품 / 강점 상품 ─────────────────────────────────────────────────
@@ -1010,103 +866,15 @@ def fetch_weekly_review_pattern(
 def fetch_problem_products(
     db: Client, target_date: date, own_product_ids: list[str]
 ) -> list[dict]:
-    """이번 주 1~2점 누적 많은 자사 상품 TOP5."""
-    monday    = _week_monday(target_date)
-    yesterday = _prev(target_date, 1)
-    if not own_product_ids:
-        return []
-    try:
-        res = (
-            db.table("reviews")
-            .select("product_id, rating")
-            .in_("product_id", own_product_ids[:100])
-            .gte("review_date", monday.isoformat())
-            .lte("review_date", yesterday.isoformat())
-            .lte("rating", 2)
-            .limit(500)
-            .execute()
-        )
-        counts = Counter(r["product_id"] for r in (res.data or []))
-        top5   = [pid for pid, _ in counts.most_common(5)]
-        if not top5:
-            return []
-
-        prod_info: dict[str, dict] = {}
-        try:
-            pr = (
-                db.table("products")
-                .select("id, name, brand_slug")
-                .in_("id", top5)
-                .limit(5)
-                .execute()
-            )
-            prod_info = {p["id"]: p for p in (pr.data or [])}
-        except Exception:
-            pass
-
-        return [
-            {
-                "product_id":       pid,
-                "product_name":     prod_info.get(pid, {}).get("name", pid),
-                "brand_slug":       prod_info.get(pid, {}).get("brand_slug", ""),
-                "low_review_count": counts[pid],
-            }
-            for pid in top5
-        ]
-    except Exception as e:
-        logger.warning("problem_products_failed", error=str(e))
-        return []
+    """Compatibility reader: complete own-review scope, without product-ID truncation."""
+    return read_cs_review_inputs(db, target_date)["problem_products_top"]
 
 
 def fetch_strength_products(
     db: Client, target_date: date, own_product_ids: list[str]
 ) -> list[dict]:
-    """이번 주 4~5점 누적 많은 자사 상품 TOP5."""
-    monday    = _week_monday(target_date)
-    yesterday = _prev(target_date, 1)
-    if not own_product_ids:
-        return []
-    try:
-        res = (
-            db.table("reviews")
-            .select("product_id, rating")
-            .in_("product_id", own_product_ids[:100])
-            .gte("review_date", monday.isoformat())
-            .lte("review_date", yesterday.isoformat())
-            .gte("rating", 4)
-            .limit(500)
-            .execute()
-        )
-        counts = Counter(r["product_id"] for r in (res.data or []))
-        top5   = [pid for pid, _ in counts.most_common(5)]
-        if not top5:
-            return []
-
-        prod_info: dict[str, dict] = {}
-        try:
-            pr = (
-                db.table("products")
-                .select("id, name, brand_slug")
-                .in_("id", top5)
-                .limit(5)
-                .execute()
-            )
-            prod_info = {p["id"]: p for p in (pr.data or [])}
-        except Exception:
-            pass
-
-        return [
-            {
-                "product_id":        pid,
-                "product_name":      prod_info.get(pid, {}).get("name", pid),
-                "brand_slug":        prod_info.get(pid, {}).get("brand_slug", ""),
-                "high_review_count": counts[pid],
-            }
-            for pid in top5
-        ]
-    except Exception as e:
-        logger.warning("strength_products_failed", error=str(e))
-        return []
+    """Compatibility reader: complete own-review scope, without product-ID truncation."""
+    return read_cs_review_inputs(db, target_date)["strength_products_top"]
 
 
 # ── 콘텐츠 효과 분석 ──────────────────────────────────────────────────────────
@@ -1496,17 +1264,8 @@ def collect_cs_inputs(db: Client, target_date: date) -> dict:
     포함: 리뷰 요약·저점샘플·고점샘플·주간브랜드패턴·문제상품·강점상품
     제외: 랭킹·매출·재무·외부뉴스·이상탐지
     """
-    own_product_ids = get_own_product_ids(db)
-    own_slugs       = get_own_brand_slugs(db)
     return {
-        "date":    target_date,
+        "date": target_date,
         "weekday": WEEKDAY_KO.get(target_date.strftime("%A"), target_date.strftime("%A")),
-        "review_summary_yesterday": fetch_review_summary(db, target_date, own_product_ids),
-        "low_reviews":              fetch_low_reviews(db, target_date, own_product_ids),
-        "high_reviews":             fetch_high_reviews(db, target_date, own_product_ids),
-        "weekly_review_pattern":    fetch_weekly_review_pattern(
-                                        db, target_date, own_product_ids, own_slugs
-                                    ),
-        "problem_products_top":     fetch_problem_products(db, target_date, own_product_ids),
-        "strength_products_top":    fetch_strength_products(db, target_date, own_product_ids),
+        **read_cs_review_inputs(db, target_date),
     }

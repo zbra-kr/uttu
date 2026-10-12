@@ -159,7 +159,7 @@ export const fetchNoteForEntity=(...args:any[])=>read('fetchNoteForEntity',args)
 export const updateNote=(...args:any[])=>read('updateNote',args);
 export const deleteNote=(...args:any[])=>read('deleteNote',args);
 export const updateMyProfile=(...args:any[])=>read('updateMyProfile',args);
-export const fetchSavedFilters=(...args:any[])=>read('fetchSavedFilters',args);
+export const fetchSavedFilters=async(...args:any[])=>({status:'ready' as const,filters:await read('fetchSavedFilters',args)});
 export const saveFilter=(...args:any[])=>read('saveFilter',args);
 export const overwriteFilter=(...args:any[])=>read('overwriteFilter',args);
 export const NotificationEvent=(...args:any[])=>read('NotificationEvent',args);

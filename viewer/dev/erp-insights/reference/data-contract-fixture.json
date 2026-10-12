@@ -1,0 +1,179 @@
+{
+  "syntheticOnly": true,
+  "notBusinessFormula": true,
+  "contract": {
+    "confirmation": "synthetic-fixture",
+    "source": "VW_SALES_VAT",
+    "amountField": "SALEAMT_VAT_EX",
+    "vatOperation": "already_excluded",
+    "currency": "KRW",
+    "unit": "KRW_integer",
+    "signPolicy": "signed_ledger",
+    "roundingPolicy": "already_integer",
+    "channelScope": "FIXTURE-explicit-all-retail",
+    "businessDefinitionVersion": "FIXTURE-only-v1",
+    "complete": true,
+    "period": {
+      "start": "2026-10-04",
+      "end": "2026-10-10"
+    },
+    "grain": [
+      "BRANDCD",
+      "STYLECD",
+      "SALEDT",
+      "SHOPCD"
+    ],
+    "brands": [
+      "CO",
+      "LE",
+      "WA",
+      "CK",
+      "LK"
+    ],
+    "season": {
+      "year": "2026",
+      "names": [
+        "가을",
+        "겨울",
+        "하반기",
+        "스탠다드"
+      ]
+    },
+    "excludedShops": [
+      "B6055",
+      "B6057",
+      "B6063"
+    ]
+  },
+  "rows": [
+    {
+      "BRANDCD": "CO",
+      "STYLECD": "FIXTURE-SAME-STYLE",
+      "SALEDT": "2026-10-10",
+      "SHOPCD": "FIXTURE-SHOP",
+      "YEAR": "2026",
+      "SEASONNM": "겨울",
+      "amount": "100"
+    },
+    {
+      "BRANDCD": "LE",
+      "STYLECD": "FIXTURE-SAME-STYLE",
+      "SALEDT": "2026-10-10",
+      "SHOPCD": "FIXTURE-SHOP",
+      "YEAR": "2026",
+      "SEASONNM": "겨울",
+      "amount": "200"
+    },
+    {
+      "BRANDCD": "WA",
+      "STYLECD": "FIXTURE-SAME-STYLE",
+      "SALEDT": "2026-10-10",
+      "SHOPCD": "FIXTURE-SHOP",
+      "YEAR": "2026",
+      "SEASONNM": "겨울",
+      "amount": "300"
+    },
+    {
+      "BRANDCD": "CK",
+      "STYLECD": "FIXTURE-SAME-STYLE",
+      "SALEDT": "2026-10-10",
+      "SHOPCD": "FIXTURE-SHOP",
+      "YEAR": "2026",
+      "SEASONNM": "겨울",
+      "amount": "400"
+    },
+    {
+      "BRANDCD": "LK",
+      "STYLECD": "FIXTURE-SAME-STYLE",
+      "SALEDT": "2026-10-10",
+      "SHOPCD": "FIXTURE-SHOP",
+      "YEAR": "2026",
+      "SEASONNM": "겨울",
+      "amount": "500"
+    }
+  ],
+  "mappings": [
+    {
+      "BRANDCD": "CO",
+      "STYLECD": "FIXTURE-SAME-STYLE",
+      "productId": "FIXTURE-product-CO",
+      "musinsaNo": "FIXTURE-musinsa-CO",
+      "uttuBrand": "CO",
+      "verified": true,
+      "mappingVersion": "FIXTURE-v1",
+      "verificationEvidence": "synthetic-case-only"
+    },
+    {
+      "BRANDCD": "LE",
+      "STYLECD": "FIXTURE-SAME-STYLE",
+      "productId": "FIXTURE-product-LE",
+      "musinsaNo": "FIXTURE-musinsa-LE",
+      "uttuBrand": "LE",
+      "verified": true,
+      "mappingVersion": "FIXTURE-v1",
+      "verificationEvidence": "synthetic-case-only"
+    },
+    {
+      "BRANDCD": "WA",
+      "STYLECD": "FIXTURE-SAME-STYLE",
+      "productId": "FIXTURE-product-WA",
+      "musinsaNo": "FIXTURE-musinsa-WA",
+      "uttuBrand": "WA",
+      "verified": true,
+      "mappingVersion": "FIXTURE-v1",
+      "verificationEvidence": "synthetic-case-only"
+    },
+    {
+      "BRANDCD": "CK",
+      "STYLECD": "FIXTURE-SAME-STYLE",
+      "productId": "FIXTURE-product-CK",
+      "musinsaNo": "FIXTURE-musinsa-CK",
+      "uttuBrand": "CK",
+      "verified": true,
+      "mappingVersion": "FIXTURE-v1",
+      "verificationEvidence": "synthetic-case-only"
+    },
+    {
+      "BRANDCD": "LK",
+      "STYLECD": "FIXTURE-SAME-STYLE",
+      "productId": "FIXTURE-product-LK",
+      "musinsaNo": "FIXTURE-musinsa-LK",
+      "uttuBrand": "LK",
+      "verified": true,
+      "mappingVersion": "FIXTURE-v1",
+      "verificationEvidence": "synthetic-case-only"
+    }
+  ],
+  "erpScope": {
+    "item": "FIXTURE-후드",
+    "store": "musinsa",
+    "gender": "A",
+    "age": "AGE_BAND_ALL",
+    "date": "2026-10-10",
+    "period": {
+      "start": "2026-10-04",
+      "end": "2026-10-10"
+    },
+    "complete": true
+  },
+  "marketScope": {
+    "item": "FIXTURE-후드",
+    "category": "FIXTURE-category",
+    "store": "musinsa",
+    "gender": "A",
+    "age": "AGE_BAND_ALL",
+    "date": "2026-10-10",
+    "period": {
+      "start": "2026-10-04",
+      "end": "2026-10-10"
+    },
+    "complete": true
+  },
+  "categoryCrosswalk": {
+    "item": "FIXTURE-후드",
+    "category": "FIXTURE-category",
+    "verified": true,
+    "version": "FIXTURE-v1",
+    "evidence": "synthetic-case-only"
+  }
+}

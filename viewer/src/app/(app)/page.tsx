@@ -1,7 +1,7 @@
 'use client';
 import { formatFiveStarRating } from '@/lib/rating-format';
 import React from 'react';
-import { formatStoredCount, runningRecordsLabel, type RunningRecords } from '@/lib/collection-status';
+import { formatStoredCount, collectionObservationLabel, runningRecordsLabel, type RunningRecords } from '@/lib/collection-status';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useIsMobile } from '@/hooks/useViewport';
@@ -33,7 +33,6 @@ const PROMO_TYPE_LABEL: Record<string, string> = {
   general:       '기획전',
 };
 
-const COLL_STATUS_LABEL: Record<string, string> = { stored: '저장됨', empty: '0건', unknown: '미확인' };
 const COLL_STATUS_SEV:   Record<string, string> = { stored: 'lo', empty: 'md', unknown: 'hi' };
 
 const SCRIPT_TO_STAT_ID: Record<string, string> = {
@@ -80,10 +79,10 @@ function CollStatRow({ s, i, job, router }: {
     : null;
   return (
     <div
-      className={`row${s.link ? ' hover' : ''}${i % 2 ? ' alt' : ''}`}
-      style={{ gridTemplateColumns: 'minmax(80px, 1fr) 100px 76px 90px', cursor: s.link ? 'pointer' : 'default' }}
+      className={`row collection-status-row${s.link ? ' hover' : ''}${i % 2 ? ' alt' : ''}`}
+      style={{ cursor: s.link ? 'pointer' : 'default' }}
       onClick={() => s.link && router.push(s.link)}>
-      <span style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span className="collection-status-source" style={{ fontSize: 11 }}>
         {s.label}
       </span>
       <span className="mono" style={{ textAlign: 'right', fontSize: 11 }}>
@@ -100,8 +99,8 @@ function CollStatRow({ s, i, job, router }: {
             <span title="DB에 기록된 상태이며 실제 프로세스 실행 여부는 미확인">running 기록</span>{progressPct !== null ? ` ${progressPct}%` : ''}
           </span>
         ) : (
-          <span className={`sev ${COLL_STATUS_SEV[s.status]}`} style={{ fontSize: 9, padding: '1px 4px' }}>
-            <span className="pip" />{COLL_STATUS_LABEL[s.status]}
+          <span className={`sev ${COLL_STATUS_SEV[s.status]}`} style={{ fontSize: 9, padding: '1px 4px', ...(['own-sales','own-inventory'].includes(s.id)?{maxWidth:'100%',whiteSpace:'normal',flexWrap:'wrap',justifyContent:'flex-end'}:{}) }}>
+            <span className="pip" />{collectionObservationLabel(s)}
           </span>
         )}
       </span>
@@ -667,8 +666,8 @@ function HomeDesktopView() {
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))', gap: 14, alignItems: 'start' }}>
             {/* 1열: 무신사 수집 + 콘텐츠·자사 */}
             <section className="panel surface" style={{ minWidth: 0, overflowX: 'auto' }}>
-              <div className="tbl" style={{ minWidth: 440 }}>
-                <div className="row head" style={{ gridTemplateColumns: 'minmax(80px, 1fr) 100px 76px 90px' }}>
+              <div className="tbl collection-status-table">
+                <div className="row head collection-status-row">
                   <span>무신사 · 콘텐츠 · 자사</span>
                   <span style={{ textAlign: 'right' }}>건수</span>
                   <span style={{ textAlign: 'right' }}>최근</span>
@@ -681,8 +680,8 @@ function HomeDesktopView() {
             </section>
             {/* 2열: 재무·분석 */}
             <section className="panel surface" style={{ minWidth: 0, overflowX: 'auto' }}>
-              <div className="tbl" style={{ minWidth: 440 }}>
-                <div className="row head" style={{ gridTemplateColumns: 'minmax(80px, 1fr) 100px 76px 90px' }}>
+              <div className="tbl collection-status-table">
+                <div className="row head collection-status-row">
                   <span>재무 · 분석</span>
                   <span style={{ textAlign: 'right' }}>건수</span>
                   <span style={{ textAlign: 'right' }}>최근</span>

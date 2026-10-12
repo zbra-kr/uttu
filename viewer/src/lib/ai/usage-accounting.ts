@@ -81,9 +81,7 @@ async function accumulate(
             ? client.from(table).insert({ user_id: keys.user_id, usage_date: keys.usage_date,
                 input_tokens: next.input_tokens, output_tokens: next.output_tokens,
                 session_count: next.session_count, message_count: next.message_count }).select(columns.join(','))
-            : client.from(table).insert({ usage_date: keys.usage_date,
-                input_tokens: next.input_tokens, output_tokens: next.output_tokens,
-                call_count: next.call_count }).select(columns.join(','));
+            : client.from(table).insert({ usage_date: keys.usage_date, ...next }).select(columns.join(','));
           const inserted = await execute(query.abortSignal(controller.signal), true);
           if (inserted.error?.code === '23505') { writeAttempted = false; continue; }
           if (inserted.error) return { status: 'unknown', reason: 'write_failed' };
@@ -124,10 +122,15 @@ export function accumulateAiUsage(
 }
 
 export function accumulateMcpDailyUsage(
-  client: SupabaseClient, usageDate: string, inputTokens: number, outputTokens: number,
+  client: SupabaseClient, usageDate: string, inputTokens: number | null, outputTokens: number | null,
   options: UsageSettlementOptions = {},
 ): Promise<UsageSettlement> {
+  if (inputTokens === null && outputTokens === null) return Promise.resolve({ status: 'unrecorded', reason: 'invalid' });
+  // Omit unknown axes from the delta/UPDATE. On INSERT the existing DB defaults
+  // initialize the lower-bound totals; this does not assert zero provider usage.
   return accumulate(client, 'mcp_usage_daily', { usage_date: usageDate }, {
-    input_tokens: inputTokens, output_tokens: outputTokens, call_count: 1,
+    ...(inputTokens !== null ? { input_tokens: inputTokens } : {}),
+    ...(outputTokens !== null ? { output_tokens: outputTokens } : {}),
+    call_count: 1,
   }, options);
 }

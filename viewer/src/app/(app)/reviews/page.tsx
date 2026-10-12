@@ -13,9 +13,9 @@ import { exportBrowseReviews, exportProductReviews } from '@/lib/excel-export';
 import { PeriodFilter, FilterBlock, CheckRow } from '@/components/ui/filters';
 import {
   fetchReviews, fetchOwnBrands,
-  fetchCsAnomalies, fetchOwnProductsWithPrices,
+  fetchCsAnomalies, fetchOwnProductsWithPrices, fetchReviewProductOptions,
   CATEGORY_MAP,
-  type ReviewRow, type CsAnomaly, type OwnProductWithPrice,
+  type ReviewRow, type CsAnomaly, type OwnProductWithPrice, type ReviewProductOption,
 } from '@/lib/queries';
 import { kstToday, kstDaysAgo } from '@/lib/format';
 
@@ -244,11 +244,12 @@ function ReviewsDesktopView() {
 // ===========================================================================
 function DashboardPanelRead({ name, state, retry }: { name: string; state: DashboardPanelState; retry: () => void }) {
   return <div data-dashboard-panel-state={state} className="row-flex gap-8" style={{ padding: '8px 0' }}>
-    {state === 'error' ? <span role="alert" className="dim">{name} 정보를 불러오지 못했습니다.</span>
+    {state === 'autherror' ? <span role="alert" className="dim">로그인 상태를 확인하지 못했습니다. 다시 조회해 주세요.</span>
+      : state === 'error' ? <span role="alert" className="dim">{name} 정보를 불러오지 못했습니다.</span>
       : state === 'loading' ? <span role="status" className="dim">{name} 정보를 불러오는 중…</span>
       : state === 'signedout' ? <span role="status" className="dim">로그인 후 조회할 수 있습니다.</span> : null}
     <button type="button" className="btn sm" aria-label={`${name} 다시 조회`} aria-disabled={state === 'loading' || state === 'signedout'} onClick={() => {
-      if (state === 'ready' || state === 'error') retry();
+      if (state === 'ready' || state === 'error' || state === 'autherror') retry();
     }}>다시 조회</button>
   </div>;
 }
@@ -287,12 +288,13 @@ function RvDashboard({ onAnomalyRoute }: { onAnomalyRoute: () => void }) {
       </div>
 
       <div data-review-stats-state={statsState} className="row-flex gap-8" style={{ marginTop: 8 }}>
-        {statsState === 'error' ? <p role="alert" className="dim">리뷰 통계를 불러오지 못했습니다.</p>
+        {statsState === 'autherror' ? <p role="alert" className="dim">로그인 상태를 확인하지 못했습니다. 다시 조회해 주세요.</p>
+          : statsState === 'error' ? <p role="alert" className="dim">리뷰 통계를 불러오지 못했습니다.</p>
           : statsState === 'loading' ? <p role="status" className="dim">리뷰 통계를 불러오는 중…</p>
         : statsState === 'signedout' ? <p role="status" className="dim">로그인 후 리뷰 통계를 조회할 수 있습니다.</p>
         : stats?.total === 0 && <p role="status" className="dim">이 기간에 일치하는 리뷰가 없습니다.</p>}
         <button type="button" className="btn sm" aria-disabled={statsState === 'loading' || statsState === 'signedout'} onClick={() => {
-          if (statsState === 'ready' || statsState === 'error') retryStats();
+          if (statsState === 'ready' || statsState === 'error' || statsState === 'autherror') retryStats();
         }}>다시 조회</button>
       </div>
 
@@ -532,7 +534,7 @@ function RvBrowse() {
 
   // product picker
   const [pQuery, setPQuery]     = React.useState('');
-  const [pDrop, setPDrop]       = React.useState<OwnProductWithPrice[]>([]);
+  const [pDrop, setPDrop]       = React.useState<ReviewProductOption[]>([]);
   const [pSearching, setPSearching] = React.useState(false);
   const [pOpen, setPOpen]       = React.useState(false);
   const pRef = React.useRef<HTMLDivElement>(null);
@@ -550,15 +552,17 @@ function RvBrowse() {
 
   React.useEffect(() => {
     if (pTimer.current) clearTimeout(pTimer.current);
-    if (!pQuery.trim()) { setPDrop([]); return; }
+    let cancelled = false;
+    if (!pQuery.trim()) { setPDrop([]); setPSearching(false); return; }
     pTimer.current = setTimeout(async () => {
       setPSearching(true);
       try {
-        const { rows: r } = await fetchOwnProductsWithPrices({ keyword: pQuery, limit: 10, offset: 0 });
-        setPDrop(r.filter(p => !selectedProducts.has(p.id)));
+        const r = await fetchReviewProductOptions(pQuery);
+        if (!cancelled) setPDrop(r.filter(p => !selectedProducts.has(p.id)));
       } catch {}
-      setPSearching(false);
+      if (!cancelled) setPSearching(false);
     }, 300);
+    return () => { cancelled = true; if (pTimer.current) clearTimeout(pTimer.current); };
   }, [pQuery, selectedProducts]);
 
   // persist filters
@@ -616,7 +620,7 @@ function RvBrowse() {
     setSatFilter(prev => { const n = { ...prev }; n[attr] === ans ? delete n[attr] : (n[attr] = ans); return n; });
     setPage(0);
   };
-  const addProduct = (p: OwnProductWithPrice) => {
+  const addProduct = (p: ReviewProductOption) => {
     setSelectedProducts(prev => { const n = new Map(prev); n.set(p.id, p.name); return n; });
     setPQuery(''); setPOpen(false); setPage(0);
   };

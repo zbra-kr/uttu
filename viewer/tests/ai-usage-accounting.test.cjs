@@ -55,6 +55,113 @@ function chatFixture(db){let calls=0;const usages=[800,900];
  const request=(signal)=>new NextRequest('https://fixture.invalid/api/ai/chat',{method:'POST',signal,body:JSON.stringify({sessionId,messages:[{role:'user',text:'prior'},{role:'ai',text:'prior answer'},{role:'user',text:'next'}],context:[],route:'/'})});
  return {api,request,providerCalls:()=>calls};
 }
+// All three body providers and the existing Anthropic title request are mocked.
+function titleChatFixture(provider='anthropic', opts={}) {
+ const f=dbFixture('ai_usage_daily',{input_tokens:0,output_tokens:0,session_count:0,message_count:0});
+ const from=f.db.from.bind(f.db);
+ f.db.from=name=>{
+  const q=from(name),originalThen=q.then;
+  q.then=function(yes,no){return originalThen.call(this,r=>name==='ai_allowed_models'
+   ?{data:{provider,model_id:`fixture-${provider}`},error:null}:r,no).then(yes,no);};
+  return q;
+ };
+ const requests={body:[],title:[]};
+ const usage={input_tokens:1000,output_tokens:100};
+ class Anthropic {messages={
+  stream(request){
+   requests.body.push(request);const call=requests.body.length;
+   if(opts.streamFailure==='before_text')throw Error('fixture stream failure');
+   return {on(event,fn){assert.equal(event,'text');if(call===1)fn('fixture answer');},async finalMessage(){
+    if(opts.streamFailure==='before_usage'||(opts.streamFailure==='after_usage'&&call===2))throw Error('fixture stream failure');
+    if(opts.streamFailure==='after_usage')return {usage,stop_reason:'tool_use',content:[{type:'tool_use',id:'fixture-tool',name:'navigate',input:{path:'/reviews',reason:'fixture'}}]};
+    return {usage,stop_reason:'end_turn',content:[]};
+   }};
+  },
+  async create(request){
+   requests.title.push(request);assert.equal(request.model,'claude-haiku-4-5-20251001');assert.equal(request.max_tokens,30);
+   if(opts.titleFails)throw Error('fixture title failure');
+   return {content:opts.titleContent??[{type:'text',text:opts.titleText??'  fixture title  '}],
+    ...(Object.hasOwn(opts,'titleUsage')?{usage:opts.titleUsage}:{usage:{input_tokens:40,output_tokens:8}})};
+  }
+ };}
+ class OpenAI {chat={completions:{async create(request){requests.body.push(request);return {
+  usage:{prompt_tokens:1000,completion_tokens:100},choices:[{message:{content:'fixture answer'}}],
+ };}}};}
+ class GoogleGenerativeAI {getGenerativeModel(){return {startChat(){return {async sendMessage(request){requests.body.push(request);return {response:{
+  usageMetadata:{promptTokenCount:1000,candidatesTokenCount:100},functionCalls:()=>[],text:()=> 'fixture answer',
+ }};}};}};}}
+ const mocks={'@anthropic-ai/sdk':Anthropic,openai:OpenAI,'@google/generative-ai':{GoogleGenerativeAI},
+  '@supabase/supabase-js':{createClient:()=>f.db},
+  '@supabase/ssr':{createServerClient:()=>({auth:{getUser:async()=>({data:{user:{id:userId}},error:null})}})},
+  'next/headers':{cookies:async()=>({get:()=>undefined})},
+  '@/lib/ai/pipeline':{AI_QUERY_BLOCKED_TABLES:[],execQueryDb(){throw Error('unexpected tool');}},
+ };
+ const api=load('src/app/api/ai/chat/route.ts',mocks);
+ const messages=opts.followup?[{role:'user',text:'prior'},{role:'ai',text:'prior answer'},{role:'user',text:'next'}]:[{role:'user',text:'first'}];
+ return {...f,requests,assistantSeq:messages.length+1,async run(){
+  const request=new NextRequest('https://fixture.invalid/api/ai/chat',{method:'POST',body:JSON.stringify({sessionId,messages,context:[],route:'/'})});
+  const response=await api.POST(request);assert.equal(response.status,200);return response.text();
+ }};
+}
+function assertSingleTitleSettlement(s,input=1040,output=108) {
+ assert.deepEqual({input:s.row().input_tokens,output:s.row().output_tokens,sessions:s.row().session_count,messages:s.row().message_count},
+  {input,output,sessions:1,messages:2});
+ const writes=s.calls.filter(c=>c.table==='ai_usage_daily'&&c.op!=='read');assert.equal(writes.length,1);assert.equal(writes[0].op,'update');
+ assert.equal(s.calls.filter(c=>c.table==='ai_messages'&&c.op==='insert').length,2);
+ const assistant=s.calls.find(c=>c.table==='ai_messages'&&c.payload?.role==='assistant');
+ assert.equal(assistant.payload.content,'fixture answer');
+ // Existing message/session token fields continue to describe the body response.
+ assert.equal(assistant.payload.input_tokens,1000);assert.equal(assistant.payload.output_tokens,100);
+ const session=s.calls.filter(c=>c.table==='ai_sessions'&&c.op==='update');assert.equal(session.length,1);
+ assert.equal(session[0].payload.message_count,s.assistantSeq);assert.equal(session[0].payload.input_tokens,1000);assert.equal(session[0].payload.output_tokens,100);
+}
+Object.assign(process.env,{OPENAI_API_KEY:'fixture-openai',GEMINI_API_KEY:'fixture-gemini',ANTHROPIC_API_KEY:'fixture-anthropic'});
+for(const provider of ['anthropic','openai','google'])test(`${provider} first turn adds confirmed title usage in one daily settlement`,async()=>{
+ const s=titleChatFixture(provider),body=await s.run();assert.match(body,/"type":"delta","text":"fixture answer"/);assert.match(body,/"type":"done"/);
+ assertSingleTitleSettlement(s);assert.equal(s.requests.body.length,1);assert.equal(s.requests.title.length,1);
+ assert.equal(s.calls.find(c=>c.table==='ai_sessions'&&c.op==='update').payload.title,'fixture title');
+});
+for(const titleOpts of [{titleText:''},{titleText:'   '},{titleContent:[]}])test(`empty title still counts confirmed usage ${JSON.stringify(titleOpts)}`,async()=>{
+ const s=titleChatFixture('anthropic',titleOpts);assert.match(await s.run(),/"type":"done"/);assertSingleTitleSettlement(s);
+ assert.equal(s.requests.title.length,1);assert.equal(Object.hasOwn(s.calls.find(c=>c.table==='ai_sessions'&&c.op==='update').payload,'title'),false);
+});
+for(const [label,opts,input,output] of [
+ ['title failure',{titleFails:true},1000,100],
+ ['usage missing',{titleUsage:undefined},1000,100],
+ ['usage null',{titleUsage:null},1000,100],
+ ['empty usage',{titleUsage:{}},1000,100],
+ ['zero usage',{titleUsage:{input_tokens:0,output_tokens:0}},1000,100],
+ ['input only',{titleUsage:{input_tokens:40}},1040,100],
+ ['output only',{titleUsage:{output_tokens:8}},1000,108],
+])test(`${label} keeps body answer and known accounting`,async()=>{
+ const s=titleChatFixture('anthropic',opts);assert.match(await s.run(),/"type":"delta","text":"fixture answer"/);assertSingleTitleSettlement(s,input,output);assert.equal(s.requests.title.length,1);
+});
+for(const bad of [-1,0.5,NaN,Infinity,-Infinity,'40',null,{},Number.MAX_SAFE_INTEGER+1,2_147_483_648,2_147_483_647]){
+ for(const axis of ['input_tokens','output_tokens'])test(`invalid/unrepresentable title ${axis} ${String(bad)} preserves body and other confirmed axis`,async()=>{
+  const s=titleChatFixture('anthropic',{titleUsage:{input_tokens:40,output_tokens:8,[axis]:bad}});assert.match(await s.run(),/"type":"done"/);
+  assertSingleTitleSettlement(s,axis==='input_tokens'?1000:1040,axis==='output_tokens'?100:108);
+ });
+}
+for(const provider of ['anthropic','openai','google'])test(`${provider} followup never requests or charges a title`,async()=>{
+ const s=titleChatFixture(provider,{followup:true});assert.match(await s.run(),/"type":"done"/);assertSingleTitleSettlement(s,1000,100);
+ assert.equal(s.requests.title.length,0);assert.equal(s.requests.body.length,1);
+});
+for(const titleFails of [false,true])test(`stream fails after confirmed body usage; title failure=${titleFails}`,async()=>{
+ const s=titleChatFixture('anthropic',{streamFailure:'after_usage',titleFails}),body=await s.run();
+ assert.match(body,/"type":"delta","text":"fixture answer"/);assert.match(body,/"type":"error","message":"fixture stream failure"/);assert.match(body,/"type":"done"/);
+ assertSingleTitleSettlement(s,titleFails?1000:1040,titleFails?100:108);assert.equal(s.requests.body.length,2);assert.equal(s.requests.title.length,1);
+});
+test('partial stream without confirmed body usage preserves partial answer and counts only confirmed title usage',async()=>{
+ const s=titleChatFixture('anthropic',{streamFailure:'before_usage'}),body=await s.run();assert.match(body,/fixture answer/);assert.match(body,/fixture stream failure/);assert.match(body,/"type":"done"/);
+ assert.equal(s.row().input_tokens,40);assert.equal(s.row().output_tokens,8);assert.equal(s.row().session_count,1);assert.equal(s.row().message_count,2);
+ assert.equal(s.calls.filter(c=>c.table==='ai_usage_daily'&&c.op==='update').length,1);assert.equal(s.requests.title.length,1);
+ const assistant=s.calls.find(c=>c.table==='ai_messages'&&c.payload?.role==='assistant');assert.equal(assistant.payload.content,'fixture answer');assert.equal(assistant.payload.input_tokens,0);
+});
+test('stream failure before any text neither requests a title nor invents usage',async()=>{
+ const s=titleChatFixture('anthropic',{streamFailure:'before_text'}),body=await s.run();assert.match(body,/fixture stream failure/);assert.match(body,/"type":"done"/);
+ assert.equal(s.requests.title.length,0);assert.equal(s.calls.filter(c=>c.table==='ai_usage_daily'&&c.op!=='read').length,0);
+ assert.equal(s.calls.find(c=>c.table==='ai_messages'&&c.payload?.role==='assistant').payload.content,'');
+});
 test('actual chat settles both concurrent completions while admission remains soft',async()=>{
  const f=dbFixture('ai_usage_daily',undefined,{concurrent:true}), s=chatFixture(f.db);
  const bodies=await Promise.all([s.api.POST(s.request()).then(r=>r.text()),s.api.POST(s.request()).then(r=>r.text())]);

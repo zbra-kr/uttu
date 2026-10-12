@@ -26,15 +26,27 @@ RATE_LIMIT_SEC = 0.1  # DART 한도 1,000건/분 = 16.7건/초 → 0.1초 = 600�
 class DartResponseError(RuntimeError):
     """Fixed error text without request, response, or credential content."""
 
-    def __init__(self, classification: str):
+    def __init__(self, classification: str, *, provider_status=None, http_status=None,
+                 content_type=None):
         allowed = {"empty_response", "json_error_envelope", "xml_error_envelope",
                    "unexpected_json", "unexpected_xml", "invalid_zip",
                    "unexpected_format", "http_status", "transport_error"}
         self.classification = classification if classification in allowed else "unexpected_format"
-        super().__init__(f"dart_binary_failed stage=fetch_binary classification={self.classification}")
+        text = f"dart_binary_failed stage=fetch_binary classification={self.classification}"
+        # Only fixed enums and bounded integers may enter diagnostics.
+        if provider_status is not None:
+            codes = {"000", "010", "011", "012", "013", "014", "020", "021",
+                     "100", "101", "800", "900", "901"}
+            self.provider_status = provider_status if isinstance(provider_status, str) and provider_status in codes else "unknown"
+            self.http_status = http_status if type(http_status) is int and 100 <= http_status <= 599 else "unknown"
+            types = {"xml", "json", "zip", "octet-stream", "html"}
+            self.content_type = content_type if isinstance(content_type, str) and content_type in types else "unknown"
+            text += (f" provider_status={self.provider_status} http_status={self.http_status}"
+                     f" content_type={self.content_type}")
+        super().__init__(text)
 
 
-def _validate_zip_response(payload: bytes) -> bytes:
+def _validate_zip_response(payload: bytes, *, http_status=None, content_type=None) -> bytes:
     if not payload:
         raise DartResponseError("empty_response")
     invalid_zip = False
@@ -68,7 +80,19 @@ def _validate_zip_response(payload: bytes) -> bytes:
             invalid_xml = True
         else:
             status = root.findtext("status") if root.tag == "result" else None
-            raise DartResponseError("xml_error_envelope" if status not in (None, "", "000") else "unexpected_xml")
+            # Do not infer a provider cause from duplicate, nested or namespaced status.
+            statuses = [node for node in root.iter()
+                        if isinstance(node.tag, str) and node.tag.rsplit("}", 1)[-1] == "status"]
+            valid = (root.tag == "result" and not root.attrib and len(statuses) == 1
+                     and statuses[0] in list(root) and statuses[0].tag == "status"
+                     and not statuses[0].attrib and len(statuses[0]) == 0
+                     and not (root.text or "").strip()
+                     and not (statuses[0].tail or "").strip())
+            provider_status = status if valid and status else "unknown"
+            classification = "xml_error_envelope" if status not in (None, "", "000") else "unexpected_xml"
+            raise DartResponseError(classification,
+                                    provider_status=provider_status if http_status is not None else None,
+                                    http_status=http_status, content_type=content_type)
         if invalid_xml:
             raise DartResponseError("unexpected_xml") from None
     raise DartResponseError("invalid_zip" if payload.startswith(b"PK") else "unexpected_format")
@@ -103,7 +127,13 @@ async def _get_bytes(client: httpx.AsyncClient, url: str, params: dict[str, Any]
         failure = "transport_error"
     if failure is not None:
         raise DartResponseError(failure) from None
-    return _validate_zip_response(resp.content)
+    # Normalize locally; header values and parameters never enter the exception.
+    media_type = getattr(resp, "headers", {}).get("content-type", "").split(";", 1)[0].strip().lower()
+    types = {"application/xml": "xml", "text/xml": "xml", "application/json": "json",
+             "application/zip": "zip", "application/x-zip-compressed": "zip",
+             "application/octet-stream": "octet-stream", "text/html": "html"}
+    return _validate_zip_response(resp.content, http_status=getattr(resp, "status_code", None),
+                                  content_type=types.get(media_type, "unknown"))
 
 
 async def fetch_corp_code_zip(api_key: str) -> bytes:

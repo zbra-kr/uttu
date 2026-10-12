@@ -20,6 +20,7 @@ from loguru import logger
 
 from supabase import Client
 from worker.detectors.base import Anomaly
+from worker.detectors.effect_rank_observation import add_observation, checked_rank_page
 
 MODULE = "promotion"
 
@@ -30,7 +31,6 @@ RANK_STORE    = "musinsa"
 PROMO_LOOKBACK_DAYS = 14
 BEFORE_WINDOW_DAYS  = 3
 AFTER_WINDOW_DAYS   = 5
-RANK_UNCHARTED      = 9999
 
 HIGH_DELTA = 50;  HIGH_TOP = 30
 MED_DELTA  = 20;  MED_TOP  = 100
@@ -88,30 +88,32 @@ def _load_ranking_window(
     if not musinsa_nos:
         return {}
     data: dict[str, dict[date, tuple[int, int]]] = defaultdict(dict)
+    rejected = set()
     for i in range(0, len(musinsa_nos), 500):
         chunk = musinsa_nos[i : i + 500]
         offset = 0
+        total = None
         while True:
-            batch = (
+            response = (
                 client.table("ranking_snapshots")
-                .select("musinsa_no, snapshot_date, rank_position, review_count")
+                .select("musinsa_no, snapshot_date, rank_position, review_count", count="exact")
                 .in_("musinsa_no", chunk)
                 .gte("snapshot_date", date_from.isoformat())
                 .lte("snapshot_date", date_to.isoformat())
                 .eq("category_code", RANK_CATEGORY)
                 .eq("gender_filter",  RANK_GENDER)
                 .eq("store_code",     RANK_STORE)
+                .eq("age_filter", "AGE_BAND_ALL")
+                .order("id")
                 .range(offset, offset + 999)
                 .execute()
-                .data or []
             )
+            batch, total, complete = checked_rank_page(response, offset, total)
             for row in batch:
                 d = date.fromisoformat(row["snapshot_date"])
-                data[row["musinsa_no"]][d] = (
-                    row["rank_position"],
-                    row.get("review_count") or 0,
-                )
-            if len(batch) < 1000:
+                add_observation(data, rejected, row["musinsa_no"], d,
+                                (row["rank_position"], row.get("review_count") or 0))
+            if complete:
                 break
             offset += 1000
     return data
@@ -149,7 +151,7 @@ def detect_promo_effectiveness(client: Client, today: date) -> list[Anomaly]:
         snap = ranks.get(mno, {})
 
         # before: 프로모션 전 최대 BEFORE_WINDOW_DAYS일 중 가장 최근
-        before_rank    = RANK_UNCHARTED
+        before_rank    = None
         before_reviews = 0
         for offset in range(1, BEFORE_WINDOW_DAYS + 1):
             d = promo_d - timedelta(days=offset)
@@ -168,7 +170,7 @@ def detect_promo_effectiveness(client: Client, today: date) -> list[Anomaly]:
                     after_rank    = r
                     after_reviews = rev
 
-        if after_rank is None:
+        if before_rank is None or after_rank is None:
             continue
 
         rank_delta   = before_rank - after_rank
@@ -184,17 +186,10 @@ def detect_promo_effectiveness(client: Client, today: date) -> list[Anomaly]:
             else:
                 severity = "low"
 
-            is_new_entry = before_rank >= RANK_UNCHARTED
-            if is_new_entry:
-                desc = (
-                    f"프로모션 '{item['promo_title']}' ({item['discount_rate']:.0f}% 할인) 후 "
-                    f"랭킹 외 → {after_rank}위 신규 진입"
-                )
-            else:
-                desc = (
-                    f"프로모션 '{item['promo_title']}' ({item['discount_rate']:.0f}% 할인) 후 "
-                    f"{before_rank}위 → {after_rank}위 ({rank_delta}위 상승)"
-                )
+            desc = (
+                f"프로모션 '{item['promo_title']}' ({item['discount_rate']:.0f}% 할인) 후 "
+                f"{before_rank}위 → {after_rank}위 ({rank_delta}위 상승)"
+            )
 
             anomalies.append(Anomaly(
                 module       = MODULE,
@@ -212,9 +207,9 @@ def detect_promo_effectiveness(client: Client, today: date) -> list[Anomaly]:
                     "promo_date":    promo_d.isoformat(),
                     "musinsa_no":    mno,
                     "brand_slug":    item["brand_slug"],
-                    "rank_before":   None if is_new_entry else before_rank,
+                    "rank_before":   before_rank,
                     "rank_after":    after_rank,
-                    "rank_delta":    None if is_new_entry else rank_delta,
+                    "rank_delta":    rank_delta,
                 },
             ))
 

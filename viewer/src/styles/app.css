@@ -750,6 +750,18 @@ body {
 .tbl .row.flag { background: var(--shb); }
 .tbl .row > * { min-width: 0; }
 
+/* Collection storage/status tables: keep the desktop columns, fit narrow hosts. */
+.collection-status-table { min-width: 0; width: 100%; }
+.collection-status-row { grid-template-columns: minmax(80px, 1fr) 100px 76px 90px; }
+.collection-status-row > * { overflow-wrap: anywhere; }
+.collection-status-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.collection-status-row .sev { box-sizing: border-box; max-width: 100%; }
+@media (max-width: 480px) {
+  .collection-status-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, .8fr) minmax(0, 1.4fr); }
+  .collection-status-source { overflow: visible; text-overflow: clip; white-space: normal; }
+  .collection-status-row .sev { white-space: normal; flex-wrap: wrap; }
+}
+
 .cell-r { text-align: right; }
 .cell-c { text-align: center; }
 
