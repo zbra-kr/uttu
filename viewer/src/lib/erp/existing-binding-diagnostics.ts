@@ -1,4 +1,5 @@
 import 'server-only';
+import { requesterIdsFromEnvironment } from './requester-allowlist';
 import { createPrivateKey } from 'node:crypto';
 import { bindingFromExistingEnvironment } from './existing-node-binding';
 
@@ -9,8 +10,8 @@ const IDENTIFIER=/^[A-Za-z0-9_]{1,128}$/;
 // Runtime receives codes only; environment ownership stays in this server module.
 export function configuredBindingDiagnosticsForActor(actor:{userId:string;role:'admin'|'viewer'|null}):readonly BindingDiagnostic[]|undefined{
   if(actor.role!=='admin')return undefined;
-  const requester=process.env.UTTU_ERP_REQUESTER_ID;
-  if(typeof requester!=='string'||!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requester)||actor.userId.toLowerCase()!==requester.toLowerCase())return undefined;
+  const requesters=requesterIdsFromEnvironment(process.env);
+  if(!requesters?.includes(actor.userId.toLowerCase()))return undefined;
   return diagnoseExistingBindingEnvironment(process.env);
 }
 
@@ -22,7 +23,8 @@ export function diagnoseExistingBindingEnvironment(env:Readonly<Record<string,st
   const check=(field:string,valid:(v:string)=>boolean)=>{
     const v=env[field];add(field,!v?'MISSING':valid(v)?'PASS':'FORMAT_INVALID');
   };
-  check('UTTU_ERP_REQUESTER_ID',v=>/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v));
+  if(env.UTTU_ERP_REQUESTER_IDS!==undefined)add('UTTU_ERP_REQUESTER_IDS',requesterIdsFromEnvironment(env)?'PASS':env.UTTU_ERP_REQUESTER_IDS?'FORMAT_INVALID':'MISSING');
+  else check('UTTU_ERP_REQUESTER_ID',v=>/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v));
   check('SNOWFLAKE_ACCOUNT',v=>v.length<=128&&/^[A-Za-z0-9_]+(?:[-.][A-Za-z0-9_]+)*$/.test(v)&&! /\.snowflakecomputing\.com$/i.test(v));
   check('SNOWFLAKE_USER',v=>/^[A-Za-z_][A-Za-z0-9_$]{0,127}$/.test(v));
   for(const field of ['SNOWFLAKE_DATABASE','SNOWFLAKE_SCHEMA','SNOWFLAKE_WAREHOUSE','SNOWFLAKE_ROLE'])check(field,v=>IDENTIFIER.test(v));
