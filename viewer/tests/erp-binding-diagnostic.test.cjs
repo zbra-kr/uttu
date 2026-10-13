@@ -42,18 +42,18 @@ async function runtime(role,userId,requester=id,scope={brand:'CO',from:'2026-10-
   const r=load('src/lib/erp/central-sales-runtime.ts',{
    '@/lib/supabase/server':{supabaseServer:async()=>({auth:{getUser:async()=>({data:{user:userId?{id:userId}:null},error:null})},from:()=>({select:()=>({eq:()=>({single:async()=>({data:{role},error:null})})})})})},
    './central-sales-composition':{configuredCentralRequesterBinding:()=>null},
-   './existing-binding-diagnostics':{diagnoseExistingBindingEnvironment:()=>{diagnostics++;return [{field:'SNOWFLAKE_PRIVATE_KEY',code:'KEY_IMPORT_FAILED'}];}},
+   './existing-binding-diagnostics':{configuredBindingDiagnosticsForActor:actor=>{diagnostics++;return D.configuredBindingDiagnosticsForActor(actor);}},
   });return {state:await r.readConfiguredCurrentCentralSales(scope),diagnostics};
  }finally{if(previous===undefined)delete process.env.UTTU_ERP_REQUESTER_ID;else process.env.UTTU_ERP_REQUESTER_ID=previous;}
 }
 test('only matching existing own admin obtains fixed configuration diagnostics after auth',async()=>{
- const own=await runtime('admin',id);assert.equal(own.diagnostics,1);assert.equal(own.state.kind,'unconnected');assert.deepEqual(own.state.configurationDiagnostics,[{field:'SNOWFLAKE_PRIVATE_KEY',code:'KEY_IMPORT_FAILED'}]);
- for(const [role,user,requester] of [['viewer',id,id],['admin','87654321-1234-1234-1234-123456789abc',id],['admin',id,'SYN_INVALID_ID'],['admin',null,id],[null,id,id]]){const r=await runtime(role,user,requester);assert.equal(r.diagnostics,0);assert.equal(r.state.configurationDiagnostics,undefined);}
+ const own=await runtime('admin',id);assert.equal(own.diagnostics,1);assert.equal(own.state.kind,'unconnected');assert.equal(code(own.state.configurationDiagnostics,'SNOWFLAKE_PRIVATE_KEY'),'MISSING');
+ for(const [role,user,requester] of [['viewer',id,id],['admin','87654321-1234-1234-1234-123456789abc',id],['admin',id,'SYN_INVALID_ID'],['admin',null,id],[null,id,id]]){const r=await runtime(role,user,requester);assert.equal(r.state.configurationDiagnostics,undefined);}
  const invalid=await runtime('admin',id,id,{});assert.equal(invalid.diagnostics,0);assert.equal(invalid.state.kind,'request');
 });
 test('actual SSR panel displays only codes and generic original status; no diagnostic UI for ordinary states',async()=>{
  const Panel=load('src/components/erp-insights/CentralSalesReadPanel.tsx').default;
- const own=await runtime('admin',id);const html=SSR.renderToStaticMarkup(Panel({state:own.state}));assert.match(html,/본인 관리자 서버 구성 진단/);assert.match(html,/KEY_IMPORT_FAILED/);assert.ok(!html.includes(id));assert.doesNotMatch(html,/BEGIN PRIVATE|SHA256:|SYN_SECRET/);
+ const own=await runtime('admin',id);const html=SSR.renderToStaticMarkup(Panel({state:own.state}));assert.match(html,/본인 관리자 서버 구성 진단/);assert.match(html,/MISSING/);assert.ok(!html.includes(id));assert.doesNotMatch(html,/BEGIN PRIVATE|SHA256:|SYN_SECRET/);
  const viewer=await runtime('viewer',id);assert.doesNotMatch(SSR.renderToStaticMarkup(Panel({state:viewer.state})),/본인 관리자 서버 구성 진단/);
 });
 test('existing valid binding path never invokes configuration diagnostics or changes the requester read',async()=>{
@@ -61,7 +61,7 @@ test('existing valid binding path never invokes configuration diagnostics or cha
  const r=load('src/lib/erp/central-sales-runtime.ts',{
   '@/lib/supabase/server':{supabaseServer:async()=>({auth:{getUser:async()=>({data:{user:{id}},error:null})},from:()=>({select:()=>({eq:()=>({single:async()=>({data:{role:'admin'},error:null})})})})})},
   './central-sales-composition':{configuredCentralRequesterBinding:()=>binding},
-  './existing-binding-diagnostics':{diagnoseExistingBindingEnvironment:()=>{throw Error('Unexpected diagnostic');}},
+  './existing-binding-diagnostics':{configuredBindingDiagnosticsForActor:()=>{throw Error('Unexpected diagnostic');}},
   './requester-sales-rest':{readAuthenticatedRequesterRestSales:async(scope,actual)=>{reads++;assert.equal(actual,binding);return {kind:'observed',scope};}},
  });
  const state=await r.readConfiguredCurrentCentralSales({brand:'CO',from:'2026-10-12',to:'2026-10-12'});assert.equal(state.kind,'observed');assert.equal(reads,1);assert.equal(state.configurationDiagnostics,undefined);

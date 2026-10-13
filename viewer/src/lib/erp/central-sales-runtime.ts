@@ -3,7 +3,7 @@ import { supabaseServer } from '@/lib/supabase/server';
 import { readCentralSales,type CentralActor } from './central-sales-server';
 import { readAuthenticatedRequesterRestSales, type RequesterRestBinding } from './requester-sales-rest';
 import { configuredCentralRequesterBinding } from './central-sales-composition';
-import { diagnoseExistingBindingEnvironment } from './existing-binding-diagnostics';
+import { configuredBindingDiagnosticsForActor } from './existing-binding-diagnostics';
 import { parseCentralScope, centralState } from './central-sales-read';
 
 async function currentActor():Promise<CentralActor|null>{
@@ -38,10 +38,8 @@ export async function readConfiguredCurrentCentralSales(input: unknown) {
       const state=centralState('unconnected', scope, 'TRANSPORT_UNREGISTERED');
       // Fail closed: only the existing authenticated admin whose identity
       // equals the separately configured requester can see fixed diagnostic codes.
-      const requester=process.env.UTTU_ERP_REQUESTER_ID;
-      if(actor.role==='admin'&&typeof requester==='string'&&/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requester)&&actor.userId.toLowerCase()===requester.toLowerCase()){
-        return {...state,configurationDiagnostics:diagnoseExistingBindingEnvironment(process.env)};
-      }
+      const diagnostics=configuredBindingDiagnosticsForActor(actor);
+      if(diagnostics)return {...state,configurationDiagnostics:diagnostics};
       return state;
     }
     return await readCurrentRequesterRestSales(scope, binding);

@@ -6,6 +6,14 @@ export type BindingDiagnosticCode = 'PASS'|'MISSING'|'FORMAT_INVALID'|'PASSPHRAS
 export interface BindingDiagnostic {readonly field:string;readonly code:BindingDiagnosticCode}
 const IDENTIFIER=/^[A-Za-z0-9_]{1,128}$/;
 
+// Runtime receives codes only; environment ownership stays in this server module.
+export function configuredBindingDiagnosticsForActor(actor:{userId:string;role:'admin'|'viewer'|null}):readonly BindingDiagnostic[]|undefined{
+  if(actor.role!=='admin')return undefined;
+  const requester=process.env.UTTU_ERP_REQUESTER_ID;
+  if(typeof requester!=='string'||!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(requester)||actor.userId.toLowerCase()!==requester.toLowerCase())return undefined;
+  return diagnoseExistingBindingEnvironment(process.env);
+}
+
 // Server-owned inputs only. Return fixed names/codes, never values, lengths,
 // fingerprints, error objects or tokens. No logger, file access, signing or HTTP.
 export function diagnoseExistingBindingEnvironment(env:Readonly<Record<string,string|undefined>>):readonly BindingDiagnostic[]{
