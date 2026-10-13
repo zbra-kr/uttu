@@ -1,6 +1,7 @@
 import { ERP_BRANDS, type ErpBrand } from '../erp-insight-workspace';
 import { validCSDate } from '../cs-daily-review-check';
 import type { CentralDisplayRow, CentralDisplayTotal } from './central-sales-display';
+import type { BindingDiagnostic } from './existing-binding-diagnostics';
 export const CENTRAL_READ_REASONS = {
   REQUEST_REQUIRED:'중앙 매출 브랜드·시작일·종료일을 선택해 주세요',
   REQUEST_INVALID:'중앙 매출은 유효한 단일 브랜드·최대31일 기간만 조회할 수 있습니다',
@@ -20,7 +21,7 @@ export const CENTRAL_READ_REASONS = {
 } as const;
 export type CentralReason=keyof typeof CENTRAL_READ_REASONS;
 export interface CentralScope {brand:ErpBrand;from:string;to:string}
-export interface CentralState {kind:'request'|'unauthenticated'|'forbidden'|'withheld'|'unconnected'|'error'|'empty'|'observed';scope:CentralScope|null;reasons:CentralReason[];groupsObserved:number|null;rows:readonly CentralDisplayRow[];total:CentralDisplayTotal|null;value:null;executable:false}
+export interface CentralState {kind:'request'|'unauthenticated'|'forbidden'|'withheld'|'unconnected'|'error'|'empty'|'observed';scope:CentralScope|null;reasons:CentralReason[];groupsObserved:number|null;rows:readonly CentralDisplayRow[];total:CentralDisplayTotal|null;value:null;executable:false;configurationDiagnostics?:readonly BindingDiagnostic[]}
 export const CENTRAL_GROUP_LIMIT=200;
 export const CENTRAL_SQL = `SELECT BRANDCD,STYLECD,SALEDT,SUM(SALEAMT_VAT_EX) AS SALES_VAT_EX
 FROM BCAVE.SEWON.VW_SALES_VAT

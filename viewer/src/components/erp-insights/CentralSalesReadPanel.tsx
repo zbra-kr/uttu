@@ -7,6 +7,7 @@ export default function CentralSalesReadPanel({state}:{state:CentralState}){
     <form method="get"><label>브랜드<select name="brand" defaultValue={state.scope?.brand??''}><option value="">선택</option>{ERP_BRANDS.map(b=><option key={b} value={b}>{b}</option>)}</select></label>
       <label>시작일<input type="date" name="from" defaultValue={state.scope?.from??''}/></label><label>종료일<input type="date" name="to" defaultValue={state.scope?.to??''}/></label><button type="submit">서버 조회 상태 확인</button></form>
     <p role="status">{state.reasons.map(r=>CENTRAL_READ_REASONS[r]).join(' · ')}</p>
+    {state.kind==='unconnected'&&state.configurationDiagnostics&&<aside aria-label="본인 관리자 서버 구성 진단"><p>서버 구성 검증 코드 · 값·원본 오류·키 지문은 표시하지 않습니다.</p><ul>{state.configurationDiagnostics.map((check,i)=><li key={i}><code>{check.field}</code>: <code>{check.code}</code></li>)}</ul></aside>}
     <p>단일 브랜드·최대31일·최대200그룹. 중앙 매출에 없는 옵션·시즌 연도를 만들지 않습니다. 거래일은 ETL 갱신 시각이 아닙니다.</p>
     {state.scope&&<p>요청 범위: {state.scope.brand} · {state.scope.from} ~ {state.scope.to}</p>}
     {state.kind==='observed' ? <>
