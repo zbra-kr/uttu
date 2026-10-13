@@ -1,9 +1,11 @@
 import { READ_REASONS, type SalesInventoryState } from '@/lib/erp/sales-inventory-types';
+import type { InventoryState } from '@/lib/erp/inventory-read';
+import InventoryRawReadPanel from './InventoryRawReadPanel';
 
-export default function SalesInventoryReadPanel({ state }: { state: SalesInventoryState }) {
-  return <section aria-label="매출·재고와 시장 관측" data-erp-server-state={state.kind}>
+export default function SalesInventoryReadPanel({ state,inventory,salesPeriod }: { state: SalesInventoryState;inventory?:InventoryState;salesPeriod?:{from:string;to:string} }) {
+  return <><section aria-label="매출·재고와 시장 관측" data-erp-server-state={state.kind}>
     <h2>상품 실적·재고 × 동일 기간 시장 관측</h2>
-    <p>매출은 기간 실적, 재고는 종료일 스냅샷입니다. 거래일·원천 INSERTDT는 ETL 갱신 시각을 증명하지 않습니다. 순위는 매출·점유율이 아니며 발주·입고 자료는 미연결입니다.</p>
+    <p>매출은 기간 실적입니다. 재고 종료일 스냅샷은 별도 검증된 기준일이 있을 때만 표시합니다. 거래일·원천 INSERTDT는 ETL 갱신 시각을 증명하지 않습니다. 순위는 매출·점유율이 아니며 발주·입고 자료는 미연결입니다.</p>
     {state.kind !== 'ready' ? <p role="status">{state.reasons.map(reason => READ_REASONS[reason]).join(' · ')}</p>
       : state.observations.map(row => <article key={`${row.brand}:${row.style}`}>
         <h3>{row.brand} · {row.style}</h3>
@@ -13,5 +15,5 @@ export default function SalesInventoryReadPanel({ state }: { state: SalesInvento
         <table className="tbl"><caption>창고 재고 — 온라인·오프라인 가용 구분</caption><thead><tr>{['창고','색상','사이즈','가용','온라인','오프라인'].map(x => <th scope="col" key={x}>{x}</th>)}</tr></thead><tbody>{row.warehouses.map((s,i) => <tr key={i}><td>{s.warehouse}</td><td>{s.color}</td><td>{s.size}</td><td>{s.available}</td><td>{s.online}</td><td>{s.offline}</td></tr>)}</tbody></table>
         <p>시장 범위: {Object.values(row.market.scope).join(' / ')} · 발주: 미확인 · 입고: 미확인 · 자동 실행 제안 없음</p>
       </article>)}
-  </section>;
+  </section>{inventory&&<InventoryRawReadPanel state={inventory} salesPeriod={salesPeriod}/>}</>;
 }

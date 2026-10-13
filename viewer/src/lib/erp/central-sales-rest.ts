@@ -17,7 +17,7 @@ function obj(x: unknown): x is Obj { return !!x && typeof x === 'object' && !Arr
 function check(condition: unknown): asserts condition { if (!condition) throw new Error('REST_INVALID'); }
 function handle(x: unknown): x is string { return typeof x === 'string' && /^[a-zA-Z0-9-]{1,100}$/.test(x); }
 function date(x: string) { return `${x.slice(0,4)}-${x.slice(4,6)}-${x.slice(6)}`; }
-async function boundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
+export async function boundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
   check(response.body && Number(response.headers.get('content-length') ?? 0) <= 262144);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = []; let size = 0;
@@ -32,7 +32,7 @@ async function boundedJson(response: Response, signal: AbortSignal): Promise<unk
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } finally { void reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
-async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+export async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) throw new Error('REST_CANCELLED');
   let abort: (() => void) | undefined;
   try { return await Promise.race([operation, new Promise<never>((_, reject) => {

@@ -1,10 +1,10 @@
 import { CENTRAL_READ_REASONS,type CentralState } from '@/lib/erp/central-sales-read';
 import { ERP_BRANDS } from '@/lib/erp-insight-workspace';
 import { CENTRAL_AMOUNT_REASONS } from '@/lib/erp/central-sales-display';
-export default function CentralSalesReadPanel({state}:{state:CentralState}){
+export default function CentralSalesReadPanel({state,inventoryStyles}:{state:CentralState;inventoryStyles?:string}){
   return <section aria-label="중앙 매출 서버 조회" data-central-state={state.kind}>
     <h2>중앙 매출 · 브랜드·상품·일자</h2>
-    <form method="get"><label>브랜드<select name="brand" defaultValue={state.scope?.brand??''}><option value="">선택</option>{ERP_BRANDS.map(b=><option key={b} value={b}>{b}</option>)}</select></label>
+    <form method="get">{inventoryStyles&&<input type="hidden" name="inventoryStyles" value={inventoryStyles}/>}<label>브랜드<select name="brand" defaultValue={state.scope?.brand??''}><option value="">선택</option>{ERP_BRANDS.map(b=><option key={b} value={b}>{b}</option>)}</select></label>
       <label>시작일<input type="date" name="from" defaultValue={state.scope?.from??''}/></label><label>종료일<input type="date" name="to" defaultValue={state.scope?.to??''}/></label><button type="submit">서버 조회 상태 확인</button></form>
     <p role="status">{state.reasons.map(r=>CENTRAL_READ_REASONS[r]).join(' · ')}</p>
     <p>단일 브랜드·최대31일·최대200그룹. 중앙 매출에 없는 옵션·시즌 연도를 만들지 않습니다. 거래일은 ETL 갱신 시각이 아닙니다.</p>

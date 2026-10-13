@@ -511,6 +511,7 @@ function RankingDesktopView({ sourceContext, sourceLink, compact, insights, onIn
         {snapshotDate && <span className="chip mono">{periodLabel} · {snapshotDate} 수집</span>}
         <span className="sub">전체 상품 랭킹 · 회사·브랜드·필터 적용</span>
         <div className="row-flex gap-6" style={{ marginLeft: 'auto' }}>
+          <a className="btn sm" href="/ranking/discovery">전체 조합 상품 탐색</a>
           <button className="btn sm" onClick={() => downloadCsv(sorted, multiDay)}><IcDownload /> CSV</button>
 <button data-tour="note-entry" className="btn sm" onClick={() => setNoteDrawerOpen(true)} style={{ position: 'relative' }}>
             <IcEdit /> 메모
