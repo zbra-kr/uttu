@@ -1,4 +1,5 @@
 import 'server-only';
+import { auditDailySalesAmount } from './daily-sales-amount-audit';
 import type { CentralRestDiagnostic } from './central-rest-diagnostics';
 import { CENTRAL_SQL, CENTRAL_DAILY_SQL, parseCentralScope } from './central-sales-read';
 import { CentralReadTimeout, type CentralExecutor, type CentralQuery } from './central-sales-server';
@@ -19,7 +20,7 @@ function obj(x: unknown): x is Obj { return !!x && typeof x === 'object' && !Arr
 function check(condition: unknown): asserts condition { if (!condition) throw new Error('REST_INVALID'); }
 function handle(x: unknown): x is string { return typeof x === 'string' && /^[a-zA-Z0-9-]{1,100}$/.test(x); }
 function date(x: string) { return `${x.slice(0,4)}-${x.slice(4,6)}-${x.slice(6)}`; }
-async function boundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
+export async function boundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
   check(response.body && Number(response.headers.get('content-length') ?? 0) <= 262144);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = []; let size = 0;
@@ -34,7 +35,7 @@ async function boundedJson(response: Response, signal: AbortSignal): Promise<unk
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } finally { void reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
-async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+export async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) throw new Error('REST_CANCELLED');
   let abort: (() => void) | undefined;
   try { return await Promise.race([operation, new Promise<never>((_, reject) => {
@@ -52,7 +53,7 @@ export function createCentralRestExecutor(binding: SnowflakeRestBinding, http: t
   return { async execute(query: CentralQuery): Promise<unknown> {
     const binds = [...query.binds];
     const daily=query.sql===CENTRAL_DAILY_SQL,statement=daily?CENTRAL_DAILY_REST_SQL:CENTRAL_REST_SQL,maxRows=daily?32:201;
-    const columns=daily?['BRANDCD','SALEDT','SALES_VAT_EX']:['BRANDCD','STYLECD','SALEDT','SALES_VAT_EX'];
+    const columns=daily?['BRANDCD','SALEDT','SALES_VAT_EX','SOURCE_ROWS','AMOUNT_ROWS']:['BRANDCD','STYLECD','SALEDT','SALES_VAT_EX'];
     check((query.sql === CENTRAL_SQL||daily) && binds.length === 3 && query.maxRows === maxRows &&
       query.statementTimeoutSeconds === 10 && query.maxEstimatedScanBytes === 16777216 &&
       typeof binds[1] === 'string' && typeof binds[2] === 'string' && /^\d{8}$/.test(binds[1]) && /^\d{8}$/.test(binds[2]));
@@ -110,7 +111,7 @@ export function createCentralRestExecutor(binding: SnowflakeRestBinding, http: t
       check(Array.isArray(meta.rowType) && meta.rowType.length === columns.length && meta.rowType.every(obj));
       const names = meta.rowType.map(c => c.name);
       check(names.join(',') === columns.join(','));
-      check(meta.rowType.slice(0,columns.length-1).every(c => c.type === 'text') && ['real','fixed'].includes(String(meta.rowType[columns.length-1].type)));
+      check(meta.rowType.slice(0,daily?2:3).every(c => c.type === 'text') && ['real','fixed'].includes(String(meta.rowType[daily?2:3].type)) && (!daily||meta.rowType.slice(3).every(c=>c.type==='fixed')));
       check(Array.isArray(meta.partitionInfo) && meta.partitionInfo.length >= 1 && meta.partitionInfo.length <= 4);
       const partitions = meta.partitionInfo;
       diagnostic.partitionCount=partitions.length;
@@ -143,8 +144,9 @@ export function createCentralRestExecutor(binding: SnowflakeRestBinding, http: t
         const d=date(row[dayIndex]);check(!parseCentralScope({brand:scope.brand,from:d,to:d}).reason&&d>=scope.from&&d<=scope.to);
         const amount=row[amountIndex];
         check(amount===null||(typeof amount==='number'&&Number.isFinite(amount))||(typeof amount==='string'&&amount.length<=100&&/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(amount)));
+        if(daily)check(auditDailySalesAmount(row[3],row[4],amount));
         const key=JSON.stringify(row.slice(0,amountIndex));check(!keys.has(key));keys.add(key);
-        return daily?{BRANDCD:row[0],SALEDT:row[dayIndex],SALES_VAT_EX:amount}:{BRANDCD:row[0],STYLECD:row[1],SALEDT:row[dayIndex],SALES_VAT_EX:amount};
+        return daily?{BRANDCD:row[0],SALEDT:row[dayIndex],SALES_VAT_EX:amount,SOURCE_ROWS:row[3],AMOUNT_ROWS:row[4]}:{BRANDCD:row[0],STYLECD:row[1],SALEDT:row[dayIndex],SALES_VAT_EX:amount};
       });
       activeHandle = null;
       // Every advertised partition and row has been received and validated.

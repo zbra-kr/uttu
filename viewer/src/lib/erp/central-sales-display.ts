@@ -2,6 +2,7 @@
 // formatters.ts fmtM (value/1e6, one fractional digit), sales page VAT-ex label.
 // FLOAT remains approximate; a numeric string is transport, not precision repair.
 export const CENTRAL_AMOUNT_REASONS = {
+  SOURCE_NULL_ROWS:'금액 NULL인 원천 행 포함 · 전체 금액 보류',
   FLOAT_DISPLAY_ONLY: 'FLOAT 근사 표시 · 원단위 정밀도 미확인',
   NULL_AGGREGATE: '원천 집계 NULL · 금액 보류',
   INVALID_AMOUNT: '유효한 숫자 집계가 아님 · 금액 보류',
@@ -63,4 +64,9 @@ export function centralDisplayTotal(rows: readonly Pick<CentralDisplayRow,'amoun
   const approximateValue = sum + compensation;
   if (!Number.isFinite(approximateValue)) return { approximateValue:null, millionsText:null, reason:'NUMBER_OVERFLOW', exactValue:null };
   return { approximateValue, millionsText:formatEisMillions(approximateValue), reason:'FLOAT_DISPLAY_ONLY', exactValue:null };
+}
+
+// Preserve REST string digits without Number conversion or an accounting claim.
+export function centralSourceResponseText(amount:CentralAmountDisplay):string|null{
+  return amount.sourceValue===null?null:String(amount.sourceValue);
 }
