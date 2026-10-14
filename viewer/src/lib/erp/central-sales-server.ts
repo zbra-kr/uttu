@@ -1,10 +1,10 @@
 import 'server-only';
-import { CENTRAL_SQL,CENTRAL_GROUP_LIMIT,parseCentralScope,centralState,type CentralScope,type CentralState } from './central-sales-read';
+import { CENTRAL_SQL,CENTRAL_DAILY_SQL,CENTRAL_GROUP_LIMIT,parseCentralScope,centralState,type CentralScope,type CentralState } from './central-sales-read';
 import { centralAmountDisplay, centralDisplayTotal, type CentralDisplayRow } from './central-sales-display';
 export interface CentralActor {userId:string;role:'admin'|'viewer'|null}
 export interface CentralGrant {kind:'allowed'|'denied';principalId:string;brand:CentralScope['brand'];roles:readonly ('admin'|'viewer')[];evidenceRef:string}
 export interface CentralQuery {
-  sql:typeof CENTRAL_SQL;binds:readonly [string,string,string];statementTimeoutSeconds:10;maxRows:201;maxEstimatedScanBytes:16777216;signal:AbortSignal;
+  sql:typeof CENTRAL_SQL|typeof CENTRAL_DAILY_SQL;binds:readonly [string,string,string];statementTimeoutSeconds:10;maxRows:201|32;maxEstimatedScanBytes:16777216;signal:AbortSignal;
 }
 // A reviewed server-side executor must enforce timeout, preflight cost budget,
 // and read-only SQL. No credential or worker-process spawning implementation here.
@@ -37,13 +37,26 @@ export async function readCentralSales(input:unknown,deps:CentralDependencies):P
   if(!deps.executor)return centralState('unconnected',q,'TRANSPORT_UNREGISTERED');
   try{
     const controller=new AbortController();
-    const query:CentralQuery={sql:CENTRAL_SQL,binds:[q.brand,q.from.replaceAll('-',''),q.to.replaceAll('-','')],statementTimeoutSeconds:10,maxRows:201,maxEstimatedScanBytes:16777216,signal:controller.signal};
+    const query:CentralQuery={sql:q.aggregate==='daily'?CENTRAL_DAILY_SQL:CENTRAL_SQL,binds:[q.brand,q.from.replaceAll('-',''),q.to.replaceAll('-','')],statementTimeoutSeconds:10,maxRows:q.aggregate==='daily'?32:201,maxEstimatedScanBytes:16777216,signal:controller.signal};
     const requested=deps.deadlineMs;
     const ms=typeof requested==='number'&&Number.isInteger(requested)&&requested>0&&requested<=10000?requested:10000;
     let timer:ReturnType<typeof setTimeout>|undefined;let raw:unknown;
     try{raw=await Promise.race([deps.executor.execute(query),new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new CentralDeadline());},ms);})]);}
     finally{if(timer)clearTimeout(timer);}
     if(!object(raw)||raw.complete!==true||!Array.isArray(raw.rows))return centralState('withheld',q,'PARTIAL_READ');
+    if(q.aggregate==='daily'){
+      if(raw.rows.length>31)return centralState('withheld',q,'LIMIT_REACHED');
+      const seen=new Set<string>();
+      for(const row of raw.rows){
+        if(!object(row)||Object.keys(row).sort().join(',')!=='BRANDCD,SALEDT,SALES_VAT_EX'||row.BRANDCD!==q.brand||typeof row.SALEDT!=='string'||!/^\d{8}$/.test(row.SALEDT))return centralState('withheld',q,'SOURCE_INVALID');
+        const date=`${row.SALEDT.slice(0,4)}-${row.SALEDT.slice(4,6)}-${row.SALEDT.slice(6)}`;
+        if(parseCentralScope({brand:q.brand,from:date,to:date}).reason||date<q.from||date>q.to||seen.has(date))return centralState('withheld',q,'SOURCE_INVALID');
+        seen.add(date);
+      }
+      if(!raw.rows.length)return centralState('empty',q,'EMPTY',0);
+      const rows=raw.rows.map(row=>{const v=row as Record<string,unknown>,day=v.SALEDT as string;return {brand:v.BRANDCD as string,saleDate:`${day.slice(0,4)}-${day.slice(4,6)}-${day.slice(6)}`,amount:centralAmountDisplay(v.SALES_VAT_EX)};});
+      return {...centralState('summary',q,'DAILY_SUMMARY_DISPLAY',rows.length),dailySummary:{rows,total:centralDisplayTotal(rows)}};
+    }
     if(raw.rows.length>CENTRAL_GROUP_LIMIT)return centralState('withheld',q,'LIMIT_REACHED');
     const keys=new Set<string>();
     for(const row of raw.rows){

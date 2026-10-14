@@ -17,12 +17,13 @@ export const CENTRAL_READ_REASONS = {
   PARTIAL_READ:'중앙 매출 응답 누락·부분조회 확인 필요', LIMIT_REACHED:'조회 그룹 한도 도달 — 완전한 집계로 표시하지 않습니다',
   SOURCE_INVALID:'중앙 매출 브랜드·상품·일자 원천 범위 확인 필요',
   FLOAT_PRECISION_UNVERIFIED:'중앙 FLOAT 매출의 정밀도·반올림·VAT 대사 미완료 — 금액 표시 보류',
+  DAILY_SUMMARY_DISPLAY:'선택 범위의 서버 일별 합계 · 상품 상세 목록과 별도 · FLOAT 근사 표시',
   EIS_APPROXIMATE_DISPLAY:'EIS 기준 관측용 근사 표시 · 원단위 확정 금액·회계 대사 미확인',
   EMPTY:'권한이 확인된 조회 범위의 관측 그룹 없음 — 매출0을 뜻하지 않습니다',
 } as const;
 export type CentralReason=keyof typeof CENTRAL_READ_REASONS;
-export interface CentralScope {brand:ErpBrand;from:string;to:string}
-export interface CentralState {kind:'request'|'unauthenticated'|'forbidden'|'withheld'|'unconnected'|'error'|'empty'|'observed';scope:CentralScope|null;reasons:CentralReason[];groupsObserved:number|null;rows:readonly CentralDisplayRow[];total:CentralDisplayTotal|null;value:null;executable:false;configurationDiagnostics?:readonly BindingDiagnostic[];transportDiagnostics?:CentralRestDiagnostic}
+export interface CentralScope {brand:ErpBrand;from:string;to:string;aggregate?:'daily'}
+export interface CentralState {kind:'request'|'unauthenticated'|'forbidden'|'withheld'|'unconnected'|'error'|'empty'|'observed'|'summary';scope:CentralScope|null;reasons:CentralReason[];groupsObserved:number|null;rows:readonly CentralDisplayRow[];total:CentralDisplayTotal|null;dailySummary?:{rows:readonly Omit<CentralDisplayRow,'styleId'>[];total:CentralDisplayTotal};value:null;executable:false;configurationDiagnostics?:readonly BindingDiagnostic[];transportDiagnostics?:CentralRestDiagnostic}
 export const CENTRAL_GROUP_LIMIT=200;
 export const CENTRAL_SQL = `SELECT BRANDCD,STYLECD,SALEDT,SUM(SALEAMT_VAT_EX) AS SALES_VAT_EX
 FROM BCAVE.SEWON.VW_SALES_VAT
@@ -31,14 +32,22 @@ AND SHOPCD NOT IN ('B6055','B6057','B6063')
 GROUP BY BRANDCD,STYLECD,SALEDT
 ORDER BY SALEDT,STYLECD
 LIMIT 201`;
+export const CENTRAL_DAILY_SQL = `SELECT BRANDCD,SALEDT,SUM(SALEAMT_VAT_EX) AS SALES_VAT_EX
+FROM BCAVE.SEWON.VW_SALES_VAT
+WHERE BRANDCD = %s AND SALEDT BETWEEN %s AND %s AND LENGTH(SALEDT)=8
+AND SHOPCD NOT IN ('B6055','B6057','B6063')
+GROUP BY BRANDCD,SALEDT
+ORDER BY SALEDT
+LIMIT 32`;
 function object(x:unknown):x is Record<string,unknown>{return !!x&&typeof x==='object'&&!Array.isArray(x);}
 export function parseCentralScope(input:unknown):{scope:CentralScope|null;reason:CentralReason|null}{
   if(!object(input))return {scope:null,reason:'REQUEST_INVALID'};
   if(['brand','from','to'].every(k=>input[k]===undefined||input[k]===''))return {scope:null,reason:'REQUEST_REQUIRED'};
   if(!ERP_BRANDS.includes(input.brand as ErpBrand)||typeof input.from!=='string'||typeof input.to!=='string'||!validCSDate(input.from)||!validCSDate(input.to)||input.from>input.to)return {scope:null,reason:'REQUEST_INVALID'};
   const days=(Date.parse(input.to+'T00:00:00Z')-Date.parse(input.from+'T00:00:00Z'))/86400000+1;
+  if(input.aggregate!==undefined&&input.aggregate!==''&&input.aggregate!=='daily')return {scope:null,reason:'REQUEST_INVALID'};
   if(days>31)return {scope:null,reason:'REQUEST_INVALID'};
-  return {scope:{brand:input.brand as ErpBrand,from:input.from,to:input.to},reason:null};
+  return {scope:{brand:input.brand as ErpBrand,from:input.from,to:input.to,...(input.aggregate==='daily'?{aggregate:'daily' as const}:{})},reason:null};
 }
 export function centralState(kind:CentralState['kind'],scope:CentralScope|null,reason:CentralReason,groupsObserved:number|null=null):CentralState{
   return {kind,scope,reasons:[reason],groupsObserved,rows:[],total:null,value:null,executable:false};

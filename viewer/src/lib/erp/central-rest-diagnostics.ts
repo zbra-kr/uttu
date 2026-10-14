@@ -10,4 +10,5 @@ export interface CentralRestDiagnostic {
   partitionRowCountSum:number|null;
   partitionCountsMatch:boolean|null;
   responseComplete:boolean;
+  aggregation?:'DAILY_SUMMARY';
 }
