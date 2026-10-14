@@ -10,7 +10,7 @@ test('trend numeric bars preserve billion separators, negative sign, zero and he
  const sales={...C.centralState('summary',{brand:'CO',from:'2026-10-10',to:'2026-10-13',aggregate:'daily'},'DAILY_SUMMARY_DISPLAY'),dailySummary:{rows:amounts.map((amount,i)=>({saleDate:`2026-10-${10+i}`,amount})),total:{millionsText:null}}};
  const html=SSR.renderToStaticMarkup(React.createElement(Overview,{sales,receipts:R.receiptState('request','REQUEST_REQUIRED')}));
  assert.match(html,/width:50%/);assert.match(html,/width:100%/);assert.match(html,/width:0%/);assert.equal((html.match(/aria-hidden="true"/g)||[]).length,3);
- for(const text of ['≈ 1,000.0','≈ -2,000.0','≈ 0.0','금액 보류'])assert.ok(html.includes(text));assert.match(html,/bg-amber-500/);assert.doesNotMatch(html,/NaN|Infinity/);
+ for(const text of ['≈ 1,000.0','≈ -2,000.0','≈ 0.0','금액 보류'])assert.ok(html.includes(text));assert.match(html,/erp-status-bar-negative/);assert.doesNotMatch(html,/NaN|Infinity/);
 });
 test('explicit ERP CI entrypoint includes status UI tests and preserves existing suite',()=>{const scripts=require('../package.json').scripts;assert.ok(scripts['test:erp-insights'].includes('tests/erp-status-ui.test.cjs'));assert.ok(scripts['test:erp-insights'].includes('tests/erp-sales-receipts-integration.test.cjs'));});
 
@@ -18,3 +18,5 @@ test('ERP status entry is discoverable by shared desktop/mobile menu, search and
  const N=load('src/lib/shell-navigation.ts'),entry=N.SHELL_NAVIGATION.find(x=>x.id==='erp-status');assert.equal(entry.path,'/erp-insights-review');assert.equal(entry.label,'매출·입고 현황');assert.equal(entry.group,'primary');assert.ok(!entry.sidebarHidden&&!entry.mobileHidden&&!entry.adminOnly);assert.ok(N.SHELL_SEARCH_PAGES.includes(entry));assert.ok(N.shellPageMatches(entry,'ERP'));assert.deepEqual(N.shellBreadcrumb(entry.path),['매출·입고 현황']);
  const fs=require('fs'),path=require('path');for(const file of ['Sidebar.tsx','MobileShell.tsx'])assert.match(fs.readFileSync(path.join(__dirname,'../src/components/shell',file),'utf8'),/SHELL_NAVIGATION/);
 });
+
+test('status card and signed bar classes are provided by actual imported app CSS without Tailwind',()=>{const fs=require('fs'),path=require('path');const css=fs.readFileSync(path.join(__dirname,'../src/styles/erp-status.css'),'utf8');const app=fs.readFileSync(path.join(__dirname,'../src/styles/app.css'),'utf8');assert.match(app,/@import '.\/erp-status.css'/);assert.match(css,/\.erp-status-cards[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);assert.match(css,/\.erp-status-bar \{[^}]*height:20px;[^}]*background:#2563eb/);assert.match(css,/\.erp-status-bar-negative[^}]*background:#f59e0b/);assert.match(css,/@media\(max-width:639px\)/);});
