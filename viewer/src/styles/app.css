@@ -1,3 +1,4 @@
+@import './erp-status.css';
 /* UTTU · application layout + component styles */
 
 *, *::before, *::after { box-sizing: border-box; }
