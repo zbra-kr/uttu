@@ -1,4 +1,5 @@
 import 'server-only';
+import type { CentralRestDiagnostic } from './central-rest-diagnostics';
 import { CENTRAL_SQL, parseCentralScope } from './central-sales-read';
 import { CentralReadTimeout, type CentralExecutor, type CentralQuery } from './central-sales-server';
 
@@ -40,7 +41,7 @@ async function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise
     signal.addEventListener('abort', abort, { once: true });
   })]); } finally { if (abort) signal.removeEventListener('abort', abort); }
 }
-export function createCentralRestExecutor(binding: SnowflakeRestBinding, http: typeof fetch = fetch): CentralExecutor {
+export function createCentralRestExecutor(binding: SnowflakeRestBinding, http: typeof fetch = fetch, onDiagnostic?: (value:CentralRestDiagnostic)=>void): CentralExecutor {
   // Snapshot trusted composition config; never infer account JWT identity from host.
   const { origin, database, schema, warehouse, role, getToken } = binding;
   const url = new URL(origin);
@@ -60,10 +61,13 @@ export function createCentralRestExecutor(binding: SnowflakeRestBinding, http: t
     query.signal.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(() => { timedOut = true; abort(); }, 10000);
     let token: string | null = null; let activeHandle: string | null = null;
+    const diagnostic:CentralRestDiagnostic={code:'FAILED',phase:'SIGNER',httpStatus:null,numRows:null,receivedRows:null,partitionCount:null,completedPartitions:0,partitionRowCountSum:null,partitionCountsMatch:null,responseComplete:false};
+    const report=(code:CentralRestDiagnostic['code'])=>{try{onDiagnostic?.({...diagnostic,code});}catch{/* diagnostics never change read behavior */}};
     const headers = () => ({ Authorization: `Bearer ${token}`, 'X-Snowflake-Authorization-Token-Type': 'KEYPAIR_JWT',
       'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'UTTU-CentralSales/1.0' });
     const request = async (path: string, init: RequestInit) => {
       const response = await abortable(http(origin + path, { ...init, headers: headers(), signal: controller.signal, redirect: 'error', cache: 'no-store' }), controller.signal);
+      diagnostic.httpStatus=response.status;
       if (response.status === 408) {
         timedOut = true; controller.abort(); void response.body?.cancel().catch(() => {});
         throw new CentralReadTimeout();
@@ -84,6 +88,7 @@ export function createCentralRestExecutor(binding: SnowflakeRestBinding, http: t
     try {
       token = await abortable(getToken(controller.signal), controller.signal);
       check(typeof token === 'string' && token.length > 0 && token.length <= 16384 && !/[\r\n]/.test(token));
+      diagnostic.phase='PREFLIGHT';
       const explain = await post('EXPLAIN USING JSON ' + CENTRAL_REST_SQL);
       check(obj(explain.resultSetMetaData) && explain.resultSetMetaData.numRows === 1 && explain.resultSetMetaData.format === 'jsonv2' &&
         Array.isArray(explain.resultSetMetaData.partitionInfo) && explain.resultSetMetaData.partitionInfo.length === 1 &&
@@ -94,26 +99,38 @@ export function createCentralRestExecutor(binding: SnowflakeRestBinding, http: t
       check(Number.isInteger(stats.bytesAssigned) && Number(stats.bytesAssigned) >= 0 && Number(stats.bytesAssigned) <= query.maxEstimatedScanBytes &&
         Number.isInteger(stats.partitionsAssigned) && Number(stats.partitionsAssigned) >= 0 && Number(stats.partitionsAssigned) <= 32);
       activeHandle = null;
+      diagnostic.phase='RESULT';diagnostic.httpStatus=null;
       const first = await post(CENTRAL_REST_SQL);
       check(obj(first.resultSetMetaData)); const meta = first.resultSetMetaData;
       check(Number.isInteger(meta.numRows) && Number(meta.numRows) >= 0 && Number(meta.numRows) <= 201 && meta.format === 'jsonv2');
+      diagnostic.numRows=Number(meta.numRows);
       check(Array.isArray(meta.rowType) && meta.rowType.length === 4 && meta.rowType.every(obj));
       const names = meta.rowType.map(c => c.name);
       check(names.join(',') === 'BRANDCD,STYLECD,SALEDT,SALES_VAT_EX');
       check(meta.rowType.slice(0,3).every(c => c.type === 'text') && ['real','fixed'].includes(String(meta.rowType[3].type)));
       check(Array.isArray(meta.partitionInfo) && meta.partitionInfo.length >= 1 && meta.partitionInfo.length <= 4);
       const partitions = meta.partitionInfo;
-      check(partitions.every(p => obj(p) && Number.isInteger(p.rowCount) && Number(p.rowCount) >= 0) &&
-        partitions.reduce((sum, p) => sum + Number(p.rowCount), 0) === meta.numRows);
+      diagnostic.partitionCount=partitions.length;
+      check(partitions.every(p => obj(p) && Number.isInteger(p.rowCount) && Number(p.rowCount) >= 0 && Number(p.rowCount)<=201));
+      const partitionSum=partitions.reduce((sum,p)=>sum+Number(p.rowCount),0);
+      diagnostic.partitionRowCountSum=partitionSum<=201?partitionSum:null;
+      diagnostic.partitionCountsMatch=partitionSum===meta.numRows;
+      check(diagnostic.partitionCountsMatch);
+      if(Array.isArray(first.data)&&first.data.length<=201)diagnostic.receivedRows=first.data.length;
       check(Array.isArray(first.data) && first.data.length === partitions[0].rowCount);
+      diagnostic.completedPartitions=1;
       const rows: unknown[] = [...first.data];
       for (let index = 1; index < partitions.length; index++) {
+        diagnostic.phase='PARTITION';
         check(activeHandle); const expected = activeHandle;
         const part = await request(`/api/v2/statements/${expected}?partition=${index}`, { method: 'GET' });
+        if(Array.isArray(part.data)&&rows.length+part.data.length<=201)diagnostic.receivedRows=rows.length+part.data.length;
         check(part.statementHandle === expected && Array.isArray(part.data) && part.data.length === partitions[index].rowCount);
+        diagnostic.completedPartitions=index+1;
         rows.push(...part.data);
       }
       check(rows.length === meta.numRows);
+      diagnostic.phase='ROW_VALIDATION';
       const keys = new Set<string>();
       const projection = rows.map(row => {
         check(Array.isArray(row) && row.length === 4 && row[0] === scope.brand && typeof row[1] === 'string' && row[1].trim() && row[1].length <= 160 &&
@@ -126,8 +143,12 @@ export function createCentralRestExecutor(binding: SnowflakeRestBinding, http: t
         return { BRANDCD:row[0], STYLECD:row[1], SALEDT:row[2], SALES_VAT_EX:row[3] };
       });
       activeHandle = null;
-      return { complete: projection.length <= 200, rows: projection };
+      // Every advertised partition and row has been received and validated.
+      // The server separately withholds the SQL LIMIT sentinel (201 groups).
+      diagnostic.responseComplete=true;report(projection.length>200?'LIMIT_REACHED':'COMPLETE');
+      return { complete: true, rows: projection };
     } catch {
+      report(timedOut?'TIMEOUT':controller.signal.aborted?'CANCELLED':'FAILED');
       // Best-effort physical cancellation with its own bounded signal. HTTP
       // abort alone does not prove that Snowflake cancelled the statement.
       if (activeHandle && token) {

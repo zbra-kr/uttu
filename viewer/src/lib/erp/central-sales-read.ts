@@ -1,3 +1,4 @@
+import type { CentralRestDiagnostic } from './central-rest-diagnostics';
 import { ERP_BRANDS, type ErpBrand } from '../erp-insight-workspace';
 import { validCSDate } from '../cs-daily-review-check';
 import type { CentralDisplayRow, CentralDisplayTotal } from './central-sales-display';
@@ -21,7 +22,7 @@ export const CENTRAL_READ_REASONS = {
 } as const;
 export type CentralReason=keyof typeof CENTRAL_READ_REASONS;
 export interface CentralScope {brand:ErpBrand;from:string;to:string}
-export interface CentralState {kind:'request'|'unauthenticated'|'forbidden'|'withheld'|'unconnected'|'error'|'empty'|'observed';scope:CentralScope|null;reasons:CentralReason[];groupsObserved:number|null;rows:readonly CentralDisplayRow[];total:CentralDisplayTotal|null;value:null;executable:false;configurationDiagnostics?:readonly BindingDiagnostic[]}
+export interface CentralState {kind:'request'|'unauthenticated'|'forbidden'|'withheld'|'unconnected'|'error'|'empty'|'observed';scope:CentralScope|null;reasons:CentralReason[];groupsObserved:number|null;rows:readonly CentralDisplayRow[];total:CentralDisplayTotal|null;value:null;executable:false;configurationDiagnostics?:readonly BindingDiagnostic[];transportDiagnostics?:CentralRestDiagnostic}
 export const CENTRAL_GROUP_LIMIT=200;
 export const CENTRAL_SQL = `SELECT BRANDCD,STYLECD,SALEDT,SUM(SALEAMT_VAT_EX) AS SALES_VAT_EX
 FROM BCAVE.SEWON.VW_SALES_VAT

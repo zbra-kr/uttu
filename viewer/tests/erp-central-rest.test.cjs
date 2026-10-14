@@ -80,3 +80,60 @@ test('REST adapter deadline through requester caller preserves READ_TIMEOUT',asy
  await ready;assert.equal(timers.length,2);timers[0]();const state=await promise;assert.deepEqual(state.reasons,['READ_TIMEOUT']);assert.equal(signal.aborted,true);assert.equal(state.value,null);
  }finally{global.setTimeout=old;}
 });
+
+function limitFixture(count,parts=[count]){
+ const rows=Array.from({length:count},(_,i)=>['CO',`SYN-${i}`,'20261001','1']);
+ const first=result(rows.slice(0,parts[0]));first.resultSetMetaData=metadata(count,parts);
+ let offset=parts[0];const sequence=[response(explain()),response(first)];
+ for(const size of parts.slice(1)){sequence.push(response(result(rows.slice(offset,offset+size))));offset+=size;}
+ return mock(sequence);
+}
+test('cap diagnosis: fully received 201 groups across partitions yields LIMIT_REACHED, never PARTIAL_READ or displayed totals',async()=>{
+ const m=limitFixture(201,[100,101]);
+ const state=await C.readAuthenticatedRequesterRestSales(scope,{expectedRequesterId:'SYN',rest:config()},async()=>({userId:'SYN',role:'viewer'}),m.http);
+ assert.equal(m.calls.length,3);assert.deepEqual(state.reasons,['LIMIT_REACHED']);assert.equal(state.kind,'withheld');assert.deepEqual(state.rows,[]);assert.equal(state.total,null);assert.equal(state.value,null);
+});
+test('cap diagnosis: complete 200-group boundary retains existing observed approximate display',async()=>{
+ const m=limitFixture(200);const state=await C.readAuthenticatedRequesterRestSales(scope,{expectedRequesterId:'SYN',rest:config()},async()=>({userId:'SYN',role:'viewer'}),m.http);
+ assert.equal(m.calls.length,2);assert.deepEqual(state.reasons,['EIS_APPROXIMATE_DISPLAY']);assert.equal(state.rows.length,200);assert.equal(state.total.exactValue,null);
+});
+test('cap diagnosis: missing partition rows still fail closed with no cap or successful amount claim',async()=>{
+ const rows=Array.from({length:201},(_,i)=>['CO',`SYN-${i}`,'20261001','1']);const first=result(rows.slice(0,100));first.resultSetMetaData=metadata(201,[100,101]);
+ const m=mock([response(explain()),response(first),response(result(rows.slice(100,200))),response({})]);
+ const state=await C.readAuthenticatedRequesterRestSales(scope,{expectedRequesterId:'SYN',rest:config()},async()=>({userId:'SYN',role:'viewer'}),m.http);
+ assert.deepEqual(state.reasons,['READ_FAILED']);assert.deepEqual(state.rows,[]);assert.equal(state.value,null);assert.match(m.calls.at(-1).url,/\/cancel$/);
+});
+
+test('admin response diagnostics: pinned admin sees fixed counts/code only, never rows/SQL/token/response messages',async()=>{
+ const m=limitFixture(201,[100,101]);
+ const state=await C.readAuthenticatedRequesterRestSales(scope,{expectedRequesterId:'SYN',rest:config()},async()=>({userId:'SYN',role:'admin'}),m.http);
+ assert.deepEqual(state.transportDiagnostics,{code:'LIMIT_REACHED',phase:'ROW_VALIDATION',httpStatus:200,numRows:201,receivedRows:201,partitionCount:2,completedPartitions:2,partitionRowCountSum:201,partitionCountsMatch:true,responseComplete:true});
+ assert.doesNotMatch(JSON.stringify(state.transportDiagnostics),/SELECT|SYN|Bearer|statementHandle|SALES_VAT_EX|20261001/);
+ const SSR=require('react-dom/server'),React=require('react'),Panel=load('src/components/erp-insights/CentralSalesReadPanel.tsx').default;
+ const html=SSR.renderToStaticMarkup(React.createElement(Panel,{state}));assert.match(html,/본인 관리자 ERP 응답 진단/);assert.match(html,/LIMIT_REACHED/);assert.match(html,/receivedRows/);
+});
+test('admin response diagnostics: source partition mismatch records bounded counts without exposing bad response',async()=>{
+ const first=result([['CO','SECRET-ROW','20261001','123']]);first.resultSetMetaData=metadata(2,[1,1]);const part=result([]);part.message='SECRET-ERROR';part.token='SECRET-TOKEN';
+ const m=mock([response(explain()),response(first),response(part),response({})]);
+ const state=await C.readAuthenticatedRequesterRestSales(scope,{expectedRequesterId:'SYN',rest:config()},async()=>({userId:'SYN',role:'admin'}),m.http);
+ assert.deepEqual(state.reasons,['READ_FAILED']);assert.equal(state.transportDiagnostics.phase,'PARTITION');assert.equal(state.transportDiagnostics.numRows,2);assert.equal(state.transportDiagnostics.receivedRows,1);assert.equal(state.transportDiagnostics.completedPartitions,1);assert.equal(state.transportDiagnostics.responseComplete,false);assert.doesNotMatch(JSON.stringify(state),/SECRET/);
+});
+test('admin response diagnostics: viewer and other admin never receive metadata; session/role changes suppress it',async()=>{
+ for(const role of ['viewer','admin']){
+  const m=limitFixture(201);const id=role==='admin'?'OTHER':'SYN';
+  const state=await C.readAuthenticatedRequesterRestSales(scope,{expectedRequesterId:'SYN',rest:config()},async()=>({userId:id,role}),m.http);assert.equal(state.transportDiagnostics,undefined);if(id==='OTHER')assert.equal(m.calls.length,0);
+ }
+ for(const changed of [{userId:'OTHER',role:'admin'},{userId:'SYN',role:'viewer'},null]){
+  let auth=0;const m=limitFixture(201);const state=await C.readAuthenticatedRequesterRestSales(scope,{expectedRequesterId:'SYN',rest:config()},async()=>++auth<=2?{userId:'SYN',role:'admin'}:changed,m.http);assert.equal(state.transportDiagnostics,undefined);assert.deepEqual(state.reasons,['LIMIT_REACHED']);
+ }
+});
+test('admin response diagnostics: HTTP rejection and timeout expose fixed phase/status only',async()=>{
+ for(const status of [401,408]){
+  const m=mock([response({message:'SECRET-AUTH'},status)]);const state=await C.readAuthenticatedRequesterRestSales(scope,{expectedRequesterId:'SYN',rest:config()},async()=>({userId:'SYN',role:'admin'}),m.http);
+  assert.equal(state.transportDiagnostics.httpStatus,status);assert.equal(state.transportDiagnostics.phase,'PREFLIGHT');assert.equal(state.transportDiagnostics.numRows,null);assert.equal(state.transportDiagnostics.code,status===408?'TIMEOUT':'FAILED');assert.doesNotMatch(JSON.stringify(state),/SECRET/);
+ }
+});
+test('existing central scope has no product filter: inventoryStyles/style URL cannot change fixed three-bind query',async()=>{
+ const m=limitFixture(1);await C.readAuthenticatedRequesterRestSales({...scope,inventoryStyles:'SYN-0',style:'SYN-0'},{expectedRequesterId:'SYN',rest:config()},async()=>({userId:'SYN',role:'viewer'}),m.http);
+ for(const call of m.calls){const body=JSON.parse(call.init.body);assert.equal(Object.keys(body.bindings).length,3);assert.doesNotMatch(body.statement,/STYLECD\s*=\s*\?/);}
+});
