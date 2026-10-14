@@ -1,3 +1,4 @@
+import type { DailySalesAmountAudit } from './daily-sales-amount-audit';
 import type { CentralRestDiagnostic } from './central-rest-diagnostics';
 import { ERP_BRANDS, type ErpBrand } from '../erp-insight-workspace';
 import { validCSDate } from '../cs-daily-review-check';
@@ -23,7 +24,7 @@ export const CENTRAL_READ_REASONS = {
 } as const;
 export type CentralReason=keyof typeof CENTRAL_READ_REASONS;
 export interface CentralScope {brand:ErpBrand;from:string;to:string;aggregate?:'daily'}
-export interface CentralState {kind:'request'|'unauthenticated'|'forbidden'|'withheld'|'unconnected'|'error'|'empty'|'observed'|'summary';scope:CentralScope|null;reasons:CentralReason[];groupsObserved:number|null;rows:readonly CentralDisplayRow[];total:CentralDisplayTotal|null;dailySummary?:{rows:readonly Omit<CentralDisplayRow,'styleId'>[];total:CentralDisplayTotal};value:null;executable:false;configurationDiagnostics?:readonly BindingDiagnostic[];transportDiagnostics?:CentralRestDiagnostic}
+export interface CentralState {kind:'request'|'unauthenticated'|'forbidden'|'withheld'|'unconnected'|'error'|'empty'|'observed'|'summary';scope:CentralScope|null;reasons:CentralReason[];groupsObserved:number|null;rows:readonly CentralDisplayRow[];total:CentralDisplayTotal|null;dailySummary?:{rows:readonly (Omit<CentralDisplayRow,'styleId'>&{audit:DailySalesAmountAudit})[];total:CentralDisplayTotal};value:null;executable:false;configurationDiagnostics?:readonly BindingDiagnostic[];transportDiagnostics?:CentralRestDiagnostic}
 export const CENTRAL_GROUP_LIMIT=200;
 export const CENTRAL_SQL = `SELECT BRANDCD,STYLECD,SALEDT,SUM(SALEAMT_VAT_EX) AS SALES_VAT_EX
 FROM BCAVE.SEWON.VW_SALES_VAT
@@ -32,7 +33,7 @@ AND SHOPCD NOT IN ('B6055','B6057','B6063')
 GROUP BY BRANDCD,STYLECD,SALEDT
 ORDER BY SALEDT,STYLECD
 LIMIT 201`;
-export const CENTRAL_DAILY_SQL = `SELECT BRANDCD,SALEDT,SUM(SALEAMT_VAT_EX) AS SALES_VAT_EX
+export const CENTRAL_DAILY_SQL = `SELECT BRANDCD,SALEDT,SUM(SALEAMT_VAT_EX) AS SALES_VAT_EX,COUNT(*) AS SOURCE_ROWS,COUNT(SALEAMT_VAT_EX) AS AMOUNT_ROWS
 FROM BCAVE.SEWON.VW_SALES_VAT
 WHERE BRANDCD = %s AND SALEDT BETWEEN %s AND %s AND LENGTH(SALEDT)=8
 AND SHOPCD NOT IN ('B6055','B6057','B6063')

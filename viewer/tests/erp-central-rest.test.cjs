@@ -139,7 +139,7 @@ test('existing central scope has no product filter: inventoryStyles/style URL ca
 });
 
 const dailyScope={brand:'CO',from:'2026-10-01',to:'2026-10-01',aggregate:'daily'};
-function dailyResult(rows=[],parts=[rows.length]){return {code:'090001',sqlState:'00000',statementHandle:'syn-daily',resultSetMetaData:{numRows:rows.length,format:'jsonv2',rowType:['BRANDCD','SALEDT','SALES_VAT_EX'].map((name,i)=>({name,type:i===2?'real':'text'})),partitionInfo:parts.map(rowCount=>({rowCount}))},data:rows};}
+function dailyResult(rows=[],parts=[rows.length]){rows=rows.map(row=>row.length===3?[...row,'1',row[2]===null?'0':'1']:row);return {code:'090001',sqlState:'00000',statementHandle:'syn-daily',resultSetMetaData:{numRows:rows.length,format:'jsonv2',rowType:['BRANDCD','SALEDT','SALES_VAT_EX','SOURCE_ROWS','AMOUNT_ROWS'].map((name,i)=>({name,type:i===2?'real':i<2?'text':'fixed'})),partitionInfo:parts.map(rowCount=>({rowCount}))},data:rows};}
 const dailyRead=(scope,m,actor=async()=>({userId:'SYN',role:'viewer'}))=>C.readAuthenticatedRequesterRestSales(scope,{expectedRequesterId:'SYN',rest:config()},actor,m.http);
 test('daily summary: fixed server aggregate includes entire selected source, not the 201-group detail prefix',async()=>{
  const source=Array.from({length:500},(_,i)=>({style:'SYN-'+i,amount:1000000}));const total=source.reduce((sum,r)=>sum+r.amount,0);
@@ -149,7 +149,7 @@ test('daily summary: fixed server aggregate includes entire selected source, not
  assert.equal(JSON.parse(m.calls[1].init.body).statement,R.CENTRAL_DAILY_REST_SQL);
 });
 test('daily summary: 31-day result is complete across bounded partitions, retaining negatives/NULL and holding incomplete total',async()=>{
- const rows=Array.from({length:31},(_,i)=>['CO','202610'+String(i+1).padStart(2,'0'),i===0?'-1500000':i===1?null:'1000000']);const first=dailyResult(rows,[10,21]);first.data=rows.slice(0,10);const part=dailyResult(rows.slice(10));
+ const rows=Array.from({length:31},(_,i)=>['CO','202610'+String(i+1).padStart(2,'0'),i===0?'-1500000':i===1?null:'1000000']);const first=dailyResult(rows,[10,21]);first.data=first.data.slice(0,10);const part=dailyResult(rows.slice(10));
  const m=mock([response(explain()),response(first),response(part)]);const state=await dailyRead({...dailyScope,to:'2026-10-31'},m,async()=>({userId:'SYN',role:'admin'}));
  assert.equal(state.kind,'summary');assert.equal(state.dailySummary.rows.length,31);assert.equal(state.dailySummary.rows[0].amount.approximateValue,-1500000);assert.equal(state.dailySummary.rows[1].amount.reason,'NULL_AGGREGATE');assert.equal(state.dailySummary.total.millionsText,null);assert.equal(m.calls.length,3);
  assert.equal(state.transportDiagnostics.aggregation,'DAILY_SUMMARY');assert.equal(state.transportDiagnostics.receivedRows,31);assert.equal(state.transportDiagnostics.completedPartitions,2);assert.equal(state.transportDiagnostics.responseComplete,true);
@@ -197,4 +197,24 @@ test('daily summary: actual async page passes mode through own auth, pinned cont
   './central-sales-rest':{...R,createCentralRestExecutor:(binding,http,diagnostic)=>R.createCentralRestExecutor(binding,m.http,diagnostic)},
  }).default;
  const html=SSR.renderToStaticMarkup(await page({searchParams:Promise.resolve(dailyScope)}));assert.equal(auth,3);assert.equal(m.calls.length,2);assert.match(html,/data-central-state="summary"/);assert.match(html,/≈ 1.5/);assert.match(html,/商品|상품 목록 아님/);assert.doesNotMatch(html,/표시 매출: 미확인/);assert.equal(JSON.parse(m.calls[1].init.body).statement,R.CENTRAL_DAILY_REST_SQL);
+});
+
+test('amount audit: response numeric-string digits survive beyond Number precision and remain explicitly FLOAT',async()=>{
+ const m=mock([response(explain()),response(dailyResult([['CO','20261001','9007199254740993.125','2','2']]))]);const state=await dailyRead(dailyScope,m);const amount=state.dailySummary.rows[0].amount,D=load('src/lib/erp/central-sales-display.ts');assert.equal(D.centralSourceResponseText(amount),'9007199254740993.125');assert.equal(amount.exactValue,null);assert.equal(amount.sourceType,'FLOAT');assert.notEqual(String(amount.approximateValue),'9007199254740993.125');
+ const SSR=require('react-dom/server'),React=require('react'),Panel=load('src/components/erp-insights/CentralSalesReadPanel.tsx').default;const html=SSR.renderToStaticMarkup(React.createElement(Panel,{state}));assert.match(html,/9007199254740993\.125/);assert.match(html,/원단위 확정 아님/);assert.match(html,/FLOAT 원천 정밀도는 복원되지 않습니다/);
+});
+test('amount audit: a mixed NULL source group holds entire-day total even when SQL SUM is non-null',async()=>{
+ const m=mock([response(explain()),response(dailyResult([['CO','20261001','1000000','3','2']]))]);const state=await dailyRead(dailyScope,m),row=state.dailySummary.rows[0];assert.deepEqual(row.audit,{sourceRows:'3',amountRows:'2',nullAmountRows:'1',complete:false});assert.equal(row.amount.sourceValue,'1000000');assert.equal(row.amount.reason,'SOURCE_NULL_ROWS');assert.equal(row.amount.millionsText,null);assert.equal(state.dailySummary.total.millionsText,null);assert.equal(state.dailySummary.total.reason,'TOTAL_INCOMPLETE');
+});
+test('amount audit: all-NULL, explicit zero and negative values remain distinct with exact integer row counts',async()=>{
+ for(const [amount,present,reason] of [[null,'0','NULL_AGGREGATE'],['0','2','FLOAT_DISPLAY_ONLY'],['-100.25','2','FLOAT_DISPLAY_ONLY']]){
+  const m=mock([response(explain()),response(dailyResult([['CO','20261001',amount,'2',present]]))]);const state=await dailyRead(dailyScope,m);assert.equal(state.dailySummary.rows[0].amount.reason,reason);assert.equal(state.dailySummary.rows[0].amount.sourceValue,amount);
+ }
+ const A=load('src/lib/erp/daily-sales-amount-audit.ts');assert.deepEqual(A.auditDailySalesAmount('9007199254740993','9007199254740992','1'),{sourceRows:'9007199254740993',amountRows:'9007199254740992',nullAmountRows:'1',complete:false});assert.equal(A.auditDailySalesAmount(9007199254740993,1,'1'),null);
+});
+test('amount audit: impossible counts, omitted audits or wrong count types cannot produce a displayed total',async()=>{
+ for(const [source,present,amount] of [['0','0',null],['1','2','1'],['2','0','1'],['2','1',null],['-1','0',null],['1.5','1','1'],['1e3','1','1']]){
+  const m=mock([response(explain()),response(dailyResult([['CO','20261001',amount,source,present]])),response({})]);const state=await dailyRead(dailyScope,m);assert.deepEqual(state.reasons,['READ_FAILED']);assert.equal(state.dailySummary,undefined);
+ }
+ const bad=dailyResult([['CO','20261001','1']]);bad.resultSetMetaData.rowType[3].type='real';const m=mock([response(explain()),response(bad),response({})]);const state=await dailyRead(dailyScope,m);assert.deepEqual(state.reasons,['READ_FAILED']);assert.equal(state.dailySummary,undefined);
 });

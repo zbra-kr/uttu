@@ -3,6 +3,8 @@ import SalesInventoryReadPanel from '@/components/erp-insights/SalesInventoryRea
 import { readConfiguredSalesInventory } from '@/lib/erp/sales-inventory-server';
 import { readConfiguredOrderReceipt } from '@/lib/erp/order-receipt-server';
 import OrderReceiptReadPanel from '@/components/erp-insights/OrderReceiptReadPanel';
+import ReceiptSourceReadPanel from '@/components/erp-insights/ReceiptSourceReadPanel';
+import { readConfiguredReceiptSource } from '@/lib/erp/receipt-source-server';
 import CentralSalesReadPanel from '@/components/erp-insights/CentralSalesReadPanel';
 import { readConfiguredCurrentCentralSales } from '@/lib/erp/central-sales-runtime';
 
@@ -14,5 +16,6 @@ export default async function ErpInsightsReviewPage({searchParams}:{searchParams
   const central=await readConfiguredCurrentCentralSales({brand:params.brand,from:params.from,to:params.to,aggregate:params.aggregate});
   const state = await readConfiguredSalesInventory();
   const supply = await readConfiguredOrderReceipt();
-  return <><ErpInsightsWorkspace /><CentralSalesReadPanel state={central}/><SalesInventoryReadPanel state={state} /><OrderReceiptReadPanel state={supply} /></>;
+  const receipts=await readConfiguredReceiptSource({brand:params.brand,styles:params.receiptStyles??params.inventoryStyles,from:params.from,to:params.to});
+  return <><ErpInsightsWorkspace /><CentralSalesReadPanel state={central} receiptStyles={receipts.scope?.styles.join(',')}/><SalesInventoryReadPanel state={state} /><OrderReceiptReadPanel state={supply} /><ReceiptSourceReadPanel state={receipts} salesScope={central.scope??undefined}/></>;
 }
