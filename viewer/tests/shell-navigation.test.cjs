@@ -10,8 +10,8 @@ test('baseline shell menu defects are absent from the candidate',()=>{
 });
 const navigation=load('src/lib/shell-navigation.ts');
 const {SHELL_NAVIGATION:nav,SHELL_SEARCH_PAGES:pages,shellPathMatches:matches,shellGroupsForPath:groups,shellBreadcrumb:breadcrumb,shellAncestors:ancestors}=navigation;
-const main=['/','/today','/ranking','/matching','/promo','/reviews','/anomaly'];
-test('seven common primary routes and six default-folded reference routes retain order and names',()=>{
+const main=['/','/today','/ranking','/matching','/promo','/reviews','/anomaly','/erp-insights-review'];
+test('eight common primary routes and six default-folded reference routes retain order and names',()=>{
  assert.deepEqual(nav.filter(n=>n.group==='primary'&&!n.parent).map(n=>n.path),main);
  assert.deepEqual(nav.filter(n=>n.parent==='reference').map(n=>[n.path,n.label]),[['/report','심층리포트'],['/brand-ranking','브랜드랭킹'],['/companies','회사목록'],['/recommend','추천판'],['/snap','착장스냅'],['/magazine','무신사매거진']]);
  assert.deepEqual(groups('/'),[]);assert.deepEqual(groups('/product'),['ranking']);assert.deepEqual(groups('/brand'),['reference','brand-ranking']);assert.deepEqual(groups('/company'),['reference','companies']);

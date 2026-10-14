@@ -1,0 +1,20 @@
+const test=require('node:test'),assert=require('node:assert/strict'),SSR=require('react-dom/server'),load=require('./helpers/load-source.cjs');
+const C=load('src/lib/erp/central-sales-read.ts'),R=load('src/lib/erp/receipt-source-read.ts');
+async function render(params){const calls=[];const Page=load('src/app/(app)/erp-insights-review/page.tsx',{'@/lib/erp/central-sales-runtime':{readConfiguredCurrentCentralSales:async q=>{calls.push(q);return C.centralState('unconnected',null,'TRANSPORT_UNREGISTERED');}},'@/lib/erp/receipt-source-server':{readConfiguredReceiptSource:async()=>R.receiptState('request','REQUEST_REQUIRED')}}).default;return {html:SSR.renderToStaticMarkup(await Page({searchParams:Promise.resolve(params)})),calls};}
+test('initial status page defaults to CO last completed Korean date and seven days without invented values',async()=>{const {html,calls}=await render({});assert.equal(calls[0].brand,'CO');assert.equal(calls[0].aggregate,'daily');assert.equal((Date.parse(calls[0].to)-Date.parse(calls[0].from))/86400000,6);assert.match(html,/매출·입고 현황/);assert.doesNotMatch(html,/경쟁사|입고율 [0-9]|매출 관측 합계[^<]*0/);assert.match(html,/<details[^>]*><summary>연결·응답 진단/);assert.doesNotMatch(html,/<details[^>]*open/);assert.ok(html.indexOf('현황 조회')<html.indexOf('선택 범위 현황 요약'));});
+test('malformed explicit input is forwarded unchanged to the existing fail-closed scope parser',async()=>{const {calls}=await render({brand:'INVALID',from:'bad',to:'bad'});assert.deepEqual(calls[0],{brand:'INVALID',from:'bad',to:'bad',aggregate:undefined});});
+
+test('trend numeric bars preserve billion separators, negative sign, zero and held NULL labels',()=>{
+ const Overview=load('src/components/erp-insights/ErpStatusOverview.tsx').default,React=require('react');
+ const amounts=[{approximateValue:1000000000,millionsText:'1,000.0'},{approximateValue:-2000000000,millionsText:'-2,000.0'},{approximateValue:0,millionsText:'0.0'},{approximateValue:null,millionsText:null}];
+ const sales={...C.centralState('summary',{brand:'CO',from:'2026-10-10',to:'2026-10-13',aggregate:'daily'},'DAILY_SUMMARY_DISPLAY'),dailySummary:{rows:amounts.map((amount,i)=>({saleDate:`2026-10-${10+i}`,amount})),total:{millionsText:null}}};
+ const html=SSR.renderToStaticMarkup(React.createElement(Overview,{sales,receipts:R.receiptState('request','REQUEST_REQUIRED')}));
+ assert.match(html,/width:50%/);assert.match(html,/width:100%/);assert.match(html,/width:0%/);assert.equal((html.match(/aria-hidden="true"/g)||[]).length,3);
+ for(const text of ['≈ 1,000.0','≈ -2,000.0','≈ 0.0','금액 보류'])assert.ok(html.includes(text));assert.match(html,/bg-amber-500/);assert.doesNotMatch(html,/NaN|Infinity/);
+});
+test('explicit ERP CI entrypoint includes status UI tests and preserves existing suite',()=>{const scripts=require('../package.json').scripts;assert.ok(scripts['test:erp-insights'].includes('tests/erp-status-ui.test.cjs'));assert.ok(scripts['test:erp-insights'].includes('tests/erp-sales-receipts-integration.test.cjs'));});
+
+test('ERP status entry is discoverable by shared desktop/mobile menu, search and breadcrumb without admin grant',()=>{
+ const N=load('src/lib/shell-navigation.ts'),entry=N.SHELL_NAVIGATION.find(x=>x.id==='erp-status');assert.equal(entry.path,'/erp-insights-review');assert.equal(entry.label,'매출·입고 현황');assert.equal(entry.group,'primary');assert.ok(!entry.sidebarHidden&&!entry.mobileHidden&&!entry.adminOnly);assert.ok(N.SHELL_SEARCH_PAGES.includes(entry));assert.ok(N.shellPageMatches(entry,'ERP'));assert.deepEqual(N.shellBreadcrumb(entry.path),['매출·입고 현황']);
+ const fs=require('fs'),path=require('path');for(const file of ['Sidebar.tsx','MobileShell.tsx'])assert.match(fs.readFileSync(path.join(__dirname,'../src/components/shell',file),'utf8'),/SHELL_NAVIGATION/);
+});
