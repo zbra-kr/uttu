@@ -18,6 +18,7 @@ export const SHELL_NAVIGATION: ShellNavigationItem[] = [
   { id:'promo', path:'/promo', label:'프로모션', Icon:IcPromo, group:'primary', search:true },
   { id:'reviews', path:'/reviews', label:'자사리뷰', Icon:IcReview, group:'primary', search:true },
   { id:'anomaly', path:'/anomaly', label:'이상탐지', Icon:IcFlag, group:'primary', search:true },
+  { id:'erp-status', path:'/erp-insights-review', label:'매출·입고 현황', Icon:IcReport, group:'primary', search:true, aliases:['ERP','매출 현황','입고 현황'] },
   { id:'reference', path:'', label:'시장 참고자료', Icon:IcMore, group:'reference', disclosure:true, search:false },
   { id:'report', path:'/report', label:'심층리포트', Icon:IcReport, group:'reference', parent:'reference', search:true },
   { id:'brand-ranking', path:'/brand-ranking', label:'브랜드랭킹', Icon:IcBrandRanking, group:'reference', parent:'reference', search:true },

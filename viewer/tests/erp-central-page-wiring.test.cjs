@@ -34,8 +34,8 @@ test('URL requester id and admin assumption cannot replace trusted requester pin
 test('session change during context issuance or consumption prevents signer/HTTP',async()=>{
  for(const actors of [['PINNED_USER','OTHER'],['PINNED_USER','PINNED_USER','OTHER']]){const s=setup({binding:true,actors});const html=await s.render();assert.doesNotMatch(html,/data-central-state="observed"|SYN-STYLE/);assert.equal(s.counts().tokens,0);assert.equal(s.queries.length,0);}
 });
-test('empty/invalid/array input never authenticates or resolves server dependencies',async()=>{
- for(const params of [{},{...scope,brand:['CO']},{...scope,from:'bad'},{...scope,to:'2026-11-10'}]){const s=setup({binding:true});const html=await s.render(params);assert.match(html,/data-central-state="request"/);assert.deepEqual(s.counts(),{auth:0,compositions:0,tokens:0});}
+test('invalid/array input never authenticates or resolves server dependencies',async()=>{
+ for(const params of [{...scope,brand:['CO']},{...scope,from:'bad'},{...scope,to:'2026-11-10'}]){const s=setup({binding:true});const html=await s.render(params);assert.match(html,/data-central-state="request"/);assert.deepEqual(s.counts(),{auth:0,compositions:0,tokens:0});}
 });
 test('configured requester with missing REST settings still reports unconnected',async()=>{
  const s=setup({binding:{expectedRequesterId:'PINNED_USER',rest:null}});const html=await s.render();assert.match(html,/data-central-state="unconnected"/);assert.match(html,/미설정/);assert.equal(s.counts().tokens,0);assert.equal(s.queries.length,0);

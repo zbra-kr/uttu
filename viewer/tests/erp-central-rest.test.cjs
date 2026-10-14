@@ -179,7 +179,7 @@ test('daily summary: requester pin includes aggregation mode and session switch 
 test('daily summary: existing page forwards explicit mode and panel keeps aggregate separate from product list',async()=>{
  const React=require('react'),SSR=require('react-dom/server'),Panel=load('src/components/erp-insights/CentralSalesReadPanel.tsx').default;
  const m=mock([response(explain()),response(dailyResult([['CO','20261001','1500000']]))]);const state=await dailyRead(dailyScope,m);const html=SSR.renderToStaticMarkup(React.createElement(Panel,{state}));assert.match(html,/data-central-state="summary"/);assert.match(html,/name="aggregate"[^>]*value="daily"/);assert.match(html,/브랜드·일자 매출 합계 · 상품 목록 아님/);assert.doesNotMatch(html,/<th scope="col">상품 코드/);assert.match(html,/≈ 1.5/);
- const fs=require('node:fs');assert.match(fs.readFileSync('src/app/(app)/erp-insights-review/page.tsx','utf8'),/aggregate:params.aggregate/);
+ const fs=require('node:fs');assert.match(fs.readFileSync('src/app/(app)/erp-insights-review/page.tsx','utf8'),/aggregate:query.aggregate/);
  for(const aggregate of ['all','1',['daily']]){const p=S.parseCentralScope({...dailyScope,aggregate});assert.equal(p.reason,'REQUEST_INVALID');}
 });
 

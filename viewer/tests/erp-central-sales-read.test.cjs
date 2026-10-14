@@ -49,13 +49,13 @@ test('runtime reuses existing own-user auth, does not install worker transport o
 });
 
 for(const [label,user,role,params,expected]of [
- ['initial request',null,null,{},'request'],
+ ['initial request',null,null,{},'unauthenticated'],
  ['current session admin without supplied ERP dependencies',{id:'PRIVATE_ACTOR_SENTINEL'},'admin',q,'unconnected'],
  ['current session absent',null,null,q,'unauthenticated'],
 ])test(`actual async review page GET integration: ${label}`,async()=>{
  let authCalls=0;const css={__esModule:true,default:new Proxy({},{get:(_,n)=>'erp-'+n})};
  const page=load('src/app/(app)/erp-insights-review/page.tsx',{'./erp-insights.module.css':css,'@/lib/supabase/server':{supabaseServer:async()=>({auth:{getUser:async()=>{authCalls++;return {data:{user},error:null};}},from:()=>({select:()=>({eq:()=>({single:async()=>({data:{role},error:null})})})})})}}).default;
- const tree=await page({searchParams:Promise.resolve(params)}),h=SSR.renderToStaticMarkup(tree);assert.match(h,new RegExp(`data-central-state="${expected}"`));assert.match(h,/method="get"/);assert.doesNotMatch(h,/PRIVATE_ACTOR_SENTINEL|SYN-GRANT|SELECT BRANDCD/);assert.equal(authCalls,label==='initial request'?0:1);
+ const tree=await page({searchParams:Promise.resolve(params)}),h=SSR.renderToStaticMarkup(tree);assert.match(h,new RegExp(`data-central-state="${expected}"`));assert.match(h,/method="get"/);assert.doesNotMatch(h,/PRIVATE_ACTOR_SENTINEL|SYN-GRANT|SELECT BRANDCD/);assert.equal(authCalls,1);
 });
 
 test('authorized input cannot replace fixed source SQL, host or actor identity',async()=>{
