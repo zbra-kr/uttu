@@ -46,7 +46,7 @@ export function centralAmountDisplay(raw: unknown): CentralAmountDisplay {
   if (typeof raw === 'string' && approximateValue === 0 && /[1-9]/.test(raw.split(/[eE]/)[0])) return { ...state, reason:'NUMBER_UNDERFLOW' };
   return { ...state, approximateValue, millionsText:formatEisMillions(approximateValue), reason:'FLOAT_DISPLAY_ONLY' };
 }
-export function centralDisplayTotal(rows: readonly CentralDisplayRow[]): CentralDisplayTotal {
+export function centralDisplayTotal(rows: readonly Pick<CentralDisplayRow,'amount'>[]): CentralDisplayTotal {
   if (rows.some(row => row.amount.approximateValue === null)) return { approximateValue:null, millionsText:null, reason:'TOTAL_INCOMPLETE', exactValue:null };
   // Neumaier compensated summation reduces avoidable addition loss between the
   // represented Number inputs. It cannot recover precision already lost in the

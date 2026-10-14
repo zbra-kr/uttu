@@ -137,3 +137,64 @@ test('existing central scope has no product filter: inventoryStyles/style URL ca
  const m=limitFixture(1);await C.readAuthenticatedRequesterRestSales({...scope,inventoryStyles:'SYN-0',style:'SYN-0'},{expectedRequesterId:'SYN',rest:config()},async()=>({userId:'SYN',role:'viewer'}),m.http);
  for(const call of m.calls){const body=JSON.parse(call.init.body);assert.equal(Object.keys(body.bindings).length,3);assert.doesNotMatch(body.statement,/STYLECD\s*=\s*\?/);}
 });
+
+const dailyScope={brand:'CO',from:'2026-10-01',to:'2026-10-01',aggregate:'daily'};
+function dailyResult(rows=[],parts=[rows.length]){return {code:'090001',sqlState:'00000',statementHandle:'syn-daily',resultSetMetaData:{numRows:rows.length,format:'jsonv2',rowType:['BRANDCD','SALEDT','SALES_VAT_EX'].map((name,i)=>({name,type:i===2?'real':'text'})),partitionInfo:parts.map(rowCount=>({rowCount}))},data:rows};}
+const dailyRead=(scope,m,actor=async()=>({userId:'SYN',role:'viewer'}))=>C.readAuthenticatedRequesterRestSales(scope,{expectedRequesterId:'SYN',rest:config()},actor,m.http);
+test('daily summary: fixed server aggregate includes entire selected source, not the 201-group detail prefix',async()=>{
+ const source=Array.from({length:500},(_,i)=>({style:'SYN-'+i,amount:1000000}));const total=source.reduce((sum,r)=>sum+r.amount,0);
+ const m=mock([response(explain()),response(dailyResult([['CO','20261001',String(total)]]))]);const state=await dailyRead(dailyScope,m);
+ assert.equal(state.kind,'summary');assert.equal(state.rows.length,0);assert.equal(state.total,null);assert.equal(state.dailySummary.rows.length,1);assert.equal(state.dailySummary.total.millionsText,'500.0');assert.equal(state.dailySummary.total.exactValue,null);
+ assert.equal(m.calls.length,2);for(const call of m.calls){const body=JSON.parse(call.init.body);assert.equal(body.timeout,10);assert.equal(Object.keys(body.bindings).length,3);assert.match(body.statement,/GROUP BY BRANDCD,SALEDT\nORDER BY SALEDT\nLIMIT 32$/);assert.doesNotMatch(body.statement,/STYLECD|LIMIT 201/);assert.match(body.statement,/SHOPCD NOT IN \('B6055','B6057','B6063'\)/);}
+ assert.equal(JSON.parse(m.calls[1].init.body).statement,R.CENTRAL_DAILY_REST_SQL);
+});
+test('daily summary: 31-day result is complete across bounded partitions, retaining negatives/NULL and holding incomplete total',async()=>{
+ const rows=Array.from({length:31},(_,i)=>['CO','202610'+String(i+1).padStart(2,'0'),i===0?'-1500000':i===1?null:'1000000']);const first=dailyResult(rows,[10,21]);first.data=rows.slice(0,10);const part=dailyResult(rows.slice(10));
+ const m=mock([response(explain()),response(first),response(part)]);const state=await dailyRead({...dailyScope,to:'2026-10-31'},m,async()=>({userId:'SYN',role:'admin'}));
+ assert.equal(state.kind,'summary');assert.equal(state.dailySummary.rows.length,31);assert.equal(state.dailySummary.rows[0].amount.approximateValue,-1500000);assert.equal(state.dailySummary.rows[1].amount.reason,'NULL_AGGREGATE');assert.equal(state.dailySummary.total.millionsText,null);assert.equal(m.calls.length,3);
+ assert.equal(state.transportDiagnostics.aggregation,'DAILY_SUMMARY');assert.equal(state.transportDiagnostics.receivedRows,31);assert.equal(state.transportDiagnostics.completedPartitions,2);assert.equal(state.transportDiagnostics.responseComplete,true);
+});
+test('daily summary: empty source is not synthesized into a zero sale or missing-date rows',async()=>{
+ const m=mock([response(explain()),response(dailyResult())]);const state=await dailyRead(dailyScope,m);assert.equal(state.kind,'empty');assert.equal(state.dailySummary,undefined);assert.deepEqual(state.rows,[]);assert.equal(state.total,null);
+});
+test('daily summary: malformed metadata, duplicates, wrong brand/date/grain and excess rows withhold all amounts',async()=>{
+ const duplicates=dailyResult([['CO','20261001','1'],['CO','20261001','2']]);const mismatch=dailyResult([['CO','20261001','1']]);mismatch.resultSetMetaData.numRows=2;
+ for(const bad of [duplicates,mismatch,dailyResult([['LE','20261001','1']]),dailyResult([['CO','20261002','1']]),result([['CO','SYN','20261001','1']]),dailyResult(Array.from({length:33},()=>['CO','20261001','1']))]){
+  const m=mock([response(explain()),response(bad),response({})]);const state=await dailyRead(dailyScope,m);assert.deepEqual(state.reasons,['READ_FAILED']);assert.equal(state.dailySummary,undefined);assert.equal(state.total,null);
+ }
+});
+test('daily summary: partial partition cancels known handle and never shows subtotal as full range',async()=>{
+ const first=dailyResult([['CO','20261001','1'],['CO','20261002','2']],[1,1]);first.data=first.data.slice(0,1);const m=mock([response(explain()),response(first),response(dailyResult([])),response({})]);const state=await dailyRead({...dailyScope,to:'2026-10-02'},m);assert.deepEqual(state.reasons,['READ_FAILED']);assert.equal(state.dailySummary,undefined);assert.match(m.calls.at(-1).url,/syn-daily\/cancel$/);
+});
+test('daily summary: scan budget and 10s adapter deadline are unchanged',async()=>{
+ const m=mock([response(explain(16777217)),response({})]);let state=await dailyRead(dailyScope,m);assert.deepEqual(state.reasons,['READ_FAILED']);assert.equal(m.calls.length,2);assert.ok(m.calls.every(c=>JSON.parse(c.init.body||'{}').statement!==R.CENTRAL_DAILY_REST_SQL));
+ const old=global.setTimeout,timers=[];let start;const ready=new Promise(resolve=>start=resolve);let signal;
+ global.setTimeout=(fn,ms)=>{assert.equal(ms,10000);timers.push(fn);return old(()=>{},1);};
+ try{const promise=C.readAuthenticatedRequesterRestSales(dailyScope,{expectedRequesterId:'SYN',rest:{...config(),getToken:async s=>{signal=s;start();return new Promise(()=>{});}}},async()=>({userId:'SYN',role:'viewer'}),async()=>{throw Error('Unexpected HTTP');});await ready;timers[0]();state=await promise;assert.deepEqual(state.reasons,['READ_TIMEOUT']);assert.equal(signal.aborted,true);assert.equal(state.dailySummary,undefined);}finally{global.setTimeout=old;}
+});
+test('daily summary: requester pin includes aggregation mode and session switch prevents any query',async()=>{
+ const P=load('src/lib/erp/requester-local-review.ts');let calls=0;const deps={currentActor:async()=>({userId:'SYN',role:'viewer'}),executor:{execute:async()=>{calls++;return {};}}};const pin=await P.prepareRequesterReview(dailyScope,'SYN',deps);const changed=await P.readRequesterLocalSales({...dailyScope,aggregate:undefined},pin,deps);assert.deepEqual(changed.reasons,['LOCAL_REQUESTER_MISMATCH']);assert.equal(calls,0);
+ let auth=0;const m=mock([]);const state=await dailyRead(dailyScope,m,async()=>({userId:++auth===1?'SYN':'OTHER',role:'admin'}));assert.deepEqual(state.reasons,['LOCAL_REQUESTER_MISMATCH']);assert.equal(m.calls.length,0);
+});
+test('daily summary: existing page forwards explicit mode and panel keeps aggregate separate from product list',async()=>{
+ const React=require('react'),SSR=require('react-dom/server'),Panel=load('src/components/erp-insights/CentralSalesReadPanel.tsx').default;
+ const m=mock([response(explain()),response(dailyResult([['CO','20261001','1500000']]))]);const state=await dailyRead(dailyScope,m);const html=SSR.renderToStaticMarkup(React.createElement(Panel,{state}));assert.match(html,/data-central-state="summary"/);assert.match(html,/name="aggregate"[^>]*value="daily"/);assert.match(html,/브랜드·일자 매출 합계 · 상품 목록 아님/);assert.doesNotMatch(html,/<th scope="col">상품 코드/);assert.match(html,/≈ 1.5/);
+ const fs=require('node:fs');assert.match(fs.readFileSync('src/app/(app)/erp-insights-review/page.tsx','utf8'),/aggregate:params.aggregate/);
+ for(const aggregate of ['all','1',['daily']]){const p=S.parseCentralScope({...dailyScope,aggregate});assert.equal(p.reason,'REQUEST_INVALID');}
+});
+
+test('daily summary: abort during pending HTTP does not revive late amounts',async()=>{
+ const controller=new AbortController();let resolve,start,seen;const ready=new Promise(r=>start=r);const promise=R.createCentralRestExecutor(config(),async(url,init)=>{seen=init.signal;start();return new Promise(r=>resolve=r);}).execute({sql:S.CENTRAL_DAILY_SQL,binds:['CO','20261001','20261001'],statementTimeoutSeconds:10,maxRows:32,maxEstimatedScanBytes:16777216,signal:controller.signal});
+ await ready;controller.abort();await assert.rejects(promise,/CENTRAL_REST_CANCELLED/);assert.equal(seen.aborted,true);resolve(response(explain()));
+});
+
+test('daily summary: actual async page passes mode through own auth, pinned context, REST and separate summary panel',async()=>{
+ const SSR=require('react-dom/server');const m=mock([response(explain()),response(dailyResult([['CO','20261001','1500000']]))]);let auth=0;
+ const page=load('src/app/(app)/erp-insights-review/page.tsx',{
+  '@/components/erp-insights/ErpInsightsWorkspace':{__esModule:true,default:()=>null},
+  '@/lib/supabase/server':{supabaseServer:async()=>({auth:{getUser:async()=>{auth++;return {data:{user:{id:'SYN'}},error:null};}},from:()=>({select:()=>({eq:()=>({single:async()=>({data:{role:'viewer'},error:null})})})})})},
+  './central-sales-composition':{configuredCentralRequesterBinding:()=>({expectedRequesterId:'SYN',rest:config()})},
+  './central-sales-rest':{...R,createCentralRestExecutor:(binding,http,diagnostic)=>R.createCentralRestExecutor(binding,m.http,diagnostic)},
+ }).default;
+ const html=SSR.renderToStaticMarkup(await page({searchParams:Promise.resolve(dailyScope)}));assert.equal(auth,3);assert.equal(m.calls.length,2);assert.match(html,/data-central-state="summary"/);assert.match(html,/≈ 1.5/);assert.match(html,/商品|상품 목록 아님/);assert.doesNotMatch(html,/표시 매출: 미확인/);assert.equal(JSON.parse(m.calls[1].init.body).statement,R.CENTRAL_DAILY_REST_SQL);
+});

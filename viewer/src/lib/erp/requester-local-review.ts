@@ -27,7 +27,7 @@ export async function readRequesterLocalSales(input:unknown,context:RequesterRev
   // Consume even on a scope/session mismatch. Context cannot be cloned/serialized
   // into a reusable grant and never changes persistent user/role permissions.
   pin.used=true;
-  if(q.brand!==pin.scope.brand||q.from!==pin.scope.from||q.to!==pin.scope.to)return centralState('forbidden',q,'LOCAL_REQUESTER_MISMATCH');
+  if(q.brand!==pin.scope.brand||q.from!==pin.scope.from||q.to!==pin.scope.to||q.aggregate!==pin.scope.aggregate)return centralState('forbidden',q,'LOCAL_REQUESTER_MISMATCH');
   let actor:CentralActor|null;try{actor=await deps.currentActor();}catch{return centralState('error',q,'AUTH_READ_FAILED');}
   const afterAuth=(deps.now??Date.now)();
   if(!Number.isFinite(afterAuth)||afterAuth>=pin.expires)return centralState('withheld',q,'LOCAL_REVIEW_EXPIRED');
