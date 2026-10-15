@@ -1,3 +1,4 @@
+import { reviewStatsReadPath } from './review-stats-read-path';
 import { parseProductHistoryReceipt } from './product-history-window';
 import { readCount, kstInsertDate, RUNNING_RECORD_LIMIT, type RunningRecords } from './collection-status';
 import { supabaseBrowser } from './supabase/client';
@@ -610,7 +611,15 @@ export interface ReviewStats {
   total: number; avgRating: number; lowCount: number; ratingDist: number[]; imageCount: number;
 }
 
+// RPC selection is source-controlled and inactive until separate installation/acceptance approval.
+// No runtime probing or error fallback combines the two read contracts.
 export async function fetchReviewStats(days = 30, signal?: AbortSignal): Promise<ReviewStats> {
+  return reviewStatsReadPath() === 'aggregate-rpc'
+    ? fetchReviewStatsAggregate(days, signal)
+    : fetchReviewStatsLegacy(days, signal);
+}
+
+async function fetchReviewStatsLegacy(days = 30, signal?: AbortSignal): Promise<ReviewStats> {
   const dateFilter = days !== 999
     ? kstDaysAgo(days)
     : null;
@@ -642,6 +651,36 @@ export async function fetchReviewStats(days = 30, signal?: AbortSignal): Promise
   const lowCount = ratingDist[3] + ratingDist[4]; // ★2 + ★1
 
   return { total, avgRating: Math.round(avgRating * 100) / 100, lowCount, ratingDist, imageCount: imgRes.count ?? 0 };
+}
+
+
+async function fetchReviewStatsAggregate(days = 30, signal?: AbortSignal): Promise<ReviewStats> {
+  const dateFilter = days !== 999
+    ? kstDaysAgo(days)
+    : null;
+
+  const query = supabase.rpc('get_review_stats_v1', { p_from_date: dateFilter });
+  const { data, error } = await (signal ? query.abortSignal(signal) : query);
+  if (signal?.aborted) throw new Error('Review statistics unavailable');
+  if (error || !Array.isArray(data) || data.length !== 1)
+    throw new Error('Review statistics unavailable');
+  const row: unknown = data[0];
+  if (!row || typeof row !== 'object' || Array.isArray(row))
+    throw new Error('Review statistics unavailable');
+  const aggregate = row as Record<string, unknown>;
+  const receiptCounts = [aggregate.rating_5, aggregate.rating_4, aggregate.rating_3, aggregate.rating_2, aggregate.rating_1, aggregate.image_count];
+  if (receiptCounts.some(count => typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0))
+    throw new Error('Review statistics unavailable');
+  const counts = receiptCounts as number[];
+  const ratingDist = counts.slice(0, 5);
+  const total = ratingDist.reduce((s, c) => s + c, 0);
+  if (!Number.isSafeInteger(total)) throw new Error('Review statistics unavailable');
+  const avgRating = total > 0
+    ? [5, 4, 3, 2, 1].reduce((s, star, i) => s + star * ratingDist[i], 0) / total
+    : 0;
+  const lowCount = ratingDist[3] + ratingDist[4]; // ★2 + ★1
+
+  return { total, avgRating: Math.round(avgRating * 100) / 100, lowCount, ratingDist, imageCount: counts[5] };
 }
 
 
