@@ -32,6 +32,7 @@ function createFixture(variant, mobile, route='ranking', search='', tab='dash'){
   'react':React,'react/jsx-runtime':require('react/jsx-runtime'),
   'next/navigation':{useRouter:()=>({push(){},replace(){}}),useSearchParams:()=>new URLSearchParams(search)},
   'next/link':{__esModule:true,default:({children,...props})=>React.createElement('a',props,children)},
+  './review-stats-read-path':require('./helpers/load-source.cjs')('src/lib/review-stats-read-path.ts'),
   './supabase/client':{supabaseBrowser:()=>sb},'./collection-status':{},
   './supabase/matching-transport':require('./helpers/load-source.cjs')('src/lib/supabase/matching-transport.ts'),
   '@/lib/supabase/client':{supabaseBrowser:()=>sb},
