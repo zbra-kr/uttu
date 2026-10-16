@@ -1,0 +1,7 @@
+const test=require('node:test'),a=require('node:assert/strict'),load=require('./helpers/load-source.cjs');const {auditedStyleCalendar:F}=load('src/lib/erp/style-calendar-audit.ts');
+const q={brand:'CO',from:'2026-10-01',to:'2026-10-14',aggregate:'daily'};
+function input(){return {queryKind:'FIXED_STYLE_CALENDAR_LEFT_JOIN_V1',complete:true,scope:q,styles:['S'],rows:Array.from({length:14},(_,i)=>({BRANDCD:'CO',STYLECD:'S',SALEDT:'202610'+String(i+1).padStart(2,'0'),SOURCE_ROWS:'0',AMOUNT_ROWS:'0',SALES_VAT_EX:null}))};}
+test('complete calendar proves source-view zero without fabricated source rows',()=>{const r=F(q,['S'],input())[0];a.equal(r.provenZeroDays,14);a.equal(r.daily[0].amount.approximateValue,0);a.equal(r.daily[0].audit.sourceRows,'0');a.equal(r.upstreamCollectionComplete,null);});
+test('partial, duplicate and wrong scope cannot manufacture zero',()=>{for(const change of [r=>r.complete=false,r=>r.rows.pop(),r=>r.rows[1]={...r.rows[0]},r=>r.scope={...q,to:'2026-10-15'}]){const r=input();change(r);a.throws(()=>F(q,['S'],r));}});
+test('NULL transaction amount stays held, never zero',()=>{const r=input();r.rows[0].SOURCE_ROWS='1';const v=F(q,['S'],r)[0];a.equal(v.provenZeroDays,13);a.equal(v.daily[0].amount.approximateValue,null);a.equal(v.daily[0].audit.nullAmountRows,'1');});
+test('inconsistent zero count or null audit is rejected',()=>{const r=input();r.rows[0].SALES_VAT_EX='5';a.throws(()=>F(q,['S'],r));});

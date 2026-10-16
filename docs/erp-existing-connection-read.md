@@ -1,0 +1,31 @@
+# Existing normal read factories — separate addendum
+
+This addendum is on the independently reviewed source candidate (source-only c16827be626af5654b8e2fd4fe9c955c5707f1b208cdd71c62f14383bbc7c515, full PR26 0cd7fe06243f0cb6b2accfdc3954119a309ef347ab5d2eae1c2696872a7aa67a). The original eleven changed files and original candidates are unchanged. Parent reports operating PR27 SHA 78aaccbb1c32138ddc454bbe9b09252fe1ae097b with ERP RPC inactive; this addendum does not integrate/deploy on that new source.
+
+## Concrete connection entry
+
+worker.matchers.erp_existing_connection.existing_mda_connection loads the existing normal /Users/macmini/projects/MDA/worker/matchers/snowflake_erp.py module, calls its normal _load_env and _snowflake_conn, without copying/reimplementing credential extraction. Normal application-internal authentication necessarily handles its existing credential material in process; this task does not directly inspect/export credential values or transfer them to a different client/service. No replacement credential source, key lookup fallback, session settings or retries are added.
+
+read_existing_daily_once(scope, factory=existing_mda_connection) validates CO/exactly14days before opening, calls the existing factory once, and supplies the resulting object to the reviewed execute_central_daily_sales. A narrow proxy permits only the existing timeout SHOW, exact daily EXPLAIN, and at most one exact bound daily SELECT. It does not replace timeout results, override SQL, change session settings or weaken the scan guard. Owned connection and cursor are closed on failure/success. ExistingReadFailure carries fixed codes and nonsecret counters only.
+
+## Actual bounded attempt — 2026-10-15
+
+Scope CO, 2026-10-01 through 2026-10-14. Existing SDK/normal factory connection established, attempts1. Reviewed TIMEOUT_PREFLIGHT made one SHOW request and returned TIMEOUT_UNCONFIRMED. Aggregate SELECTs0, connection closed=true, settings changed=false, writes0, no retry. We did not record or claim a specific observed timeout value: the existing 1..10-second precondition was not confirmed. This is a successful real connection-object injection and a STOPPED source preflight, NOT successful aggregate data access, empty data, or denial of business SELECT privileges. No source data receipt/generation was fabricated. The diagnostic reporting script completed with a JSON stopped status; the library entry raises ExistingReadFailure for job failure propagation.
+
+The normal MDA factory does not set a bounded timeout in its inspected source. Source factory existence alone therefore does not prove this connection satisfies the reviewed execution precondition. No alternate SQL path, timeout-session edit or repeated attempt was used to bypass the stop. A separately reviewed way to satisfy the existing read bound is required before the aggregate SELECT may run.
+
+## Product reader — correct project, no credential relocation
+
+existing_mda_product_reader reuses the MDA product factory but its public destination did not verify as UTTU; zero requests were made. No MDA token/key was retargeted.
+
+existing_uttu_product_reader separately loads the normal UTTU worker tasks/daily_summary.py module and calls _client(). This is an existing application factory, not newly provisioned ERP authority. A runtime guard rejects a process that initialized the MDA factory; invoke it in a fresh process without MDA environment initialization; no key/environment values are copied between the two factories. probe_existing_mapping_counts(existing_uttu_product_reader) checks the public HTTPS destination exactly matches the previously confirmed UTTU project before any request. Only then it performs one products projection (erp_style_code, brand_id), is_own=true, stable id order, limit21, exact count. No IDs, actual style values or other fields are exported.
+
+Actual UTTU product read: destination verified=true; query count1; exact is_own count11751; sampled rows21; all21 sampled ERP-style hints missing; sampled missing brand key0. This covers all own brands, not a verified CO-specific binding. verified_mapping_count and unmapped_total remain null: product hint presence/absence and a small sample do not prove total confirmed/unmapped crosswalk cardinality. The existing schema does not supply independent ERP brand/evidence/version. Do not infer zero confirmed mappings, 11751 unmapped, or any genuine insight from these counts. The actual total also exceeds the dry-run whole-own-product pilot cap200, so that default whole-list read remains incomplete and must not produce recommendations. A separately verified bounded product subset/proof input is needed; raising the cap or accepting a partial list is not justified by these counts. Existing worker service-role read capability does not approve ERP publication, ordinary cookie access, RPC/RLS changes or a new grant.
+
+## Verification and limits
+
+New factory-binding tests4: exactly one factory call and connection cleanup; unbounded existing session stops before SELECT without mutation; wrong product destination makes zero queries and keeps mapping counts unknown; a process initialized with the MDA factory cannot construct the UTTU client. Python ruff passes. Earlier eleven-file checks and closed RPC/numeric/concurrency suites are not repeated.
+
+Live evidence is stored separately under eis-existing-read-evidence: live-read-result.json (connection/preflight stop), mapping-read-result.json (unverified MDA destination, no request), uttu-mapping-read-result.json (correct UTTU counts). Diagnostic scripts redirect logs and never print raw SDK messages, credential values, product keys or rows. Existing normal loaders are called internally, so do not describe this attempt as never handling existing credentials internally.
+
+Remaining: reviewed source timeout precondition; real bounded aggregate receipt/DTO execution; independently reviewed mappings; approved worker publisher identity, exact DB principal/read/write/refresh capability and installed acceptance; any schedule/storage/production activation. No new keys, copied credentials, configuration, role, ACL/RLS, schema, write, schedule, push or deployment. No operating source/candidate edits. Migration/cron: none. No new commit.
