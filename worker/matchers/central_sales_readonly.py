@@ -41,6 +41,11 @@ def execute_central_sales(connection, scope):
         raise LocalReadBlocked("INVALID_SCOPE") from None
     # Immutable binds constructed from the validated snapshot before cursor/I/O.
     binds = (brand, start.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
+    return _execute_fixed_read(connection, binds, SQL, ["BRANDCD", "STYLECD", "SALEDT", "SALES_VAT_EX"], 201)
+
+
+def _execute_fixed_read(connection, binds, sql, expected_columns, limit):
+    """Shared internal fixed-query guard; only module-owned SQL callers use it."""
     try:
         cursor = connection.cursor()
     except Exception:
@@ -52,7 +57,7 @@ def execute_central_sales(connection, scope):
         timeout = next((p.get("value") for p in params if p.get("key") == "STATEMENT_TIMEOUT_IN_SECONDS"), None)
         if timeout is None or not str(timeout).isdigit() or not 1 <= int(timeout) <= 10:
             raise LocalReadBlocked("TIMEOUT_UNCONFIRMED")
-        cursor.execute("EXPLAIN USING JSON " + SQL, binds)
+        cursor.execute("EXPLAIN USING JSON " + sql, binds)
         import json
         raw = cursor.fetchone()[0]
         plan = json.loads(raw) if isinstance(raw, str) else raw
@@ -60,12 +65,12 @@ def execute_central_sales(connection, scope):
         size, partitions = stats.get("bytesAssigned"), stats.get("partitionsAssigned")
         if type(size) is not int or type(partitions) is not int or not 0 <= size <= 16777216 or not 0 <= partitions <= 32:
             raise LocalReadBlocked("SCAN_BUDGET_UNCONFIRMED")
-        cursor.execute(SQL, binds)
-        rows = cursor.fetchmany(201)
+        cursor.execute(sql, binds)
+        rows = cursor.fetchmany(limit)
         names = [c[0] for c in cursor.description]
-        if names != ["BRANDCD", "STYLECD", "SALEDT", "SALES_VAT_EX"] or len(rows) > 201 or any(not isinstance(row, (tuple, list)) or len(row) != 4 for row in rows):
+        if names != expected_columns or len(rows) > limit or any(not isinstance(row, (tuple, list)) or len(row) != len(expected_columns) for row in rows):
             raise LocalReadBlocked("PROJECTION_INVALID")
-        return {"complete": len(rows) <= 200, "rows": [dict(zip(names, row)) for row in rows]}
+        return {"complete": len(rows) < limit, "rows": [dict(zip(names, row)) for row in rows]}
     except LocalReadBlocked:
         raise
     except Exception:
